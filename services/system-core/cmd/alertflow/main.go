@@ -13,13 +13,14 @@ import (
 	"syscall"
 	"time"
 
+	agentv1 "github.com/ecakeman/alertflow/services/system-core/gen/agent/v1"
 	"github.com/ecakeman/alertflow/services/system-core/internal/api"
 	"github.com/ecakeman/alertflow/services/system-core/internal/cache"
 	"github.com/ecakeman/alertflow/services/system-core/internal/db"
 	"github.com/ecakeman/alertflow/services/system-core/internal/gateway"
-	"github.com/ecakeman/alertflow/services/system-core/internal/monitor"
+	"github.com/ecakeman/alertflow/services/system-core/internal/monitoring"
+	"github.com/ecakeman/alertflow/services/system-core/internal/monitoring/probe/kubernetes"
 	"github.com/ecakeman/alertflow/services/system-core/internal/system"
-	agentv1 "github.com/ecakeman/alertflow/services/system-core/gen/agent/v1"
 	"github.com/redis/go-redis/v9"
 	"google.golang.org/grpc"
 )
@@ -52,8 +53,8 @@ func main() {
 		log.Warn("invalid ALERTFLOW_K8S_ENABLED, kubernetes monitoring disabled", "value", os.Getenv("ALERTFLOW_K8S_ENABLED"))
 		k8sEnabled = false
 	}
-	k8sObserver := monitor.NewK8sObserver(k8sEnabled, env("ALERTFLOW_K8S_NAMESPACE", "default"), log)
-	go monitor.Run(root, store, 4, k8sObserver, log)
+	k8sObserver := kubernetes.NewK8sObserver(k8sEnabled, env("ALERTFLOW_K8S_NAMESPACE", "default"), log)
+	go monitoring.Run(root, store, k8sObserver, log)
 	go gateway.RunRecovery(root, store, 2*time.Second)
 	if brokers := split(os.Getenv("ALERTFLOW_KAFKA_BROKERS")); len(brokers) > 0 && brokers[0] != "" {
 		topic := env("ALERTFLOW_KAFKA_TOPIC", "alertflow.agent-task-ready.v1")

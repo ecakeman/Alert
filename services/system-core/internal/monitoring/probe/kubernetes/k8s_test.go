@@ -1,4 +1,4 @@
-package monitor
+package kubernetes
 
 import (
 	"context"
@@ -80,17 +80,6 @@ func TestStateFingerprintStability(t *testing.T) {
 	ev.Ready, ev.Available = 3, 3
 	if fp3 := fingerprint(ev, true, ""); fp3 == fp1 {
 		t.Fatal("replica change must change fingerprint")
-	}
-}
-
-func TestProbeDispatchesByType(t *testing.T) {
-	ctx := context.Background()
-	if _, err := Probe(ctx, system.DueTarget{TargetType: "ICMP"}, nil); err == nil {
-		t.Fatal("unknown target type must not fall through to HTTP")
-	}
-	cfg, _ := json.Marshal(map[string]string{"resource_kind": "Deployment", "resource_name": "web"})
-	if _, err := Probe(ctx, system.DueTarget{TargetType: "KUBERNETES", Config: cfg}, nil); err == nil {
-		t.Fatal("kubernetes target without observer must error")
 	}
 }
 
