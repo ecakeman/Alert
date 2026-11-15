@@ -183,7 +183,7 @@ func (s *Store) CreateService(ctx context.Context, in CreateServiceInput) (Servi
 				return err
 			}
 		}
-		return nil
+		return s.noteViews(ctx, tx, id)
 	})
 	if err != nil {
 		return ServiceView{}, err
@@ -368,7 +368,10 @@ func (s *Store) PatchService(ctx context.Context, id uuid.UUID, in PatchServiceI
 			    enabled = COALESCE($4::boolean, enabled),
 			    updated_at = $5
 			WHERE service_id=$1`, id, in.Name, in.Description, in.Enabled, s.now())
-		return err
+		if err != nil {
+			return err
+		}
+		return s.noteViews(ctx, tx, id)
 	})
 	if err != nil {
 		return ServiceView{}, err

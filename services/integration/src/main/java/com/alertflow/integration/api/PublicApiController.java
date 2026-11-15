@@ -14,6 +14,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.alertflow.gen.system.v1.JsonResult;
 import com.alertflow.gen.system.v1.ReadyRequest;
 import com.alertflow.integration.bridge.GrpcBridge;
+import com.alertflow.integration.cache.RevisionCache;
 import io.grpc.Status;
 import io.grpc.StatusRuntimeException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -29,10 +30,13 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 public class PublicApiController {
+    private static final String ALL = "00000000-0000-0000-0000-000000000000";
     private final GrpcBridge bridge;
+    private final RevisionCache cache;
 
-    public PublicApiController(GrpcBridge bridge) {
+    public PublicApiController(GrpcBridge bridge, RevisionCache cache) {
         this.bridge = bridge;
+        this.cache = cache;
     }
 
     @GetMapping("/readyz")
@@ -47,12 +51,12 @@ public class PublicApiController {
 
     @GetMapping("/api/v1/dashboard/summary")
     public ResponseEntity<String> dashboard(HttpServletRequest request) {
-        return call(() -> json(bridge.systemApi().dashboard(jsonCall(request, null, ""))));
+        return cached("dashboard", ALL, () -> json(bridge.systemApi().dashboard(jsonCall(request, null, ""))));
     }
 
     @GetMapping("/api/v1/services")
     public ResponseEntity<String> listServices(HttpServletRequest request) {
-        return call(() -> json(bridge.systemApi().listServices(jsonCall(request, null, ""))));
+        return cached("services", ALL, () -> json(bridge.systemApi().listServices(jsonCall(request, null, ""))));
     }
 
     @PostMapping("/api/v1/services")
@@ -62,7 +66,7 @@ public class PublicApiController {
 
     @GetMapping("/api/v1/services/{serviceId}")
     public ResponseEntity<String> getService(HttpServletRequest request, @PathVariable String serviceId) {
-        return call(() -> json(bridge.systemApi().getService(jsonCall(request, serviceId, ""))));
+        return cached("service", serviceId, () -> json(bridge.systemApi().getService(jsonCall(request, serviceId, ""))));
     }
 
     @PatchMapping("/api/v1/services/{serviceId}")
@@ -77,7 +81,7 @@ public class PublicApiController {
 
     @GetMapping("/api/v1/services/{serviceId}/targets")
     public ResponseEntity<String> listTargets(HttpServletRequest request, @PathVariable String serviceId) {
-        return call(() -> json(bridge.systemApi().listTargets(jsonCall(request, serviceId, ""))));
+        return cached("targets", serviceId, () -> json(bridge.systemApi().listTargets(jsonCall(request, serviceId, ""))));
     }
 
     @PostMapping("/api/v1/services/{serviceId}/targets")
@@ -97,7 +101,7 @@ public class PublicApiController {
 
     @GetMapping("/api/v1/episodes")
     public ResponseEntity<String> listEpisodes(HttpServletRequest request) {
-        return call(() -> json(bridge.systemApi().listEpisodes(jsonCall(request, null, ""))));
+        return cached("episodes", ALL, () -> json(bridge.systemApi().listEpisodes(jsonCall(request, null, ""))));
     }
 
     @GetMapping("/api/v1/services/{serviceId}/timeline")
@@ -161,6 +165,10 @@ public class PublicApiController {
     @PostMapping("/api/v1/episodes/{episodeId}/retry-archive")
     public ResponseEntity<String> retryArchive(HttpServletRequest request, @PathVariable String episodeId, @RequestBody(required = false) byte[] body) {
         return call(() -> json(bridge.systemApi().retryArchive(jsonCall(request, episodeId, body))));
+    }
+
+    private ResponseEntity<String> cached(String scope, String id, RevisionCache.Loader loader) {
+        return call(() -> cache.around(scope, id, loader));
     }
 
     private ResponseEntity<String> call(java.util.concurrent.Callable<ResponseEntity<String>> action) {

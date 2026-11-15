@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/ecakeman/alertflow/services/system-core/internal/cache"
 	"github.com/ecakeman/alertflow/services/system-core/internal/system"
 	"github.com/google/uuid"
 )
@@ -22,7 +21,6 @@ type ArtifactSource interface {
 type Server struct {
 	Store     *system.Store
 	Artifacts ArtifactSource
-	Cache     cache.Aside
 	Log       *slog.Logger
 }
 
@@ -113,10 +111,7 @@ func (s *Server) getService(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 400, map[string]string{"error_code": "VALIDATION", "message": "invalid service_id"})
 		return
 	}
-	var view system.ServiceView
-	err = s.Cache.Get(r.Context(), "service:"+id.String(), &view, func() (any, error) {
-		return s.Store.GetService(r.Context(), id)
-	})
+	view, err := s.Store.GetService(r.Context(), id)
 	if err != nil {
 		writeErr(w, err)
 		return
@@ -140,7 +135,6 @@ func (s *Server) patchService(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
-	s.Cache.Delete(r.Context(), "service:"+id.String())
 	writeJSON(w, http.StatusOK, view)
 }
 

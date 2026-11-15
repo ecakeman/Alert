@@ -14,14 +14,12 @@ import (
 	agentv1 "github.com/ecakeman/alertflow/services/system-core/gen/agent/v1"
 	systemv1 "github.com/ecakeman/alertflow/services/system-core/gen/system/v1"
 	"github.com/ecakeman/alertflow/services/system-core/internal/api"
-	"github.com/ecakeman/alertflow/services/system-core/internal/cache"
 	"github.com/ecakeman/alertflow/services/system-core/internal/db"
 	"github.com/ecakeman/alertflow/services/system-core/internal/gateway"
 	"github.com/ecakeman/alertflow/services/system-core/internal/monitoring"
 	"github.com/ecakeman/alertflow/services/system-core/internal/monitoring/probe/kubernetes"
 	"github.com/ecakeman/alertflow/services/system-core/internal/system"
 	"github.com/ecakeman/alertflow/services/system-core/internal/transport/grpc/systemapi"
-	"github.com/redis/go-redis/v9"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/health/grpc_health_v1"
@@ -40,16 +38,6 @@ func main() {
 	}
 	defer conn.Close()
 	store := system.New(conn)
-	var aside cache.Aside
-	if redisURL := os.Getenv("ALERTFLOW_REDIS_URL"); redisURL != "" {
-		opt, err := redis.ParseURL(redisURL)
-		if err != nil {
-			log.Error("redis", "err", err)
-			os.Exit(1)
-		}
-		aside.Client = redis.NewClient(opt)
-		aside.TTL = 5 * time.Second
-	}
 	root, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	// Kubernetes 观察器默认关闭；启用但集群不可用时只记录错误，采样返回观察器错误。
@@ -64,12 +52,14 @@ func main() {
 	if brokers := split(os.Getenv("ALERTFLOW_KAFKA_BROKERS")); len(brokers) > 0 && brokers[0] != "" {
 		topic := env("ALERTFLOW_KAFKA_TOPIC", "alertflow.agent-task-ready.v1")
 		go gateway.RunPublisher(root, store, brokers, topic, log)
+		revisionTopic := env("ALERTFLOW_REVISION_TOPIC", "alertflow.system-resource-revision-changed.v1")
+		go gateway.RunRevisionPublisher(root, store, brokers, revisionTopic, log)
 		if target := os.Getenv("ALERTFLOW_AGENT_GRPC_TARGET"); target != "" {
 			go gateway.RunConsumer(root, store, brokers, topic, "alertflow-agent-gateway", target, log)
 		}
 	}
 	grpcServer := grpc.NewServer()
-	apiServer := &systemapi.Server{API: &api.Server{Store: store, Cache: aside, Log: log, Artifacts: agentArtifacts(os.Getenv("ALERTFLOW_AGENT_GRPC_TARGET"))}}
+	apiServer := &systemapi.Server{API: &api.Server{Store: store, Log: log, Artifacts: agentArtifacts(os.Getenv("ALERTFLOW_AGENT_GRPC_TARGET"))}}
 	systemv1.RegisterSystemApiServer(grpcServer, apiServer)
 	grpc_health_v1.RegisterHealthServer(grpcServer, apiServer)
 	agentv1.RegisterSystemGatewayServiceServer(grpcServer, &gateway.SystemServer{Store: store})

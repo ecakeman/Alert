@@ -169,7 +169,7 @@ func (s *Store) ApplyMonitorSample(ctx context.Context, sample MonitorSample) (A
 			out.CreatedEpisode = true
 		}
 		if ep == nil {
-			return nil
+			return s.noteViews(ctx, tx, sample.ServiceID)
 		}
 		open := nextMonitor == StatusAbnormal || (prevMonitor == StatusAbnormal && nextMonitor == StatusNormal)
 		var changedIDs []string
@@ -191,7 +191,7 @@ func (s *Store) ApplyMonitorSample(ctx context.Context, sample MonitorSample) (A
 		out.EpisodeID = ep.ID
 		out.EpisodeStatus = ep.Status
 		out.InputVersion = ep.InputVersion
-		return nil
+		return s.noteViews(ctx, tx, sample.ServiceID)
 	})
 	return out, err
 }
@@ -268,7 +268,10 @@ func (s *Store) ApplyAppEvent(ctx context.Context, serviceID uuid.UUID, ev AppEv
 			return err
 		}
 		result = EventResult{Status: status, Body: body}
-		return nil
+		if status != 200 {
+			return nil
+		}
+		return s.noteViews(ctx, tx, serviceID)
 	})
 	return result, err
 }

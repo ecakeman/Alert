@@ -6,8 +6,8 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/ecakeman/alertflow/services/system-core/internal/system"
 	agentv1 "github.com/ecakeman/alertflow/services/system-core/gen/agent/v1"
+	"github.com/ecakeman/alertflow/services/system-core/internal/system"
 	"github.com/google/uuid"
 	"github.com/segmentio/kafka-go"
 	"google.golang.org/grpc"
@@ -38,6 +38,34 @@ func RunPublisher(ctx context.Context, store *system.Store, brokers []string, to
 			})
 			if err != nil && log != nil {
 				log.Error("publish outbox", "err", err)
+			}
+		}
+	}
+}
+
+// RunRevisionPublisher 把资源版本事件发到独立 Topic。
+func RunRevisionPublisher(ctx context.Context, store *system.Store, brokers []string, topic string, log *slog.Logger) {
+	writer := &kafka.Writer{
+		Addr: kafka.TCP(brokers...), Topic: topic, Balancer: &kafka.Hash{},
+		RequiredAcks: kafka.RequireOne, AllowAutoTopicCreation: true,
+	}
+	defer writer.Close()
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			_, err := store.PublishByType(ctx, "RESOURCE_REVISION", 32, func(payload []byte) error {
+				var body struct {
+					ResourceID string `json:"resource_id"`
+				}
+				_ = json.Unmarshal(payload, &body)
+				return writer.WriteMessages(ctx, kafka.Message{Key: []byte(body.ResourceID), Value: payload})
+			})
+			if err != nil && log != nil {
+				log.Error("publish resource revision", "err", err)
 			}
 		}
 	}

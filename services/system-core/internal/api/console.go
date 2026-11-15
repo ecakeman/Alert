@@ -65,7 +65,6 @@ func (s *Server) deleteService(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
-	s.Cache.Delete(r.Context(), "service:"+id.String())
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -100,7 +99,6 @@ func (s *Server) createTarget(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
-	s.Cache.Delete(r.Context(), "service:"+id.String())
 	writeJSON(w, http.StatusCreated, target)
 }
 
@@ -114,12 +112,11 @@ func (s *Server) patchTarget(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
-	target, serviceID, err := s.Store.UpdateTarget(r.Context(), id, in)
+	target, _, err := s.Store.UpdateTarget(r.Context(), id, in)
 	if err != nil {
 		writeErr(w, err)
 		return
 	}
-	s.Cache.Delete(r.Context(), "service:"+serviceID.String())
 	writeJSON(w, http.StatusOK, target)
 }
 
@@ -128,12 +125,11 @@ func (s *Server) deleteTarget(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	serviceID, err := s.Store.SoftDeleteTarget(r.Context(), id)
+	_, err := s.Store.SoftDeleteTarget(r.Context(), id)
 	if err != nil {
 		writeErr(w, err)
 		return
 	}
-	s.Cache.Delete(r.Context(), "service:"+serviceID.String())
 	w.WriteHeader(http.StatusNoContent)
 }
 

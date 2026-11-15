@@ -19,7 +19,7 @@ func (s *Store) PublishPending(ctx context.Context, limit int, send func(payload
 	defer tx.Rollback()
 	rows, err := tx.QueryContext(ctx, `
 		SELECT outbox_id, payload FROM system.outbox_events
-		WHERE published_at IS NULL AND next_retry_at <= $1
+		WHERE published_at IS NULL AND next_retry_at <= $1 AND event_type='AGENT_TASK_READY'
 		ORDER BY created_at
 		LIMIT $2
 		FOR UPDATE SKIP LOCKED`, s.now(), limit)

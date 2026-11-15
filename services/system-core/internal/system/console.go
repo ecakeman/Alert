@@ -148,7 +148,10 @@ func (s *Store) SoftDeleteService(ctx context.Context, id uuid.UUID) error {
 			UPDATE system.service_monitor_targets
 			SET enabled=FALSE, updated_at=$2
 			WHERE service_id=$1 AND deleted_at IS NULL`, id, now)
-		return err
+		if err != nil {
+			return err
+		}
+		return s.noteViews(ctx, tx, id)
 	})
 }
 
@@ -164,7 +167,7 @@ func (s *Store) CreateTarget(ctx context.Context, serviceID uuid.UUID, in Target
 			return err
 		}
 		tid = id
-		return nil
+		return s.noteViews(ctx, tx, serviceID)
 	})
 	if err != nil {
 		return Target{}, err
@@ -245,7 +248,10 @@ func (s *Store) UpdateTarget(ctx context.Context, targetID uuid.UUID, in PatchTa
 			WHERE target_id=$1 AND deleted_at IS NULL`,
 			targetID, t.TargetName, t.Address, t.Config, t.IntervalMS, t.TimeoutMS,
 			t.FailureThreshold, t.RecoveryThreshold, reqValue(t.Required), reqValue(t.Enabled), s.now())
-		return err
+		if err != nil {
+			return err
+		}
+		return s.noteViews(ctx, tx, serviceID)
 	})
 	if err != nil {
 		return Target{}, uuid.Nil, err
@@ -265,14 +271,20 @@ func reqValue(v *bool) bool {
 func (s *Store) SoftDeleteTarget(ctx context.Context, targetID uuid.UUID) (uuid.UUID, error) {
 	now := s.now()
 	var serviceID uuid.UUID
-	err := s.DB.QueryRowContext(ctx, `
-		UPDATE system.service_monitor_targets
-		SET deleted_at=$2, enabled=FALSE, updated_at=$2
-		WHERE target_id=$1 AND deleted_at IS NULL
-		RETURNING service_id`, targetID, now).Scan(&serviceID)
-	if err == sql.ErrNoRows {
-		return uuid.Nil, errCode("TARGET_NOT_FOUND", "target not found", 404)
-	}
+	err := s.withTx(ctx, func(tx *sql.Tx) error {
+		err := tx.QueryRowContext(ctx, `
+			UPDATE system.service_monitor_targets
+			SET deleted_at=$2, enabled=FALSE, updated_at=$2
+			WHERE target_id=$1 AND deleted_at IS NULL
+			RETURNING service_id`, targetID, now).Scan(&serviceID)
+		if err == sql.ErrNoRows {
+			return errCode("TARGET_NOT_FOUND", "target not found", 404)
+		}
+		if err != nil {
+			return err
+		}
+		return s.noteViews(ctx, tx, serviceID)
+	})
 	return serviceID, err
 }
 
