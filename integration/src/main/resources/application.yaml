@@ -4,21 +4,28 @@ server:
 spring:
   application:
     name: alertflow-integration
+  main:
+    # 关闭时等待在途 HTTP 请求完成，避免同步链被直接截断。
+    keep-alive: true
+  threads:
+    virtual:
+      # HTTP 请求处理、JdbcTemplate 阻塞调用由虚拟线程承载；不用 Executor 全局替换。
+      enabled: true
   datasource:
     url: ${INTEGRATION_DATABASE_URL:jdbc:postgresql://127.0.0.1:55433/alertflow?currentSchema=gateway}
     username: ${INTEGRATION_DATABASE_USER:gateway_app}
     password: ${INTEGRATION_DATABASE_PASSWORD:gateway}
+    hikari:
+      # 显式固定连接池上限，避免依赖 Hikari 默认 10 的隐式行为。
+      maximum-pool-size: ${INTEGRATION_DB_POOL_MAX:10}
+      minimum-idle: 0
+      # 连接获取是整个请求预算的一部分，等待应短于对外调用超时；不是 SQL 执行超时。
+      connection-timeout: ${INTEGRATION_DB_CONNECTION_TIMEOUT_MS:3000}
   flyway:
     enabled: true
     create-schemas: true
     schemas: gateway
     default-schema: gateway
-  ai:
-    mcp:
-      server:
-        enabled: false
-      client:
-        enabled: false
 
 management:
   endpoints:

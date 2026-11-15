@@ -174,6 +174,5 @@ class BridgeAndInvocationTest {
     void lockedDependenciesArePresent() throws Exception {
         Class.forName("org.a2aproject.sdk.client.Client");
         Class.forName("com.alibaba.nacos.api.NacosFactory");
-        Class.forName("org.springframework.ai.mcp.server.common.autoconfigure.McpServerAutoConfiguration");
     }
 }

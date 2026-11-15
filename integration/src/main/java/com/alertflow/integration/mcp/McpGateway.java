@@ -1,26 +1,20 @@
 package com.alertflow.integration.mcp;
 
-import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.HexFormat;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
-import org.springframework.web.reactive.function.server.RouterFunction;
-import org.springframework.web.reactive.function.server.RouterFunctions;
-import org.springframework.web.reactive.function.server.ServerRequest;
-import org.springframework.web.reactive.function.server.ServerResponse;
-import reactor.core.publisher.Mono;
 
+// 同步 JSON-RPC 网关：不再依赖 WebFlux，HTTP 适配在 McpController。
 @Component
 public class McpGateway {
     static final Set<String> SUPPORTED = Set.of("2025-11-25", "2025-06-18", "2025-03-26");
@@ -33,25 +27,18 @@ public class McpGateway {
         this.clients = clients;
     }
 
-    public RouterFunction<ServerResponse> routes() {
-        return RouterFunctions.route()
-                .POST("/mcp", this::handle)
-                .build();
-    }
-
-    public Mono<ServerResponse> handle(ServerRequest request) {
-        return request.bodyToMono(String.class).defaultIfEmpty("").flatMap(body -> {
-            try {
-                return ServerResponse.ok().contentType(MediaType.APPLICATION_JSON).bodyValue(dispatch(request.headers().firstHeader("authorization"), body));
-            } catch (Exception error) {
-                return ServerResponse.status(401).contentType(MediaType.APPLICATION_JSON).bodyValue("{\"error\":\"" + error.getMessage() + "\"}");
-            }
-        });
-    }
-
     public String dispatch(String authorization, String body) throws Exception {
-        JsonNode rpc = json.readTree(body);
+        JsonNode rpc;
+        try {
+            rpc = json.readTree(body == null ? "" : body);
+        } catch (JsonProcessingException error) {
+            throw new McpBadRequestException("request body is not valid JSON");
+        }
+        if (rpc == null || !rpc.isObject()) {
+            throw new McpBadRequestException("request body must be a JSON object");
+        }
         if (!rpc.has("id")) {
+            // JSON-RPC 通知：没有响应体。
             return "";
         }
         String method = rpc.path("method").asText();
@@ -61,7 +48,7 @@ public class McpGateway {
         if ("initialize".equals(method)) {
             String version = rpc.path("params").path("protocolVersion").asText();
             if (!SUPPORTED.contains(version)) {
-                response.set("error", error( -32602, "unsupported protocol version " + SUPPORTED));
+                response.set("error", error(-32602, "unsupported protocol version " + SUPPORTED));
                 return json.writeValueAsString(response);
             }
             ObjectNode result = response.putObject("result");
@@ -70,6 +57,7 @@ public class McpGateway {
             result.putObject("serverInfo").put("name", "alertflow-integration").put("version", "0.1.0");
             return json.writeValueAsString(response);
         }
+        // 除 initialize 外都必须先通过身份认证；失败抛 McpAuthException / McpInfrastructureException。
         String agent = policy.agentFor(authorization);
         if ("tools/list".equals(method)) {
             ObjectNode result = response.putObject("result");
@@ -98,6 +86,9 @@ public class McpGateway {
                 ObjectNode result = response.putObject("result");
                 result.putArray("content").addObject().put("type", "text").put("text", text);
                 result.put("isError", false);
+            } catch (McpClientManager.ProviderBusyException busy) {
+                // 与“Provider 不可用”区分，调用方可以据此重试。
+                response.set("error", error(-32003, "provider busy"));
             } catch (Exception error) {
                 response.set("error", error(-32002, "provider unavailable"));
             }
@@ -118,15 +109,7 @@ public class McpGateway {
         return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8)));
     }
 
-    public Map<String, Object> empty() {
-        return new LinkedHashMap<>();
-    }
-
     public List<String> supported() {
         return new ArrayList<>(SUPPORTED);
-    }
-
-    public void ignore(IOException error) {
-        throw new IllegalStateException(error);
     }
 }

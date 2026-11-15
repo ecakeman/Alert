@@ -7,6 +7,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
+import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
@@ -37,9 +38,10 @@ public class McpPolicy {
         grants.add(agent + "\n" + provider + "\n" + tool);
     }
 
+    // 缺 Token / Token 未知：认证失败（401），与策略库故障严格区分。
     public String agentFor(String authorization) {
         if (authorization == null || !authorization.startsWith("Bearer ")) {
-            throw new IllegalStateException("missing bearer token");
+            throw new McpAuthException("missing bearer token");
         }
         String token = authorization.substring("Bearer ".length());
         String agent = tokenToAgent.get(token);
@@ -47,17 +49,20 @@ public class McpPolicy {
             return agent;
         }
         if (jdbc == null) {
-            throw new IllegalStateException("unknown principal");
+            throw new McpAuthException("unknown principal");
         }
         try {
             String hash = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(token.getBytes(StandardCharsets.UTF_8)));
             return jdbc.query("SELECT agent_id FROM agent_principals WHERE credential_hash=? AND enabled",
                     (rs, n) -> rs.getString(1), hash).stream().findFirst()
-                    .orElseThrow(() -> new IllegalStateException("unknown principal"));
-        } catch (IllegalStateException error) {
+                    .orElseThrow(() -> new McpAuthException("unknown principal"));
+        } catch (McpAuthException error) {
             throw error;
+        } catch (DataAccessException error) {
+            // 策略库不可用属于基础设施故障：不能降级为 401。
+            throw new McpInfrastructureException("mcp policy store unavailable", error);
         } catch (Exception error) {
-            throw new IllegalStateException("unknown principal");
+            throw new McpInfrastructureException("mcp policy check failed", error);
         }
     }
 
@@ -74,8 +79,9 @@ public class McpPolicy {
                     WHERE agent_id=? AND provider_id=? AND tool_name=? AND enabled
                     """, Integer.class, agent, provider, tool);
             return count != null && count > 0;
-        } catch (Exception error) {
-            return false;
+        } catch (DataAccessException error) {
+            // 无法判断是否授权时不能用“拒绝”掩盖数据库故障。
+            throw new McpInfrastructureException("mcp permission store unavailable", error);
         }
     }
 }
