@@ -44,7 +44,6 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/services/{service_id}/events", s.postEvent)
 	mux.HandleFunc("GET /api/v1/episodes/{episode_id}", s.getEpisode)
 	mux.HandleFunc("GET /api/v1/episodes/{episode_id}/timeline", s.episodeTimeline)
-	mux.HandleFunc("GET /api/v1/episodes/{episode_id}/artifacts", s.artifacts)
 	mux.HandleFunc("POST /api/v1/episodes/{episode_id}/retry-diagnosis", s.retryDiagnosis)
 	mux.HandleFunc("POST /api/v1/episodes/{episode_id}/retry-archive", s.retryArchive)
 	return s.wrap(mux)
@@ -207,24 +206,6 @@ func (s *Server) episodeTimeline(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	body, err := s.Store.EpisodeTimeline(r.Context(), id)
-	if err != nil {
-		writeErr(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, body)
-}
-
-func (s *Server) artifacts(w http.ResponseWriter, r *http.Request) {
-	if s.Artifacts == nil {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error_code": "AGENT_UNAVAILABLE", "message": "artifact service is not configured"})
-		return
-	}
-	id, err := uuid.Parse(r.PathValue("episode_id"))
-	if err != nil {
-		writeJSON(w, 400, map[string]string{"error_code": "VALIDATION", "message": "invalid episode_id"})
-		return
-	}
-	body, err := s.Artifacts.GetArtifact(r, id, r.URL.Query().Get("type"))
 	if err != nil {
 		writeErr(w, err)
 		return

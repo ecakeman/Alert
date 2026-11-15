@@ -59,7 +59,7 @@ func errBody(t *testing.T, rec *httptest.ResponseRecorder) map[string]string {
 func TestRoutesAndMethodNotAllowed(t *testing.T) {
 	h := testAPI(t).Handler()
 	routes := []struct{ method, path string }{
-		{http.MethodGet, "/healthz"},
+		{http.MethodGet, "/readyz"},
 		{http.MethodPost, "/api/v1/services"},
 		{http.MethodGet, "/api/v1/services/" + uuid.NewString()},
 		{http.MethodPatch, "/api/v1/services/" + uuid.NewString()},
@@ -67,7 +67,6 @@ func TestRoutesAndMethodNotAllowed(t *testing.T) {
 		{http.MethodPost, "/api/v1/services/" + uuid.NewString() + "/events"},
 		{http.MethodGet, "/api/v1/episodes/" + uuid.NewString()},
 		{http.MethodGet, "/api/v1/episodes/" + uuid.NewString() + "/timeline"},
-		{http.MethodGet, "/api/v1/episodes/" + uuid.NewString() + "/artifacts"},
 		{http.MethodPost, "/api/v1/episodes/" + uuid.NewString() + "/retry-diagnosis"},
 		{http.MethodPost, "/api/v1/episodes/" + uuid.NewString() + "/retry-archive"},
 	}
@@ -77,14 +76,14 @@ func TestRoutesAndMethodNotAllowed(t *testing.T) {
 			t.Fatalf("%s %s was not matched", route.method, route.path)
 		}
 	}
-	rec := do(t, h, http.MethodDelete, "/healthz", "")
+	rec := do(t, h, http.MethodDelete, "/readyz", "")
 	if rec.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("method mismatch = %d", rec.Code)
 	}
-	if got := do(t, h, http.MethodGet, "/healthz", ""); got.Header().Get("X-Request-ID") == "" {
+	if got := do(t, h, http.MethodGet, "/readyz", ""); got.Header().Get("X-Request-ID") == "" {
 		t.Fatal("missing generated request id")
 	}
-	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
 	req.Header.Set("X-Request-ID", "req-fixed")
 	got := httptest.NewRecorder()
 	h.ServeHTTP(got, req)
@@ -144,22 +143,6 @@ func TestValidationErrors(t *testing.T) {
 	if rec := do(t, h, http.MethodPost, "/api/v1/episodes/"+missing+"/retry-archive", ""); errBody(t, rec)["message"] == "" {
 		t.Fatal("retry archive has no message")
 	}
-	if rec := do(t, h, http.MethodGet, "/api/v1/episodes/"+missing+"/artifacts", ""); rec.Code != http.StatusServiceUnavailable || errBody(t, rec)["error_code"] != "AGENT_UNAVAILABLE" {
-		t.Fatalf("artifact %d %s", rec.Code, rec.Body.String())
-	}
-	srv.Artifacts = artifactStub{}
-	h = srv.Handler()
-	rec := do(t, h, http.MethodGet, "/api/v1/episodes/"+missing+"/artifacts?type=DIAGNOSIS_REPORT", "")
-	if rec.Code != http.StatusOK {
-		t.Fatalf("artifact ok %d %s", rec.Code, rec.Body.String())
-	}
-	var artifact map[string]any
-	if err := json.Unmarshal(rec.Body.Bytes(), &artifact); err != nil {
-		t.Fatal(err)
-	}
-	if artifact["content_text"] != "investigation" {
-		t.Fatalf("artifact = %#v", artifact)
-	}
 }
 
 func TestEventBodyLimit(t *testing.T) {
@@ -175,10 +158,4 @@ func TestEventBodyLimit(t *testing.T) {
 	if rec.Code != 400 || errBody(t, rec)["message"] != "invalid json" {
 		t.Fatalf("oversize %d %s", rec.Code, rec.Body.String())
 	}
-}
-
-type artifactStub struct{}
-
-func (artifactStub) GetArtifact(*http.Request, uuid.UUID, string) (any, error) {
-	return map[string]any{"content_text": "investigation"}, nil
 }

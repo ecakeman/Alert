@@ -152,6 +152,26 @@ public class GrpcBridge implements AutoCloseable {
         return Context.current().getDeadline() != null ? stub : stub.withDeadline(budget);
     }
 
+    public AgentExecutionServiceGrpc.AgentExecutionServiceBlockingStub pythonExecution() {
+        Deadline budget = callBudget(pythonDefaultMillis);
+        AgentExecutionServiceGrpc.AgentExecutionServiceBlockingStub stub =
+                AgentExecutionServiceGrpc.newBlockingStub(python);
+        return Context.current().getDeadline() != null ? stub : stub.withDeadline(budget);
+    }
+
+    public <T> T callPython(Callable<T> call) throws Exception {
+        Deadline budget = callBudget(pythonDefaultMillis);
+        long waitMillis = Math.max(1, budget.timeRemaining(TimeUnit.MILLISECONDS));
+        if (!pythonPermits.tryAcquire(waitMillis, TimeUnit.MILLISECONDS)) {
+            throw Status.RESOURCE_EXHAUSTED.withDescription("in-flight limit reached").asRuntimeException();
+        }
+        try {
+            return call.call();
+        } finally {
+            pythonPermits.release();
+        }
+    }
+
     public <T> T callGo(Callable<T> call) throws Exception {
         Deadline budget = callBudget(goDefaultMillis);
         long waitMillis = Math.max(1, budget.timeRemaining(TimeUnit.MILLISECONDS));

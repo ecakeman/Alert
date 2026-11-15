@@ -2,7 +2,15 @@ package com.alertflow.integration.api;
 
 import java.nio.charset.StandardCharsets;
 
+import java.util.LinkedHashMap;
+import java.util.Map;
+
+import com.alertflow.gen.agent.v1.ArtifactType;
+import com.alertflow.gen.agent.v1.GetArtifactRequest;
 import com.alertflow.gen.system.v1.JsonCall;
+import com.google.protobuf.Struct;
+import com.google.protobuf.Value;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.alertflow.gen.system.v1.JsonResult;
 import com.alertflow.gen.system.v1.ReadyRequest;
 import com.alertflow.integration.bridge.GrpcBridge;
@@ -113,9 +121,36 @@ public class PublicApiController {
     }
 
     @GetMapping("/api/v1/episodes/{episodeId}/artifacts")
-    public ResponseEntity<String> artifacts() {
-        return ResponseEntity.status(503).contentType(MediaType.APPLICATION_JSON)
-                .body("{\"error_code\":\"AGENT_UNAVAILABLE\",\"message\":\"artifact service is not configured\"}");
+    public ResponseEntity<String> artifacts(HttpServletRequest request, @PathVariable String episodeId) {
+        ArtifactType kind = "DIAGNOSIS_REPORT".equalsIgnoreCase(request.getParameter("type"))
+                ? ArtifactType.ARTIFACT_TYPE_DIAGNOSIS_REPORT
+                : ArtifactType.ARTIFACT_TYPE_INVESTIGATION;
+        try {
+            return bridge.callPython(() -> {
+                var response = bridge.pythonExecution().getArtifact(GetArtifactRequest.newBuilder()
+                        .setEpisodeId(episodeId)
+                        .setArtifactType(kind)
+                        .build());
+                Map<String, Object> body = new LinkedHashMap<>();
+                body.put("artifact_type", response.getArtifactType().name());
+                body.put("version", response.getVersion());
+                body.put("content_type", response.getContentType());
+                body.put("content_text", response.getContentText());
+                body.put("content_json", structMap(response.getContentJson()));
+                body.put("content_hash", response.getContentHash());
+                return ResponseEntity.ok().contentType(MediaType.APPLICATION_JSON)
+                        .body(new ObjectMapper().writeValueAsString(body));
+            });
+        } catch (StatusRuntimeException error) {
+            if (error.getStatus().getCode() == Status.Code.UNAVAILABLE) {
+                return ResponseEntity.status(503).contentType(MediaType.APPLICATION_JSON)
+                        .body("{\"error_code\":\"AGENT_UNAVAILABLE\",\"message\":\"artifact service is not configured\"}");
+            }
+            return status(error.getStatus());
+        } catch (Exception error) {
+            return ResponseEntity.status(503).contentType(MediaType.APPLICATION_JSON)
+                    .body("{\"error_code\":\"AGENT_UNAVAILABLE\",\"message\":\"artifact service is not configured\"}");
+        }
     }
 
     @PostMapping("/api/v1/episodes/{episodeId}/retry-diagnosis")
@@ -161,6 +196,24 @@ public class PublicApiController {
             builder.setBody(body);
         }
         return builder.build();
+    }
+
+    private static Map<String, Object> structMap(Struct struct) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        struct.getFieldsMap().forEach((key, value) -> out.put(key, structValue(value)));
+        return out;
+    }
+
+    private static Object structValue(Value value) {
+        return switch (value.getKindCase()) {
+            case NULL_VALUE -> null;
+            case NUMBER_VALUE -> value.getNumberValue();
+            case STRING_VALUE -> value.getStringValue();
+            case BOOL_VALUE -> value.getBoolValue();
+            case STRUCT_VALUE -> structMap(value.getStructValue());
+            case LIST_VALUE -> value.getListValue().getValuesList().stream().map(PublicApiController::structValue).toList();
+            default -> null;
+        };
     }
 
     private static ResponseEntity<String> status(Status status) {
