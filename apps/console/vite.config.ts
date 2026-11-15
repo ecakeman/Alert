@@ -1,7 +1,7 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 
-// 开发环境将 /api 代理到本地 Go Backend（compose 中映射到宿主 18080）
+// 开发环境将 /api 代理到宿主机上的 Java 公开 API（compose 映射 18080）。
 export default defineConfig({
   plugins: [vue()],
   server: {
