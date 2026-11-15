@@ -70,14 +70,14 @@ PostgreSQL 保存业务事实；Redis 仅用于查询缓存；Kafka 传递任务
 需要 Docker Engine 与 Docker Compose。仓库根目录执行：
 
 ```bash
-cp deploy/.env.example deploy/.env
+cp deploy/compose/.env.example deploy/compose/.env
 # 需要真实模型诊断时，填写 deploy/.env 中的 ALERTFLOW_LLM_API_KEY
 
 docker compose -f deploy/compose/compose.yaml up -d --build
 ```
 
 控制台：<http://127.0.0.1:13000>  
-Go API：<http://127.0.0.1:18080/api/v1>
+公开 API：<http://127.0.0.1:18080/api/v1>
 
 不配置模型 Key 时，采样、Episode 和任务链路仍可运行，但 Agent 使用 ScriptedModel 产生脚本化结果；这不代表真实模型诊断。Knowledge Agent 默认不启动，需要时使用 `--profile knowledge`，并配置对应 A2A Token。
 

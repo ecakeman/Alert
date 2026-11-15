@@ -1,10 +1,11 @@
 #!/bin/sh
 set -eu
 export PGPASSWORD="${POSTGRES_PASSWORD}"
-psql -h postgres -U "${POSTGRES_USER}" -d postgres -v ON_ERROR_STOP=1 <<'SQL'
-SELECT format('CREATE ROLE gateway_app LOGIN PASSWORD %L', 'gateway')
+psql -h postgres -U "${POSTGRES_USER}" -d postgres -v ON_ERROR_STOP=1 \
+  -v gateway_password="${GATEWAY_PASSWORD}" -v knowledge_password="${KNOWLEDGE_PASSWORD}" <<'SQL'
+SELECT format('CREATE ROLE gateway_app LOGIN PASSWORD %L', :'gateway_password')
 WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'gateway_app')\gexec
-SELECT format('CREATE ROLE knowledge_app LOGIN PASSWORD %L', 'knowledge')
+SELECT format('CREATE ROLE knowledge_app LOGIN PASSWORD %L', :'knowledge_password')
 WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'knowledge_app')\gexec
 SELECT 'CREATE DATABASE knowledge OWNER knowledge_app'
 WHERE NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = 'knowledge')\gexec

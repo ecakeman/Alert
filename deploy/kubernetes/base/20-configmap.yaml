@@ -18,7 +18,7 @@ metadata:
     app.kubernetes.io/name: alertflow
     app.kubernetes.io/component: backend
 data:
-  ALERTFLOW_HTTP_ADDR: ":8080"
+  ALERTFLOW_GRPC_ADDR: ":9090"
   ALERTFLOW_GRPC_ADDR: ":9090"
   ALERTFLOW_KAFKA_TOPIC: "alertflow.agent-task-ready.v1"
   # Go 访问 Java Integration gRPC，再由 Java 转到 Python Agent。
@@ -54,7 +54,7 @@ data:
   # 本期没有外部 MCP upstream，留空即可；运行时仍可通过 MCP API 动态注册。
   INTEGRATION_MCP_UPSTREAMS: ""
   # Java 侧到 Go / Python 的 gRPC 目标（容器内默认值指向 127.0.0.1，必须显式覆盖）。
-  INTEGRATION_GO_GRPC_TARGET: "alertflow:9090"
+  INTEGRATION_GO_GRPC_TARGET: "system-core:9090"
   INTEGRATION_PYTHON_GRPC_TARGET: "agent:9000"
   JAVA_TOOL_OPTIONS: "-Xms128m -Xmx512m"
 ---

@@ -15,6 +15,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR/compose"
 
 RUN_ID="$(date +%s)-$$"
+export COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-alertflow-e2e-$RUN_ID}"
 API_URL="http://127.0.0.1:18080"
 
 fail() {
