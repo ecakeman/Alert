@@ -26,6 +26,7 @@ import com.alertflow.gen.agent.v1.SubmitTaskResponse;
 import com.alertflow.gen.agent.v1.SystemGatewayServiceGrpc;
 import com.alertflow.gen.agent.v1.TaskAck;
 import com.alertflow.gen.integration.v1.AgentInvocationServiceGrpc;
+import com.alertflow.gen.system.v1.SystemApiGrpc;
 import com.alertflow.gen.integration.v1.InvokeAgentRequest;
 import com.alertflow.gen.integration.v1.InvokeAgentResponse;
 import com.alertflow.integration.agent.InvocationService;
@@ -143,6 +144,25 @@ public class GrpcBridge implements AutoCloseable {
 
     public int port() {
         return port;
+    }
+
+    public SystemApiGrpc.SystemApiBlockingStub systemApi() {
+        Deadline budget = callBudget(goDefaultMillis);
+        SystemApiGrpc.SystemApiBlockingStub stub = SystemApiGrpc.newBlockingStub(go);
+        return Context.current().getDeadline() != null ? stub : stub.withDeadline(budget);
+    }
+
+    public <T> T callGo(Callable<T> call) throws Exception {
+        Deadline budget = callBudget(goDefaultMillis);
+        long waitMillis = Math.max(1, budget.timeRemaining(TimeUnit.MILLISECONDS));
+        if (!goPermits.tryAcquire(waitMillis, TimeUnit.MILLISECONDS)) {
+            throw Status.RESOURCE_EXHAUSTED.withDescription("in-flight limit reached").asRuntimeException();
+        }
+        try {
+            return call.call();
+        } finally {
+            goPermits.release();
+        }
     }
 
     // 在途许可等待与 RPC 本身共享同一份预算，避免“排队时间不计入超时”。

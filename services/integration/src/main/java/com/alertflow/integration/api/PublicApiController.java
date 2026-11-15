@@ -1,0 +1,181 @@
+package com.alertflow.integration.api;
+
+import java.nio.charset.StandardCharsets;
+
+import com.alertflow.gen.system.v1.JsonCall;
+import com.alertflow.gen.system.v1.JsonResult;
+import com.alertflow.gen.system.v1.ReadyRequest;
+import com.alertflow.integration.bridge.GrpcBridge;
+import io.grpc.Status;
+import io.grpc.StatusRuntimeException;
+import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RestController;
+
+@RestController
+public class PublicApiController {
+    private final GrpcBridge bridge;
+
+    public PublicApiController(GrpcBridge bridge) {
+        this.bridge = bridge;
+    }
+
+    @GetMapping("/readyz")
+    public ResponseEntity<String> ready() {
+        return call(() -> {
+            var ready = bridge.systemApi().ready(ReadyRequest.getDefaultInstance());
+            int status = "ok".equals(ready.getStatus()) ? 200 : 503;
+            String body = status == 200 ? "{\"status\":\"ok\"}" : "{\"status\":\"unavailable\",\"database\":\"down\"}";
+            return ResponseEntity.status(status).contentType(MediaType.APPLICATION_JSON).body(body);
+        });
+    }
+
+    @GetMapping("/api/v1/dashboard/summary")
+    public ResponseEntity<String> dashboard(HttpServletRequest request) {
+        return call(() -> json(bridge.systemApi().dashboard(jsonCall(request, null, ""))));
+    }
+
+    @GetMapping("/api/v1/services")
+    public ResponseEntity<String> listServices(HttpServletRequest request) {
+        return call(() -> json(bridge.systemApi().listServices(jsonCall(request, null, ""))));
+    }
+
+    @PostMapping("/api/v1/services")
+    public ResponseEntity<String> createService(HttpServletRequest request, @RequestBody(required = false) byte[] body) {
+        return call(() -> json(bridge.systemApi().createService(jsonCall(request, null, body))));
+    }
+
+    @GetMapping("/api/v1/services/{serviceId}")
+    public ResponseEntity<String> getService(HttpServletRequest request, @PathVariable String serviceId) {
+        return call(() -> json(bridge.systemApi().getService(jsonCall(request, serviceId, ""))));
+    }
+
+    @PatchMapping("/api/v1/services/{serviceId}")
+    public ResponseEntity<String> patchService(HttpServletRequest request, @PathVariable String serviceId, @RequestBody(required = false) byte[] body) {
+        return call(() -> json(bridge.systemApi().patchService(jsonCall(request, serviceId, body))));
+    }
+
+    @DeleteMapping("/api/v1/services/{serviceId}")
+    public ResponseEntity<String> deleteService(HttpServletRequest request, @PathVariable String serviceId) {
+        return call(() -> json(bridge.systemApi().deleteService(jsonCall(request, serviceId, ""))));
+    }
+
+    @GetMapping("/api/v1/services/{serviceId}/targets")
+    public ResponseEntity<String> listTargets(HttpServletRequest request, @PathVariable String serviceId) {
+        return call(() -> json(bridge.systemApi().listTargets(jsonCall(request, serviceId, ""))));
+    }
+
+    @PostMapping("/api/v1/services/{serviceId}/targets")
+    public ResponseEntity<String> createTarget(HttpServletRequest request, @PathVariable String serviceId, @RequestBody(required = false) byte[] body) {
+        return call(() -> json(bridge.systemApi().createTarget(jsonCall(request, serviceId, body))));
+    }
+
+    @PatchMapping("/api/v1/targets/{targetId}")
+    public ResponseEntity<String> patchTarget(HttpServletRequest request, @PathVariable String targetId, @RequestBody(required = false) byte[] body) {
+        return call(() -> json(bridge.systemApi().patchTarget(jsonCall(request, targetId, body))));
+    }
+
+    @DeleteMapping("/api/v1/targets/{targetId}")
+    public ResponseEntity<String> deleteTarget(HttpServletRequest request, @PathVariable String targetId) {
+        return call(() -> json(bridge.systemApi().deleteTarget(jsonCall(request, targetId, ""))));
+    }
+
+    @GetMapping("/api/v1/episodes")
+    public ResponseEntity<String> listEpisodes(HttpServletRequest request) {
+        return call(() -> json(bridge.systemApi().listEpisodes(jsonCall(request, null, ""))));
+    }
+
+    @GetMapping("/api/v1/services/{serviceId}/timeline")
+    public ResponseEntity<String> serviceTimeline(HttpServletRequest request, @PathVariable String serviceId) {
+        return call(() -> json(bridge.systemApi().serviceTimeline(jsonCall(request, serviceId, ""))));
+    }
+
+    @PostMapping("/api/v1/services/{serviceId}/events")
+    public ResponseEntity<String> postEvent(HttpServletRequest request, @PathVariable String serviceId, @RequestBody(required = false) byte[] body) {
+        return call(() -> json(bridge.systemApi().postEvent(jsonCall(request, serviceId, body))));
+    }
+
+    @GetMapping("/api/v1/episodes/{episodeId}")
+    public ResponseEntity<String> getEpisode(HttpServletRequest request, @PathVariable String episodeId) {
+        return call(() -> json(bridge.systemApi().getEpisode(jsonCall(request, episodeId, ""))));
+    }
+
+    @GetMapping("/api/v1/episodes/{episodeId}/timeline")
+    public ResponseEntity<String> episodeTimeline(HttpServletRequest request, @PathVariable String episodeId) {
+        return call(() -> json(bridge.systemApi().episodeTimeline(jsonCall(request, episodeId, ""))));
+    }
+
+    @GetMapping("/api/v1/episodes/{episodeId}/artifacts")
+    public ResponseEntity<String> artifacts() {
+        return ResponseEntity.status(503).contentType(MediaType.APPLICATION_JSON)
+                .body("{\"error_code\":\"AGENT_UNAVAILABLE\",\"message\":\"artifact service is not configured\"}");
+    }
+
+    @PostMapping("/api/v1/episodes/{episodeId}/retry-diagnosis")
+    public ResponseEntity<String> retryDiagnosis(HttpServletRequest request, @PathVariable String episodeId, @RequestBody(required = false) byte[] body) {
+        return call(() -> json(bridge.systemApi().retryDiagnosis(jsonCall(request, episodeId, body))));
+    }
+
+    @PostMapping("/api/v1/episodes/{episodeId}/retry-archive")
+    public ResponseEntity<String> retryArchive(HttpServletRequest request, @PathVariable String episodeId, @RequestBody(required = false) byte[] body) {
+        return call(() -> json(bridge.systemApi().retryArchive(jsonCall(request, episodeId, body))));
+    }
+
+    private ResponseEntity<String> call(java.util.concurrent.Callable<ResponseEntity<String>> action) {
+        try {
+            return bridge.callGo(action);
+        } catch (StatusRuntimeException error) {
+            return status(error.getStatus());
+        } catch (Exception error) {
+            return status(Status.INTERNAL.withDescription(error.getMessage()));
+        }
+    }
+
+    private static ResponseEntity<String> json(JsonResult result) {
+        if (result.getHttpStatus() == 204) {
+            return ResponseEntity.noContent().build();
+        }
+        return ResponseEntity.status(result.getHttpStatus()).contentType(MediaType.APPLICATION_JSON).body(result.getBody());
+    }
+
+    private static JsonCall jsonCall(HttpServletRequest request, String id, byte[] body) {
+        return jsonCall(request, id, body == null ? "" : new String(body, StandardCharsets.UTF_8));
+    }
+
+    private static JsonCall jsonCall(HttpServletRequest request, String id, String body) {
+        JsonCall.Builder builder = JsonCall.newBuilder();
+        if (id != null) {
+            builder.setId(id);
+        }
+        if (request.getQueryString() != null) {
+            builder.setQuery(request.getQueryString());
+        }
+        if (body != null) {
+            builder.setBody(body);
+        }
+        return builder.build();
+    }
+
+    private static ResponseEntity<String> status(Status status) {
+        int http = switch (status.getCode()) {
+            case INVALID_ARGUMENT -> 400;
+            case NOT_FOUND -> 404;
+            case ALREADY_EXISTS, FAILED_PRECONDITION -> 409;
+            case RESOURCE_EXHAUSTED -> 429;
+            case DEADLINE_EXCEEDED -> 504;
+            case UNAVAILABLE -> 503;
+            default -> 502;
+        };
+        String code = status.getCode().name();
+        String message = status.getDescription() == null ? code : status.getDescription();
+        return ResponseEntity.status(http).contentType(MediaType.APPLICATION_JSON)
+                .body("{\"error_code\":\"" + code + "\",\"message\":\"" + message.replace("\"", "'") + "\"}");
+    }
+}
