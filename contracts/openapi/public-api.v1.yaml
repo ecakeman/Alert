@@ -1,0 +1,106 @@
+openapi: 3.0.3
+info:
+  title: AlertFlow public API
+  version: 1.0.0
+  description: 本轮 Java 公开的现有路径。字段仍以当前 JSON 为准。
+paths:
+  /readyz:
+    get:
+      responses:
+        "200":
+          description: ready
+        "503":
+          description: not ready
+  /api/v1/dashboard/summary:
+    get:
+      responses:
+        "200":
+          description: summary
+  /api/v1/services:
+    get:
+      responses:
+        "200":
+          description: list
+    post:
+      responses:
+        "201":
+          description: created
+        "400":
+          description: invalid
+  /api/v1/services/{service_id}:
+    get:
+      responses:
+        "200":
+          description: service
+        "404":
+          description: missing
+    patch:
+      responses:
+        "200":
+          description: updated
+    delete:
+      responses:
+        "204":
+          description: deleted
+  /api/v1/services/{service_id}/targets:
+    get:
+      responses:
+        "200":
+          description: targets
+    post:
+      responses:
+        "201":
+          description: created
+  /api/v1/targets/{target_id}:
+    patch:
+      responses:
+        "200":
+          description: updated
+    delete:
+      responses:
+        "204":
+          description: deleted
+  /api/v1/episodes:
+    get:
+      responses:
+        "200":
+          description: episodes
+  /api/v1/services/{service_id}/timeline:
+    get:
+      responses:
+        "200":
+          description: timeline
+  /api/v1/services/{service_id}/events:
+    post:
+      responses:
+        "200":
+          description: accepted
+        "409":
+          description: conflict
+  /api/v1/episodes/{episode_id}:
+    get:
+      responses:
+        "200":
+          description: episode
+  /api/v1/episodes/{episode_id}/timeline:
+    get:
+      responses:
+        "200":
+          description: timeline
+  /api/v1/episodes/{episode_id}/artifacts:
+    get:
+      responses:
+        "200":
+          description: artifact
+        "503":
+          description: artifact source unavailable
+  /api/v1/episodes/{episode_id}/retry-diagnosis:
+    post:
+      responses:
+        "202":
+          description: queued
+  /api/v1/episodes/{episode_id}/retry-archive:
+    post:
+      responses:
+        "202":
+          description: queued

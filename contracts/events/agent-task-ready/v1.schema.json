@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "alertflow.agent-task-ready.v1",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["task_id", "episode_id", "execution_generation"],
+  "properties": {
+    "task_id": { "type": "string" },
+    "episode_id": { "type": "string" },
+    "execution_generation": { "type": "integer" }
+  }
+}

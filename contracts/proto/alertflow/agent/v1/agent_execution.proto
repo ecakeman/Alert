@@ -1,0 +1,72 @@
+syntax = "proto3";
+
+package alertflow.agent.v1;
+
+option go_package = "github.com/ecakeman/alertflow/services/system-core/gen/agent/v1;agentv1";
+option java_multiple_files = true;
+option java_package = "com.alertflow.gen.agent.v1";
+option java_outer_classname = "AgentExecutionProto";
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/struct.proto";
+
+// Java 调用 Python 执行任务，并直接读取产物。
+service AgentExecutionService {
+  rpc SubmitTask(SubmitTaskRequest) returns (SubmitTaskResponse);
+  rpc GetArtifact(GetArtifactRequest) returns (GetArtifactResponse);
+}
+
+enum AgentTaskType {
+  AGENT_TASK_TYPE_UNSPECIFIED = 0;
+  AGENT_TASK_TYPE_DIAGNOSIS = 1;
+  AGENT_TASK_TYPE_ARCHIVE = 2;
+}
+
+enum ArtifactType {
+  ARTIFACT_TYPE_UNSPECIFIED = 0;
+  ARTIFACT_TYPE_INVESTIGATION = 1;
+  ARTIFACT_TYPE_DIAGNOSIS_REPORT = 2;
+}
+
+message InputVersionNotice {
+  int64 input_version = 1;
+  string input_hash = 2;
+  repeated string changed_monitor_point_ids = 3;
+  repeated string changed_app_event_ids = 4;
+  google.protobuf.Timestamp created_at = 5;
+}
+
+message SubmitTaskRequest {
+  string task_id = 1;
+  string episode_id = 2;
+  AgentTaskType task_type = 3;
+  int64 input_version_from = 4;
+  int64 input_version_to = 5;
+  int64 final_input_version = 6;
+  int64 execution_generation = 7;
+  int32 schema_version = 8;
+  repeated InputVersionNotice notifications = 9;
+}
+
+message SubmitTaskResponse {
+  bool accepted = 1;
+  bool duplicate = 2;
+  string task_id = 3;
+  string receipt_status = 4;
+  string message = 5;
+}
+
+message GetArtifactRequest {
+  string episode_id = 1;
+  ArtifactType artifact_type = 2;
+  int64 expected_version = 3;
+}
+
+message GetArtifactResponse {
+  ArtifactType artifact_type = 1;
+  int64 version = 2;
+  string content_type = 3;
+  string content_text = 4;
+  google.protobuf.Struct content_json = 5;
+  string content_hash = 6;
+}

@@ -1,0 +1,47 @@
+syntax = "proto3";
+
+package alertflow.system.v1;
+
+option go_package = "github.com/ecakeman/alertflow/services/system-core/gen/system/v1;systemv1";
+option java_multiple_files = true;
+option java_package = "com.alertflow.gen.system.v1";
+option java_outer_classname = "SystemApiProto";
+
+// Java 调用 Go 的系统业务。body 和 query 保持现有 HTTP JSON，不另造资源模型。
+service SystemApi {
+  rpc Ready(ReadyRequest) returns (ReadyResponse);
+  rpc Dashboard(JsonCall) returns (JsonResult);
+  rpc ListServices(JsonCall) returns (JsonResult);
+  rpc CreateService(JsonCall) returns (JsonResult);
+  rpc GetService(JsonCall) returns (JsonResult);
+  rpc PatchService(JsonCall) returns (JsonResult);
+  rpc DeleteService(JsonCall) returns (JsonResult);
+  rpc ListTargets(JsonCall) returns (JsonResult);
+  rpc CreateTarget(JsonCall) returns (JsonResult);
+  rpc PatchTarget(JsonCall) returns (JsonResult);
+  rpc DeleteTarget(JsonCall) returns (JsonResult);
+  rpc ListEpisodes(JsonCall) returns (JsonResult);
+  rpc ServiceTimeline(JsonCall) returns (JsonResult);
+  rpc PostEvent(JsonCall) returns (JsonResult);
+  rpc GetEpisode(JsonCall) returns (JsonResult);
+  rpc EpisodeTimeline(JsonCall) returns (JsonResult);
+  rpc RetryDiagnosis(JsonCall) returns (JsonResult);
+  rpc RetryArchive(JsonCall) returns (JsonResult);
+}
+
+message ReadyRequest {}
+
+message ReadyResponse {
+  string status = 1;
+}
+
+message JsonCall {
+  string id = 1;
+  string query = 2;
+  string body = 3;
+}
+
+message JsonResult {
+  int32 http_status = 1;
+  string body = 2;
+}

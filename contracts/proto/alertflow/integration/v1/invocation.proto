@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package alertflow.integration.v1;
 
-option go_package = "github.com/ecakeman/alertflow/gen/integration/v1;integrationv1";
+option go_package = "github.com/ecakeman/alertflow/services/system-core/gen/integration/v1;integrationv1";
 option java_multiple_files = true;
 option java_package = "com.alertflow.gen.integration.v1";
 option java_outer_classname = "InvocationProto";
