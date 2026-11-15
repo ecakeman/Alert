@@ -73,7 +73,7 @@ PostgreSQL 保存业务事实；Redis 仅用于查询缓存；Kafka 传递任务
 cp deploy/.env.example deploy/.env
 # 需要真实模型诊断时，填写 deploy/.env 中的 ALERTFLOW_LLM_API_KEY
 
-docker compose -f deploy/docker-compose.yml up -d --build
+docker compose -f deploy/compose/compose.yaml up -d --build
 ```
 
 控制台：<http://127.0.0.1:13000>  
@@ -84,7 +84,7 @@ Go API：<http://127.0.0.1:18080/api/v1>
 停止服务并保留数据库：
 
 ```bash
-docker compose -f deploy/docker-compose.yml down
+docker compose -f deploy/compose/compose.yaml down
 ```
 
 `down -v` 会删除数据库及知识库命名卷，请勿用于需要保留数据的环境。
@@ -116,18 +116,18 @@ curl -s -X POST http://127.0.0.1:18081/recover                          # 恢复
 
 Kubernetes 仅部署 Go、Java、Python 与前端应用。PostgreSQL、Kafka、Redis、Nacos 使用集群外部已有服务。应用为单副本；K8s 观察默认关闭，启用后 Go 使用 client-go 只读 Get Deployment / StatefulSet。
 
-完整镜像构建、Secret、RBAC、配置和部署命令见 [`deploy/k8s/README.md`](deploy/k8s/README.md)。Kubernetes 清单尚未在真实集群完成运行验证。
+完整镜像构建、Secret、RBAC、配置和部署命令见 [`deploy/kubernetes/README.md`](deploy/kubernetes/README.md)。Kubernetes 清单尚未在真实集群完成运行验证。
 
 ## 目录
 
 ```text
-backend/       Go 系统侧、监控与 API
-integration/   Java 集成侧
-agent/         Python 主诊断 Agent
-frontend/      Vue 运维控制台
-proto/         gRPC 协议
-deploy/        Compose、Dockerfile、演练脚本、Kubernetes 清单
-docs/          架构与工程说明
+services/system-core/   Go 系统侧
+services/integration/   Java 集成侧
+services/agent-runtime/ Python 主诊断 Agent
+apps/console/           Vue 运维控制台
+contracts/proto/        gRPC 协议
+deploy/compose/         Compose
+docs/                   架构与工程说明
 ```
 
 ## 当前范围与限制

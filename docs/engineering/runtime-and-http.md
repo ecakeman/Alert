@@ -4,7 +4,7 @@
 
 ## Gin
 
-Go 对外 HTTP 在 `backend/internal/api/server.go`。`Handler()` 返回 `gin.New()` 的 Engine，由 `backend/cmd/alertflow/main.go` 里的标准库 `http.Server` 监听。默认地址是 `:8080`，Compose 映射为宿主机 `18080`。
+Go 对外 HTTP 在 `services/system-core/internal/api/server.go`。`Handler()` 返回 `gin.New()` 的 Engine，由 `services/system-core/cmd/alertflow/main.go` 里的标准库 `http.Server` 监听。默认地址是 `:8080`，Compose 映射为宿主机 `18080`。
 
 路由如下：
 
@@ -209,7 +209,7 @@ curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:18081/health   # 200
 ```bash
 go test ./...
 cd agent && uv sync && .venv/bin/python -m pytest -q tests
-docker compose -f deploy/docker-compose.yml config
+docker compose -f deploy/compose/compose.yaml config
 deploy/e2e.sh
 ```
 

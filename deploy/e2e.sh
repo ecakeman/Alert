@@ -12,7 +12,7 @@
 # 依赖：docker compose、curl、python3（不使用 jq）。
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-cd "$SCRIPT_DIR"
+cd "$SCRIPT_DIR/compose"
 
 RUN_ID="$(date +%s)-$$"
 API_URL="http://127.0.0.1:18080"
