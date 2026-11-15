@@ -6,12 +6,10 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/ecakeman/alertflow/services/system-core/internal/cache"
 	"github.com/ecakeman/alertflow/services/system-core/internal/system"
-	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
 
@@ -20,7 +18,7 @@ type ArtifactSource interface {
 	GetArtifact(r *http.Request, episodeID uuid.UUID, artifactType string) (any, error)
 }
 
-// Server 是管理与应用上报的 HTTP 入口。
+// Server 保留现有 JSON 行为，供内部 gRPC 适配和测试调用。
 type Server struct {
 	Store     *system.Store
 	Artifacts ArtifactSource
@@ -29,251 +27,237 @@ type Server struct {
 }
 
 func (s *Server) Handler() http.Handler {
-	gin.SetMode(gin.ReleaseMode)
-	engine := gin.New()
-	// 空列表表示不信任任何代理转发的客户端地址。
-	_ = engine.SetTrustedProxies([]string{})
-	engine.HandleMethodNotAllowed = true
-	engine.Use(s.requestID(), s.accessLog(), s.recover())
-	engine.GET("/healthz", func(c *gin.Context) {
-		writeJSON(c.Writer, http.StatusOK, map[string]string{"status": "ok"})
-	})
-	engine.GET("/readyz", s.readyz)
-	engine.GET("/api/v1/dashboard/summary", s.dashboard)
-	engine.GET("/api/v1/services", s.listServices)
-	engine.POST("/api/v1/services", s.createService)
-	engine.GET("/api/v1/services/:service_id", s.getService)
-	engine.PATCH("/api/v1/services/:service_id", s.patchService)
-	engine.DELETE("/api/v1/services/:service_id", s.deleteService)
-	engine.GET("/api/v1/services/:service_id/targets", s.listTargets)
-	engine.POST("/api/v1/services/:service_id/targets", s.createTarget)
-	engine.PATCH("/api/v1/targets/:target_id", s.patchTarget)
-	engine.DELETE("/api/v1/targets/:target_id", s.deleteTarget)
-	engine.GET("/api/v1/episodes", s.listEpisodes)
-	engine.GET("/api/v1/services/:service_id/timeline", s.serviceTimeline)
-	engine.POST("/api/v1/services/:service_id/events", s.postEvent)
-	engine.GET("/api/v1/episodes/:episode_id", s.getEpisode)
-	engine.GET("/api/v1/episodes/:episode_id/timeline", s.episodeTimeline)
-	engine.GET("/api/v1/episodes/:episode_id/artifacts", s.artifacts)
-	engine.POST("/api/v1/episodes/:episode_id/retry-diagnosis", s.retryDiagnosis)
-	engine.POST("/api/v1/episodes/:episode_id/retry-archive", s.retryArchive)
-	return engine
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /readyz", s.readyz)
+	mux.HandleFunc("GET /api/v1/dashboard/summary", s.dashboard)
+	mux.HandleFunc("GET /api/v1/services", s.listServices)
+	mux.HandleFunc("POST /api/v1/services", s.createService)
+	mux.HandleFunc("GET /api/v1/services/{service_id}", s.getService)
+	mux.HandleFunc("PATCH /api/v1/services/{service_id}", s.patchService)
+	mux.HandleFunc("DELETE /api/v1/services/{service_id}", s.deleteService)
+	mux.HandleFunc("GET /api/v1/services/{service_id}/targets", s.listTargets)
+	mux.HandleFunc("POST /api/v1/services/{service_id}/targets", s.createTarget)
+	mux.HandleFunc("PATCH /api/v1/targets/{target_id}", s.patchTarget)
+	mux.HandleFunc("DELETE /api/v1/targets/{target_id}", s.deleteTarget)
+	mux.HandleFunc("GET /api/v1/episodes", s.listEpisodes)
+	mux.HandleFunc("GET /api/v1/services/{service_id}/timeline", s.serviceTimeline)
+	mux.HandleFunc("POST /api/v1/services/{service_id}/events", s.postEvent)
+	mux.HandleFunc("GET /api/v1/episodes/{episode_id}", s.getEpisode)
+	mux.HandleFunc("GET /api/v1/episodes/{episode_id}/timeline", s.episodeTimeline)
+	mux.HandleFunc("GET /api/v1/episodes/{episode_id}/artifacts", s.artifacts)
+	mux.HandleFunc("POST /api/v1/episodes/{episode_id}/retry-diagnosis", s.retryDiagnosis)
+	mux.HandleFunc("POST /api/v1/episodes/{episode_id}/retry-archive", s.retryArchive)
+	return s.wrap(mux)
 }
 
-func (s *Server) requestID() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		id := c.GetHeader("X-Request-ID")
+func (s *Server) wrap(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		id := r.Header.Get("X-Request-ID")
 		if id == "" {
 			id = uuid.NewString()
 		}
-		c.Set("request_id", id)
-		c.Header("X-Request-ID", id)
-		c.Next()
-	}
-}
-
-func (s *Server) accessLog() gin.HandlerFunc {
-	return func(c *gin.Context) {
+		w.Header().Set("X-Request-ID", id)
+		sw := &statusWriter{ResponseWriter: w, code: http.StatusOK}
 		start := time.Now()
-		c.Next()
-		if s.Log == nil {
-			return
-		}
-		s.Log.Info("http",
-			"method", c.Request.Method,
-			"path", c.Request.URL.Path,
-			"status", c.Writer.Status(),
-			"duration_ms", time.Since(start).Milliseconds(),
-			"request_id", c.GetString("request_id"),
-		)
-	}
-}
-
-func (s *Server) recover() gin.HandlerFunc {
-	return func(c *gin.Context) {
 		defer func() {
 			rec := recover()
-			if rec == nil {
-				return
-			}
-			if s.Log != nil {
-				s.Log.Error("http panic", "request_id", c.GetString("request_id"), "err", rec)
-			}
-			if !c.Writer.Written() {
-				writeJSON(c.Writer, http.StatusInternalServerError, map[string]string{
+			if rec != nil && !sw.wrote {
+				if s.Log != nil {
+					s.Log.Error("http panic", "request_id", id, "err", rec)
+				}
+				writeJSON(sw, http.StatusInternalServerError, map[string]string{
 					"error_code": "INTERNAL", "message": "internal error",
 				})
 			}
-			c.Abort()
+			if s.Log != nil {
+				s.Log.Info("http", "method", r.Method, "path", r.URL.Path, "status", sw.code, "request_id", id, "duration_ms", time.Since(start).Milliseconds())
+			}
 		}()
-		c.Next()
-	}
+		next.ServeHTTP(sw, r)
+	})
 }
 
-func (s *Server) createService(c *gin.Context) {
+type statusWriter struct {
+	http.ResponseWriter
+	code  int
+	wrote bool
+}
+
+func (w *statusWriter) WriteHeader(code int) {
+	w.code = code
+	w.wrote = true
+	w.ResponseWriter.WriteHeader(code)
+}
+
+func (w *statusWriter) Write(p []byte) (int, error) {
+	w.wrote = true
+	return w.ResponseWriter.Write(p)
+}
+
+func (s *Server) createService(w http.ResponseWriter, r *http.Request) {
 	var in system.CreateServiceInput
-	if err := decode(c.Request, &in); err != nil {
-		writeErr(c.Writer, err)
+	if err := decode(r, &in); err != nil {
+		writeErr(w, err)
 		return
 	}
-	view, err := s.Store.CreateService(c.Request.Context(), in)
+	view, err := s.Store.CreateService(r.Context(), in)
 	if err != nil {
-		writeErr(c.Writer, err)
+		writeErr(w, err)
 		return
 	}
-	writeJSON(c.Writer, http.StatusCreated, view)
+	writeJSON(w, http.StatusCreated, view)
 }
 
-func (s *Server) getService(c *gin.Context) {
-	id, err := uuid.Parse(c.Param("service_id"))
+func (s *Server) getService(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(r.PathValue("service_id"))
 	if err != nil {
-		writeJSON(c.Writer, 400, map[string]string{"error_code": "VALIDATION", "message": "invalid service_id"})
+		writeJSON(w, 400, map[string]string{"error_code": "VALIDATION", "message": "invalid service_id"})
 		return
 	}
 	var view system.ServiceView
-	err = s.Cache.Get(c.Request.Context(), "service:"+id.String(), &view, func() (any, error) {
-		return s.Store.GetService(c.Request.Context(), id)
+	err = s.Cache.Get(r.Context(), "service:"+id.String(), &view, func() (any, error) {
+		return s.Store.GetService(r.Context(), id)
 	})
 	if err != nil {
-		writeErr(c.Writer, err)
+		writeErr(w, err)
 		return
 	}
-	writeJSON(c.Writer, http.StatusOK, view)
+	writeJSON(w, http.StatusOK, view)
 }
 
-func (s *Server) patchService(c *gin.Context) {
-	id, err := uuid.Parse(c.Param("service_id"))
+func (s *Server) patchService(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(r.PathValue("service_id"))
 	if err != nil {
-		writeJSON(c.Writer, 400, map[string]string{"error_code": "VALIDATION", "message": "invalid service_id"})
+		writeJSON(w, 400, map[string]string{"error_code": "VALIDATION", "message": "invalid service_id"})
 		return
 	}
 	var in system.PatchServiceInput
-	if err := decode(c.Request, &in); err != nil {
-		writeErr(c.Writer, err)
+	if err := decode(r, &in); err != nil {
+		writeErr(w, err)
 		return
 	}
-	view, err := s.Store.PatchService(c.Request.Context(), id, in)
+	view, err := s.Store.PatchService(r.Context(), id, in)
 	if err != nil {
-		writeErr(c.Writer, err)
+		writeErr(w, err)
 		return
 	}
-	s.Cache.Delete(c.Request.Context(), "service:"+id.String())
-	writeJSON(c.Writer, http.StatusOK, view)
+	s.Cache.Delete(r.Context(), "service:"+id.String())
+	writeJSON(w, http.StatusOK, view)
 }
 
-func (s *Server) serviceTimeline(c *gin.Context) {
-	id, err := uuid.Parse(c.Param("service_id"))
+func (s *Server) serviceTimeline(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(r.PathValue("service_id"))
 	if err != nil {
-		writeJSON(c.Writer, 400, map[string]string{"error_code": "VALIDATION", "message": "invalid service_id"})
+		writeJSON(w, 400, map[string]string{"error_code": "VALIDATION", "message": "invalid service_id"})
 		return
 	}
-	records, err := s.Store.ServiceTimeline(c.Request.Context(), id, 100)
+	records, err := s.Store.ServiceTimeline(r.Context(), id, 100)
 	if err != nil {
-		writeErr(c.Writer, err)
+		writeErr(w, err)
 		return
 	}
 	if records == nil {
 		records = []system.TimelineRecord{}
 	}
-	writeJSON(c.Writer, http.StatusOK, map[string]any{"records": records})
+	writeJSON(w, http.StatusOK, map[string]any{"records": records})
 }
 
-func (s *Server) postEvent(c *gin.Context) {
-	id, err := uuid.Parse(c.Param("service_id"))
+func (s *Server) postEvent(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(r.PathValue("service_id"))
 	if err != nil {
-		writeJSON(c.Writer, 400, map[string]string{"error_code": "VALIDATION", "message": "invalid service_id"})
+		writeJSON(w, 400, map[string]string{"error_code": "VALIDATION", "message": "invalid service_id"})
 		return
 	}
-	raw, err := io.ReadAll(io.LimitReader(c.Request.Body, 1<<20))
+	raw, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
 	if err != nil {
-		writeJSON(c.Writer, 400, map[string]string{"error_code": "VALIDATION", "message": "cannot read body"})
+		writeJSON(w, 400, map[string]string{"error_code": "VALIDATION", "message": "cannot read body"})
 		return
 	}
 	var ev system.AppEvent
 	if err := json.Unmarshal(raw, &ev); err != nil {
-		writeJSON(c.Writer, 400, map[string]string{"error_code": "VALIDATION", "message": "invalid json"})
+		writeJSON(w, 400, map[string]string{"error_code": "VALIDATION", "message": "invalid json"})
 		return
 	}
-	res, err := s.Store.ApplyAppEvent(c.Request.Context(), id, ev, raw)
+	res, err := s.Store.ApplyAppEvent(r.Context(), id, ev, raw)
 	if err != nil {
-		writeErr(c.Writer, err)
+		writeErr(w, err)
 		return
 	}
-	writeJSON(c.Writer, res.Status, res.Body)
+	writeJSON(w, res.Status, res.Body)
 }
 
-func (s *Server) getEpisode(c *gin.Context) {
-	id, err := uuid.Parse(c.Param("episode_id"))
+func (s *Server) getEpisode(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(r.PathValue("episode_id"))
 	if err != nil {
-		writeJSON(c.Writer, 400, map[string]string{"error_code": "VALIDATION", "message": "invalid episode_id"})
+		writeJSON(w, 400, map[string]string{"error_code": "VALIDATION", "message": "invalid episode_id"})
 		return
 	}
-	view, err := s.Store.GetEpisode(c.Request.Context(), id)
+	view, err := s.Store.GetEpisode(r.Context(), id)
 	if err != nil {
-		writeErr(c.Writer, err)
+		writeErr(w, err)
 		return
 	}
-	writeJSON(c.Writer, http.StatusOK, view)
+	writeJSON(w, http.StatusOK, view)
 }
 
-func (s *Server) episodeTimeline(c *gin.Context) {
-	id, err := uuid.Parse(c.Param("episode_id"))
+func (s *Server) episodeTimeline(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(r.PathValue("episode_id"))
 	if err != nil {
-		writeJSON(c.Writer, 400, map[string]string{"error_code": "VALIDATION", "message": "invalid episode_id"})
+		writeJSON(w, 400, map[string]string{"error_code": "VALIDATION", "message": "invalid episode_id"})
 		return
 	}
-	body, err := s.Store.EpisodeTimeline(c.Request.Context(), id)
+	body, err := s.Store.EpisodeTimeline(r.Context(), id)
 	if err != nil {
-		writeErr(c.Writer, err)
+		writeErr(w, err)
 		return
 	}
-	writeJSON(c.Writer, http.StatusOK, body)
+	writeJSON(w, http.StatusOK, body)
 }
 
-func (s *Server) artifacts(c *gin.Context) {
+func (s *Server) artifacts(w http.ResponseWriter, r *http.Request) {
 	if s.Artifacts == nil {
-		writeJSON(c.Writer, http.StatusServiceUnavailable, map[string]string{"error_code": "AGENT_UNAVAILABLE", "message": "artifact service is not configured"})
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error_code": "AGENT_UNAVAILABLE", "message": "artifact service is not configured"})
 		return
 	}
-	id, err := uuid.Parse(c.Param("episode_id"))
+	id, err := uuid.Parse(r.PathValue("episode_id"))
 	if err != nil {
-		writeJSON(c.Writer, 400, map[string]string{"error_code": "VALIDATION", "message": "invalid episode_id"})
+		writeJSON(w, 400, map[string]string{"error_code": "VALIDATION", "message": "invalid episode_id"})
 		return
 	}
-	body, err := s.Artifacts.GetArtifact(c.Request, id, c.Query("type"))
+	body, err := s.Artifacts.GetArtifact(r, id, r.URL.Query().Get("type"))
 	if err != nil {
-		writeErr(c.Writer, err)
+		writeErr(w, err)
 		return
 	}
-	writeJSON(c.Writer, http.StatusOK, body)
+	writeJSON(w, http.StatusOK, body)
 }
 
-func (s *Server) retryDiagnosis(c *gin.Context) {
-	id, err := uuid.Parse(c.Param("episode_id"))
+func (s *Server) retryDiagnosis(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(r.PathValue("episode_id"))
 	if err != nil {
-		writeJSON(c.Writer, 400, map[string]string{"error_code": "VALIDATION", "message": "invalid episode_id"})
+		writeJSON(w, 400, map[string]string{"error_code": "VALIDATION", "message": "invalid episode_id"})
 		return
 	}
-	taskID, err := s.Store.RetryDiagnosis(c.Request.Context(), id)
+	taskID, err := s.Store.RetryDiagnosis(r.Context(), id)
 	if err != nil {
-		writeErr(c.Writer, err)
+		writeErr(w, err)
 		return
 	}
-	writeJSON(c.Writer, http.StatusOK, map[string]any{"task_id": taskID})
+	writeJSON(w, http.StatusOK, map[string]any{"task_id": taskID})
 }
 
-func (s *Server) retryArchive(c *gin.Context) {
-	id, err := uuid.Parse(c.Param("episode_id"))
+func (s *Server) retryArchive(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(r.PathValue("episode_id"))
 	if err != nil {
-		writeJSON(c.Writer, 400, map[string]string{"error_code": "VALIDATION", "message": "invalid episode_id"})
+		writeJSON(w, 400, map[string]string{"error_code": "VALIDATION", "message": "invalid episode_id"})
 		return
 	}
-	taskID, err := s.Store.RetryArchive(c.Request.Context(), id)
+	taskID, err := s.Store.RetryArchive(r.Context(), id)
 	if err != nil {
-		writeErr(c.Writer, err)
+		writeErr(w, err)
 		return
 	}
-	writeJSON(c.Writer, http.StatusOK, map[string]any{"task_id": taskID})
+	writeJSON(w, http.StatusOK, map[string]any{"task_id": taskID})
 }
 
 func decode(r *http.Request, dst any) error {
@@ -298,13 +282,4 @@ func writeJSON(w http.ResponseWriter, status int, body any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(body)
-}
-
-func artifactType(raw string) string {
-	switch strings.ToUpper(raw) {
-	case "DIAGNOSIS_REPORT":
-		return "DIAGNOSIS_REPORT"
-	default:
-		return "INVESTIGATION"
-	}
 }

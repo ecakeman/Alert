@@ -4,16 +4,15 @@ import (
 	"context"
 	"log/slog"
 	"net"
-	"net/http"
 	"os"
 	"os/signal"
 	"strconv"
 	"strings"
-	"sync"
 	"syscall"
 	"time"
 
 	agentv1 "github.com/ecakeman/alertflow/services/system-core/gen/agent/v1"
+	systemv1 "github.com/ecakeman/alertflow/services/system-core/gen/system/v1"
 	"github.com/ecakeman/alertflow/services/system-core/internal/api"
 	"github.com/ecakeman/alertflow/services/system-core/internal/cache"
 	"github.com/ecakeman/alertflow/services/system-core/internal/db"
@@ -21,11 +20,17 @@ import (
 	"github.com/ecakeman/alertflow/services/system-core/internal/monitoring"
 	"github.com/ecakeman/alertflow/services/system-core/internal/monitoring/probe/kubernetes"
 	"github.com/ecakeman/alertflow/services/system-core/internal/system"
+	"github.com/ecakeman/alertflow/services/system-core/internal/transport/grpc/systemapi"
 	"github.com/redis/go-redis/v9"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/health/grpc_health_v1"
 )
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "health" {
+		os.Exit(healthCheck())
+	}
 	log := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	databaseURL := env("ALERTFLOW_DATABASE_URL", "postgres://alertflow:alertflow@127.0.0.1:5432/alertflow?sslmode=disable")
 	conn, err := db.Open(databaseURL)
@@ -64,23 +69,17 @@ func main() {
 		}
 	}
 	grpcServer := grpc.NewServer()
+	apiServer := &systemapi.Server{API: &api.Server{Store: store, Cache: aside, Log: log, Artifacts: agentArtifacts(os.Getenv("ALERTFLOW_AGENT_GRPC_TARGET"))}}
+	systemv1.RegisterSystemApiServer(grpcServer, apiServer)
+	grpc_health_v1.RegisterHealthServer(grpcServer, apiServer)
 	agentv1.RegisterSystemGatewayServiceServer(grpcServer, &gateway.SystemServer{Store: store})
 	lis, err := net.Listen("tcp", env("ALERTFLOW_GRPC_ADDR", ":9090"))
 	if err != nil {
 		log.Error("grpc listen", "err", err)
 		os.Exit(1)
 	}
-	go func() {
-		if err := grpcServer.Serve(lis); err != nil {
-			log.Error("grpc", "err", err)
-		}
-	}()
-	// 有界关闭：HTTP 与 gRPC 各自最多等待 shutdownTimeout，整体小于 45s terminationGracePeriod。
 	const shutdownTimeout = 10 * time.Second
-	var shutdownWG sync.WaitGroup
-	shutdownWG.Add(2)
 	go func() {
-		defer shutdownWG.Done()
 		<-root.Done()
 		done := make(chan struct{})
 		go func() {
@@ -93,23 +92,26 @@ func main() {
 			grpcServer.Stop()
 		}
 	}()
-	httpServer := &http.Server{
-		Addr:    env("ALERTFLOW_HTTP_ADDR", ":8080"),
-		Handler: (&api.Server{Store: store, Cache: aside, Log: log, Artifacts: agentArtifacts(os.Getenv("ALERTFLOW_AGENT_GRPC_TARGET"))}).Handler(),
-	}
-	go func() {
-		defer shutdownWG.Done()
-		<-root.Done()
-		ctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
-		defer cancel()
-		_ = httpServer.Shutdown(ctx)
-	}()
-	log.Info("alertflow listening", "http", httpServer.Addr, "grpc", lis.Addr().String())
-	if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		log.Error("http", "err", err)
+	log.Info("system-core listening", "grpc", lis.Addr().String())
+	if err := grpcServer.Serve(lis); err != nil {
+		log.Error("grpc", "err", err)
 		os.Exit(1)
 	}
-	shutdownWG.Wait()
+}
+
+func healthCheck() int {
+	conn, err := grpc.NewClient("127.0.0.1:9090", grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		return 1
+	}
+	defer conn.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	resp, err := grpc_health_v1.NewHealthClient(conn).Check(ctx, &grpc_health_v1.HealthCheckRequest{})
+	if err != nil || resp.GetStatus() != grpc_health_v1.HealthCheckResponse_SERVING {
+		return 1
+	}
+	return 0
 }
 
 func env(key, fallback string) string {
