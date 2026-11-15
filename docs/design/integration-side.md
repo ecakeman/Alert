@@ -1,6 +1,6 @@
 # 集成侧
 
-AlertFlow 的整体在 `advence` 分支维护。Java 进程只做转发、发现、A2A 调用和 MCP 授权。
+AlertFlow 的成品在 `main` 分支；集成侧对应 `integration` 分支维护。Java 进程只做转发、发现、A2A 调用和 MCP 授权。
 
 - gRPC `:9091`：`AgentExecutionService` 转到 Python，`SystemGatewayService` 转到 Go，`AgentInvocationService` 在本进程完成。
 - HTTP `:8081`：`/mcp` 和 actuator 健康检查。

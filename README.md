@@ -40,6 +40,19 @@ PostgreSQL 保存业务事实；Redis 仅用于查询缓存；Kafka 传递任务
 - **双产物留存**：调查记录与诊断报告按 Episode 保存，并形成历史故障索引。
 - **运维控制台**：总览、服务与监控目标管理、故障列表、时间轴、诊断结果。
 
+## 分支与维护
+
+`main` 是成品分支，始终可构建、可启动。四个部分各自在一条维护分支上迭代，改动验证通过后回合 `main`：
+
+| 分支 | 对应目录 | 职责 |
+|---|---|---|
+| `frontend` | `frontend/` | 中文运维控制台 |
+| `backend` | `backend/` | Go 系统侧：服务、监控目标、Episode、时间轴、任务、Outbox、HTTP/gRPC |
+| `integration` | `integration/` | Java 集成侧：gRPC 桥接、A2A、MCP、Nacos 发现 |
+| `agent` | `agent/` | Python 认知侧：诊断 Agent、产物生成、知识 Agent 接入 |
+
+部署清单（`deploy/`）与文档（`docs/`）随相关功能一起提交，不单独开分支。
+
 ## 界面预览
 
 | 运行总览 | 服务目录 |
