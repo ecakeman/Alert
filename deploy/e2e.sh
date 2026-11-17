@@ -115,15 +115,15 @@ else
 fi
 
 for _ in $(seq 1 60); do
-  if curl --noproxy '*' -sf "${API_URL}/healthz" >/dev/null; then
+  if curl --noproxy '*' -sf "${API_URL}/readyz" >/dev/null; then
     break
   fi
   sleep 2
 done
-curl --noproxy '*' -sf "${API_URL}/healthz" >/dev/null
+curl --noproxy '*' -sf "${API_URL}/readyz" >/dev/null
 
 for _ in $(seq 1 30); do
-  if docker compose exec -T agent python -c 'import sys, urllib.request
+  if docker compose exec -T agent-runtime python -c 'import sys, urllib.request
 try:
     urllib.request.urlopen("http://127.0.0.1:8000/health/live", timeout=2).read()
     urllib.request.urlopen("http://127.0.0.1:8000/health/ready", timeout=2).read()
@@ -133,7 +133,7 @@ except Exception:
   fi
   sleep 2
 done
-docker compose exec -T agent python -c 'import urllib.request; urllib.request.urlopen("http://127.0.0.1:8000/health/live", timeout=2).read(); urllib.request.urlopen("http://127.0.0.1:8000/health/ready", timeout=2).read()'
+docker compose exec -T agent-runtime python -c 'import urllib.request; urllib.request.urlopen("http://127.0.0.1:8000/health/live", timeout=2).read(); urllib.request.urlopen("http://127.0.0.1:8000/health/ready", timeout=2).read()'
 
 for _ in $(seq 1 60); do
   if docker compose exec -T integration bash -c 'echo >/dev/tcp/127.0.0.1/8081'; then
@@ -352,7 +352,7 @@ echo "Episode 已归档: ${EP}"
 
 # ---------- 7. Knowledge / FD 校验（仅显式启用 Knowledge 时执行） ----------
 if [[ "$KNOWLEDGE_ON" == "true" ]]; then
-  docker compose exec -T agent python - <<PY
+  docker compose exec -T agent-runtime python - <<PY
 import asyncio
 import os
 from alertflow_agent.fd import connect, search_faults

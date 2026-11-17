@@ -4,3 +4,4 @@ __pycache__/
 agent/dist/
 .pytest_cache/
 deploy/.env
+deploy/compose/.env

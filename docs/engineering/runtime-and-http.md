@@ -90,7 +90,7 @@ worker 按 `TargetType` 显式分发到 HTTP、TCP、KUBERNETES 三种探测；�
 
 ## FastAPI
 
-Python HTTP 只在 `agent/src/alertflow_agent/http_app.py`。
+Python HTTP 只在 `services/agent-runtime/src/alertflow_agent/http_app.py`。
 
 | 方法 | 路径 | 含义 |
 |---|---|---|

@@ -39,7 +39,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: system-core
-          image: ghcr.io/ecakeman/alertflow-backend:v0.1.0
+          image: ghcr.io/ecakeman/alertflow-system-core:v0.1.0
           imagePullPolicy: IfNotPresent
           ports:
             - name: grpc
@@ -67,6 +67,8 @@ spec:
             timeoutSeconds: 3
             failureThreshold: 3
           readinessProbe:
+            # readiness 只反映数据库连通性：`system-core health` 的 gRPC health Check 内部调用
+            # Ready（仅 Ping DB），与 liveness 同一真实子命令，但语义是可接收流量。
             exec:
               command: ["system-core", "health"]
             initialDelaySeconds: 5
@@ -228,7 +230,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: agent
-          image: ghcr.io/ecakeman/alertflow-agent:v0.1.0
+          image: ghcr.io/ecakeman/alertflow-agent-runtime:v0.1.0
           imagePullPolicy: IfNotPresent
           ports:
             - name: http

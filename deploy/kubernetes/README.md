@@ -4,9 +4,9 @@
 
 | 组件 | 镜像 | HTTP | gRPC |
 |---|---|---:|---:|
-| Go Backend | `ghcr.io/ecakeman/alertflow-backend:v0.1.0` | 8080 | 9090 |
+| Go Backend | `ghcr.io/ecakeman/alertflow-system-core:v0.1.0` | 8080 | 9090 |
 | Java Integration | `ghcr.io/ecakeman/alertflow-integration:v0.1.0` | 8081 | 9091 |
-| Python Main Agent | `ghcr.io/ecakeman/alertflow-agent:v0.1.0` | 8000 | 9000 |
+| Python Main Agent | `ghcr.io/ecakeman/alertflow-agent-runtime:v0.1.0` | 8000 | 9000 |
 | Frontend（Nginx） | `ghcr.io/ecakeman/alertflow-frontend:v0.1.0` | 80 | — |
 
 PostgreSQL、Kafka、Redis、Nacos 使用**外部已有环境**，本目录不部署。Knowledge Agent 为可选组件，本期不提供其清单（见文末说明）。
@@ -45,8 +45,8 @@ ConfigMap 的键名就是环境变量名；Deployment 通过 `envFrom` 注入 Co
 ```bash
 # Go（构建上下文 = services/system-core）
 docker build -f services/system-core/Dockerfile \
-  -t ghcr.io/ecakeman/alertflow-backend:v0.1.0 services/system-core
-docker push ghcr.io/ecakeman/alertflow-backend:v0.1.0
+  -t ghcr.io/ecakeman/alertflow-system-core:v0.1.0 services/system-core
+docker push ghcr.io/ecakeman/alertflow-system-core:v0.1.0
 
 # Java（构建上下文 = 仓库根目录，因为要复制 contracts/proto）
 docker build -f services/integration/Dockerfile \
@@ -55,8 +55,8 @@ docker push ghcr.io/ecakeman/alertflow-integration:v0.1.0
 
 # Python（构建上下文 = services/agent-runtime）
 docker build -f services/agent-runtime/Dockerfile \
-  -t ghcr.io/ecakeman/alertflow-agent:v0.1.0 services/agent-runtime
-docker push ghcr.io/ecakeman/alertflow-agent:v0.1.0
+  -t ghcr.io/ecakeman/alertflow-agent-runtime:v0.1.0 services/agent-runtime
+docker push ghcr.io/ecakeman/alertflow-agent-runtime:v0.1.0
 
 # Frontend（Nginx 运行阶段）
 docker build -f apps/console/Dockerfile \
@@ -67,8 +67,8 @@ docker push ghcr.io/ecakeman/alertflow-frontend:v0.1.0
 镜像要求：
 
 - Go / Java / Python 必须是非 root 进程，且 Dockerfile 用**数字 UID** 设置 `USER`（如 `USER 10001`）。清单里设置了 `runAsNonRoot: true`，非数字用户名会导致 Pod 校验失败。
-- Frontend 使用标准 Nginx（root master 绑定 80 端口），清单对 Frontend 不设置 `runAsNonRoot`；其 `nginx.conf` 必须提供 `location = /healthz { return 200; }`（探针依赖），并把 `/api/` 代理到 `http://alertflow:8080`。
-- Go 镜像需要 `/readyz` 路由（本仓库后端实现），Java 镜像的 Actuator 需开启健康探针（本仓库 `application.yaml` 已开启）。
+- Frontend 使用标准 Nginx（root master 绑定 80 端口），清单对 Frontend 不设置 `runAsNonRoot`；其 `nginx.conf` 必须提供 `location = /healthz { return 200; }`（探针依赖），并把 `/api/` 代理到 `http://integration:8081`。
+- Go 镜像需要 `system-core health` 子命令（liveness / readiness 探针依赖），Java 镜像的 Actuator 需开启健康探针（本仓库 `application.yaml` 已开启）。
 
 如果镜像仓库地址或 tag 不同，修改 `40-deployments.yaml` 中四个 `image` 字段即可。
 
@@ -89,7 +89,7 @@ nacos.example.internal:8848      → 你的 Nacos
 
 ```bash
 # 3.1 命名空间 + Go 专用 ServiceAccount
-kubectl apply -f deploy/k8s/00-namespace.yaml
+kubectl apply -f deploy/kubernetes/base/00-namespace.yaml
 
 # 3.2 Secret（二选一）
 # 方式 A：用 kubectl 命令创建（推荐，避免在仓库中留下明文副本）
@@ -106,7 +106,7 @@ kubectl -n alertflow create secret generic alertflow-secrets \
   --from-literal=NACOS_PASSWORD=''
 
 # 方式 B：复制字段示例到你自己的文件（放在仓库外，避免被误提交）后 apply
-cp deploy/k8s/secret.example.yaml /tmp/alertflow-secret.yaml
+cp deploy/kubernetes/base/secret.example.yaml /tmp/alertflow-secret.yaml
 # 编辑 /tmp/alertflow-secret.yaml，替换全部占位值
 kubectl apply -f /tmp/alertflow-secret.yaml
 ```
@@ -121,13 +121,13 @@ kubectl apply -f /tmp/alertflow-secret.yaml
 ## 4. 部署应用（按顺序）
 
 ```bash
-kubectl apply -f deploy/k8s/10-rbac.yaml
-kubectl apply -f deploy/k8s/20-configmap.yaml
-kubectl apply -f deploy/k8s/30-services.yaml
-kubectl apply -f deploy/k8s/40-deployments.yaml
+kubectl apply -f deploy/kubernetes/base/10-rbac.yaml
+kubectl apply -f deploy/kubernetes/base/20-configmap.yaml
+kubectl apply -f deploy/kubernetes/base/30-services.yaml
+kubectl apply -f deploy/kubernetes/base/40-deployments.yaml
 ```
 
-注意：**不要**执行 `kubectl apply -f deploy/k8s/`，那会把 `secret.example.yaml` 示例 Secret 一起创建。
+注意：**不要**执行 `kubectl apply -f deploy/kubernetes/base/`，那会把 `secret.example.yaml` 示例 Secret 一起创建。
 Secret 必须先于 Deployment 存在，否则 Go / Java / Python Pod 会因缺 Secret 卡在 `CreateContainerConfigError`。
 
 ## 5. 验证
@@ -166,7 +166,7 @@ Go readiness 只依赖数据库；Kafka、模型 API 不可用不会让 Go 处�
 kubectl -n alertflow port-forward svc/frontend 13000:80
 ```
 
-浏览器打开 `http://127.0.0.1:13000`。浏览器只访问 Frontend，由 Frontend 的 Nginx 在集群内部把 `/api/` 代理到 `alertflow:8080`；Java / Python / gRPC 端口不对外暴露。
+浏览器打开 `http://127.0.0.1:13000`。浏览器只访问 Frontend，由 Frontend 的 Nginx 在集群内部把 `/api/` 代理到 `integration:8081`；Java / Python / gRPC 端口不对外暴露。
 
 本期不使用 Ingress Controller。生产环境如需统一入口，由已有网关或 Ingress 暴露 `frontend:80`，不在本清单范围内。
 
@@ -237,6 +237,6 @@ kubectl -n alertflow rollout restart deploy/alertflow
 | Go readiness 一直失败 | `/readyz` 只检查 DB，确认数据库连通与迁移成功（Go 启动会先跑 goose 迁移） |
 | Java liveness 重启循环 | Spring Boot 启动较慢，可先加大 `initialDelaySeconds`；确认 Actuator 探针已开启 |
 | Agent readiness 失败 | 业务库连接、`/health/ready` 的 gRPC / worker / 连接池状态，见 Agent 日志 |
-| 前端页面 502 | Nginx `/api/` 代理目标是否为 `alertflow:8080`；Go Service / Pod 是否就绪 |
+| 前端页面 502 | Nginx `/api/` 代理目标是否为 `integration:8081`；integration Service / Pod 是否就绪 |
 | Kubernetes target 一直不更新 | `ALERTFLOW_K8S_ENABLED`、`ALERTFLOW_K8S_NAMESPACE`、资源名/类型、RoleBinding 是否在目标 namespace；观察器错误不记故障 |
 | `kubectl port-forward` 被占用 | 换宿主机端口，如 `13001:80` |

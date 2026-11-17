@@ -19,7 +19,6 @@ metadata:
     app.kubernetes.io/component: backend
 data:
   ALERTFLOW_GRPC_ADDR: ":9090"
-  ALERTFLOW_GRPC_ADDR: ":9090"
   ALERTFLOW_KAFKA_TOPIC: "alertflow.agent-task-ready.v1"
   # Go 访问 Java Integration gRPC，再由 Java 转到 Python Agent。
   ALERTFLOW_AGENT_GRPC_TARGET: "integration:9091"
@@ -56,6 +55,9 @@ data:
   # Java 侧到 Go / Python 的 gRPC 目标（容器内默认值指向 127.0.0.1，必须显式覆盖）。
   INTEGRATION_GO_GRPC_TARGET: "system-core:9090"
   INTEGRATION_PYTHON_GRPC_TARGET: "agent:9000"
+  # 版本缓存与 revision 事件：换成你的外部 Redis / Kafka 地址（集群内不部署中间件）。
+  INTEGRATION_REDIS_URL: "redis://redis.example.internal:6379/0"
+  INTEGRATION_KAFKA_BROKERS: "kafka.example.internal:9092"
   JAVA_TOOL_OPTIONS: "-Xms128m -Xmx512m"
 ---
 apiVersion: v1

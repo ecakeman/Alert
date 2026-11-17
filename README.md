@@ -46,10 +46,10 @@ PostgreSQL 保存业务事实；Redis 仅用于查询缓存；Kafka 传递任务
 
 | 分支 | 对应目录 | 职责 |
 |---|---|---|
-| `frontend` | `frontend/` | 中文运维控制台 |
-| `backend` | `backend/` | Go 系统侧：服务、监控目标、Episode、时间轴、任务、Outbox、HTTP/gRPC |
-| `integration` | `integration/` | Java 集成侧：gRPC 桥接、A2A、MCP、Nacos 发现 |
-| `agent` | `agent/` | Python 认知侧：诊断 Agent、产物生成、知识 Agent 接入 |
+| `frontend` | `apps/console/` | 中文运维控制台 |
+| `backend` | `services/system-core/` | Go 系统侧：服务、监控目标、Episode、时间轴、任务、Outbox、HTTP/gRPC |
+| `integration` | `services/integration/` | Java 集成侧：gRPC 桥接、A2A、MCP、Nacos 发现 |
+| `agent` | `services/agent-runtime/` | Python 认知侧：诊断 Agent、产物生成、知识 Agent 接入 |
 
 部署清单（`deploy/`）与文档（`docs/`）随相关功能一起提交，不单独开分支。
 
@@ -71,9 +71,10 @@ PostgreSQL 保存业务事实；Redis 仅用于查询缓存；Kafka 传递任务
 
 ```bash
 cp deploy/compose/.env.example deploy/compose/.env
-# 需要真实模型诊断时，填写 deploy/.env 中的 ALERTFLOW_LLM_API_KEY
+# 必须修改：把第 1 节标 [必填] 的口令（POSTGRES_PASSWORD、GATEWAY_PASSWORD、MCP_TOKEN 等）改成自己的值
+# 需要真实模型诊断时，填写 deploy/compose/.env 中的 ALERTFLOW_LLM_API_KEY
 
-docker compose -f deploy/compose/compose.yaml up -d --build
+docker compose --env-file deploy/compose/.env -f deploy/compose/compose.yaml up -d --build
 ```
 
 控制台：<http://127.0.0.1:13000>  
@@ -84,7 +85,7 @@ docker compose -f deploy/compose/compose.yaml up -d --build
 停止服务并保留数据库：
 
 ```bash
-docker compose -f deploy/compose/compose.yaml down
+docker compose --env-file deploy/compose/.env -f deploy/compose/compose.yaml down
 ```
 
 `down -v` 会删除数据库及知识库命名卷，请勿用于需要保留数据的环境。
@@ -100,7 +101,7 @@ docker compose -f deploy/compose/compose.yaml down
 deploy/e2e.sh
 ```
 
-需要真实模型结果时，先在 `deploy/.env` 配置 `ALERTFLOW_LLM_API_KEY`、`ALERTFLOW_LLM_BASE_URL`、`ALERTFLOW_LLM_MODEL`。未配置 Key 时 Agent 使用 ScriptedModel，只验证采样、Episode、任务与双产物链路，产物是脚本化结果，不代表真实模型诊断质量。需要 Knowledge Agent 时设置 `COMPOSE_PROFILES=knowledge` 并配置 A2A Token；未启用时脚本跳过 FD 与 Knowledge 相关校验。
+需要真实模型结果时，先在 `deploy/compose/.env` 配置 `ALERTFLOW_LLM_API_KEY`、`ALERTFLOW_LLM_BASE_URL`、`ALERTFLOW_LLM_MODEL`。未配置 Key 时 Agent 使用 ScriptedModel，只验证采样、Episode、任务与双产物链路，产物是脚本化结果，不代表真实模型诊断质量。需要 Knowledge Agent 时设置 `COMPOSE_PROFILES=knowledge` 并配置 A2A Token；未启用时脚本跳过 FD 与 Knowledge 相关校验。
 
 演练会写入测试数据，并暂时停用演练前已启用的监控目标（脚本退出时恢复）。建议用独立的 `COMPOSE_PROJECT_NAME` 启动，结束后执行 `docker compose down -v` 销毁演练数据，不要对生产数据库运行。也可以手工操作故障辅助服务：
 
@@ -139,7 +140,7 @@ docs/                   架构与工程说明
 
 ## 相关文档
 
-- [Kubernetes 应用部署](deploy/k8s/README.md)
+- [Kubernetes 应用部署](deploy/kubernetes/README.md)
 - [运行时、HTTP 与 gRPC 边界](docs/engineering/runtime-and-http.md)
 - [集成侧设计](docs/design/integration-side.md)
 - [Knowledge Agent 集成](docs/design/knowledge-agent-integration.md)
