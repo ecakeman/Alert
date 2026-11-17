@@ -88,14 +88,25 @@ func run(ctx context.Context, store Store, k8s *kubernetes.K8sObserver, log *slo
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		worker.Run(ctx, cfg.Workers, jobs, func(job queue.Job) {
-			defer jobs.Done(job.Target.TargetID)
+		// worker.RunWithOptions 在 job 边界 recover，这里只负责把 panic 记进日志：
+		// 探测 panic 不能再让 worker 静默死亡，否则 4 个 worker 死光即永久停摆。
+		worker.RunWithOptions(ctx, cfg.Workers, jobs, func(job queue.Job) {
 			interval := job.Target.Interval
 			if interval <= 0 {
 				interval = time.Second
 			}
+			// Defer 与 jobs.Done 都走统一出口：无论探测成功、失败、panic 还是 ctx 取消，
+			// 都必须归还 target，否则 busy 标记永远不释放，该目标再也不会被调度。
+			defer jobs.Done(job.Target.TargetID)
+			due := time.Now().Add(interval)
+			defer func() {
+				// ctx 已取消时探测可能已被打断，这次 Due 没有意义，不回堆。
+				if ctx.Err() != nil {
+					return
+				}
+				sched.Defer(job.Target.TargetID, due, job.Version)
+			}()
 			if sched.Generation(job.Target.TargetID) != job.Generation {
-				sched.Defer(job.Target.TargetID, time.Now().Add(interval))
 				return
 			}
 			probeCtx := ctx
@@ -119,8 +130,11 @@ func run(ctx context.Context, store Store, k8s *kubernetes.K8sObserver, log *slo
 			} else if err != nil && log != nil {
 				log.Error("monitor probe failed", "target_id", job.Target.TargetID, "err", err)
 			}
-			sched.Defer(job.Target.TargetID, time.Now().Add(interval))
-		})
+		}, worker.Options{OnPanic: func(job queue.Job, recovered any) {
+			if log != nil {
+				log.Error("monitor probe panicked", "target_id", job.Target.TargetID, "panic", recovered)
+			}
+		}})
 	}()
 	if targets, err := store.ListDueTargets(ctx); err == nil {
 		sched.Sync(targets, time.Now())
@@ -147,7 +161,7 @@ func run(ctx context.Context, store Store, k8s *kubernetes.K8sObserver, log *slo
 				if !ok {
 					break
 				}
-				accepted, reason := jobs.TryEnqueue(queue.Job{Target: item.Target, Generation: item.Generation})
+				accepted, reason := jobs.TryEnqueue(queue.Job{Target: item.Target, Generation: item.Generation, Version: item.Version})
 				if accepted {
 					continue
 				}
@@ -155,7 +169,7 @@ func run(ctx context.Context, store Store, k8s *kubernetes.K8sObserver, log *slo
 				if reason == "busy" && item.Target.Interval > delay {
 					delay = item.Target.Interval
 				}
-				sched.Defer(item.Target.TargetID, now.Add(delay))
+				sched.Defer(item.Target.TargetID, now.Add(delay), item.Version)
 				if reason == "full" {
 					break
 				}

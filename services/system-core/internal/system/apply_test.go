@@ -394,9 +394,19 @@ func TestPublishPendingMarksSent(t *testing.T) {
 	if _, err := s.ApplyMonitorSample(context.Background(), sample(svc, target, false, "5xx", time.Now())); err != nil {
 		t.Fatal(err)
 	}
+	// 一次采样会同时产生 AGENT_TASK_READY 与 RESOURCE_REVISION（5 个视图各 1 条）两类事件，
+	// 前者由 PublishPending 发送，后者由 gateway 的 PublishByType("RESOURCE_REVISION") 发送。
 	n, err := s.PublishPending(context.Background(), 10, func(payload []byte) error { return nil })
 	if err != nil || n != 1 {
 		t.Fatalf("published %d %v", n, err)
+	}
+	var revision int64
+	if err := s.DB.QueryRow(`SELECT COUNT(*) FROM system.outbox_events WHERE published_at IS NULL AND event_type='RESOURCE_REVISION'`).Scan(&revision); err != nil {
+		t.Fatal(err)
+	}
+	rev, err := s.PublishByType(context.Background(), "RESOURCE_REVISION", 32, func(payload []byte) error { return nil })
+	if err != nil || rev != int(revision) {
+		t.Fatalf("published revisions %d/%d %v", rev, revision, err)
 	}
 	left, err := s.UnpublishedCount(context.Background())
 	if err != nil || left != 0 {

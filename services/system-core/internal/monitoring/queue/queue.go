@@ -7,10 +7,12 @@ import (
 	"github.com/google/uuid"
 )
 
-// Job 是一次已接受的探测。
+// Job 是一次已接受的探测。Version 是调度器出堆时的快照版本，
+// worker 归还目标时必须带上它，供 Scheduler.Defer 校验这次 Due 是否已作废。
 type Job struct {
 	Target     system.DueTarget
 	Generation uint64
+	Version    uint64
 }
 
 // Queue 是有界队列。同一目标在排队或执行期间不能再次进入。

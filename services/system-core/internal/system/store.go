@@ -169,7 +169,7 @@ func (s *Store) CreateService(ctx context.Context, in CreateServiceInput) (Servi
 			VALUES ($1,$2,$3,$4,TRUE,'ANY_REQUIRED',$5,$6,$6)`,
 			id, in.ServiceKey, in.Name, in.Description, in.AuthorityProducerID, now)
 		if err != nil {
-			return err
+			return mapDBErr(err, "ALREADY_EXISTS", "service_key already exists")
 		}
 		for _, src := range []string{SourceMonitor, SourceApp} {
 			if _, err := tx.ExecContext(ctx, `

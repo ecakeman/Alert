@@ -801,6 +801,10 @@ func (s *Store) RetryDiagnosis(ctx context.Context, episodeID uuid.UUID) (uuid.U
 	err := s.withTx(ctx, func(tx *sql.Tx) error {
 		var serviceID uuid.UUID
 		if err := tx.QueryRowContext(ctx, `SELECT service_id FROM system.episodes WHERE episode_id=$1`, episodeID).Scan(&serviceID); err != nil {
+			// 不存在的 episode 应是 404，而不是把 sql.ErrNoRows 透出成 500 INTERNAL。
+			if err == sql.ErrNoRows {
+				return errCode("EPISODE_NOT_FOUND", "episode not found", 404)
+			}
 			return err
 		}
 		if err := lockService(ctx, tx, serviceID); err != nil {
@@ -859,6 +863,10 @@ func (s *Store) RetryArchive(ctx context.Context, episodeID uuid.UUID) (uuid.UUI
 	err := s.withTx(ctx, func(tx *sql.Tx) error {
 		var serviceID uuid.UUID
 		if err := tx.QueryRowContext(ctx, `SELECT service_id FROM system.episodes WHERE episode_id=$1`, episodeID).Scan(&serviceID); err != nil {
+			// 不存在的 episode 应是 404，而不是把 sql.ErrNoRows 透出成 500 INTERNAL。
+			if err == sql.ErrNoRows {
+				return errCode("EPISODE_NOT_FOUND", "episode not found", 404)
+			}
 			return err
 		}
 		if err := lockService(ctx, tx, serviceID); err != nil {

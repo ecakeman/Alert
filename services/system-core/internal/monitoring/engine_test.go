@@ -192,6 +192,131 @@ func TestCancelExits(t *testing.T) {
 	}
 }
 
+// TestEngineNewTargetGetsFirstSample 是 T4：新建目标（运行中途才出现在
+// ListDueTargets 里）必须在 5 秒内产生首个采样点。P0 的现场表现正是
+// 「新建目标永不采样」，所以这条要盯住端到端的时延而不只是堆序。
+func TestEngineNewTargetGetsFirstSample(t *testing.T) {
+	existing := uuid.New()
+	fresh := uuid.New()
+	store := &fakeStore{}
+	store.set(target(existing, "existing"))
+
+	var mu sync.Mutex
+	seen := map[uuid.UUID]time.Time{}
+	old := execute
+	execute = func(ctx context.Context, item system.DueTarget, _ *kubernetes.K8sObserver) (system.MonitorSample, error) {
+		mu.Lock()
+		if _, ok := seen[item.TargetID]; !ok {
+			seen[item.TargetID] = time.Now()
+		}
+		mu.Unlock()
+		return system.MonitorSample{TargetID: item.TargetID, Success: true, StatusClass: item.Address}, nil
+	}
+	t.Cleanup(func() { execute = old })
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan struct{})
+	go func() {
+		run(ctx, store, nil, nil, Config{Workers: 2, QueueSize: 2, Reconcile: 5 * time.Millisecond, Tick: 5 * time.Millisecond}, nil)
+		close(done)
+	}()
+
+	// 等既有目标跑起来，确认引擎确实在调度；否则「新目标没采样」可能是引擎整体停了。
+	waitUntil(t, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		_, ok := seen[existing]
+		return ok
+	})
+
+	addedAt := time.Now()
+	store.set(target(existing, "existing"), target(fresh, "fresh"))
+	waitUntilWithin(t, 5*time.Second, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		_, ok := seen[fresh]
+		return ok
+	})
+	mu.Lock()
+	gap := seen[fresh].Sub(addedAt)
+	mu.Unlock()
+	if gap > 5*time.Second {
+		t.Fatalf("new target first sample after %s, want <= 5s", gap)
+	}
+	if t.Failed() {
+		return
+	}
+	t.Logf("new target first sampled after %s", gap)
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("engine did not exit after cancel")
+	}
+}
+
+// TestEngineSurvivesProbePanic：探测函数 panic 不能杀死 worker，
+// 该目标和其他目标在之后必须继续被采样。
+func TestEngineSurvivesProbePanic(t *testing.T) {
+	poison := uuid.New()
+	healthy := uuid.New()
+	store := &fakeStore{}
+	store.set(target(poison, "poison"), target(healthy, "healthy"))
+
+	var mu sync.Mutex
+	counts := map[uuid.UUID]int{}
+	old := execute
+	execute = func(ctx context.Context, item system.DueTarget, _ *kubernetes.K8sObserver) (system.MonitorSample, error) {
+		mu.Lock()
+		counts[item.TargetID]++
+		n := counts[item.TargetID]
+		mu.Unlock()
+		if item.TargetID == poison {
+			panic("probe exploded")
+		}
+		_ = n
+		return system.MonitorSample{TargetID: item.TargetID, Success: true}, nil
+	}
+	t.Cleanup(func() { execute = old })
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go run(ctx, store, nil, nil, Config{Workers: 1, QueueSize: 2, Reconcile: 5 * time.Millisecond, Tick: 5 * time.Millisecond}, nil)
+
+	// 1 个 worker：毒目标先 panic，healthy 必须在之后仍然被采样到 ——
+	// 只有 worker 从 panic 中恢复并继续循环才可能。
+	waitUntil(t, func() bool {
+		store.mu.Lock()
+		defer store.mu.Unlock()
+		for _, sample := range store.applied {
+			if sample.TargetID == healthy {
+				return true
+			}
+		}
+		return false
+	})
+	mu.Lock()
+	poisonProbes := counts[poison]
+	mu.Unlock()
+	if poisonProbes < 1 {
+		t.Fatal("poison target was never probed")
+	}
+	cancel()
+}
+
+func waitUntilWithin(t *testing.T, limit time.Duration, ok func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(limit)
+	for time.Now().Before(deadline) {
+		if ok() {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatalf("condition was not met within %s", limit)
+}
+
 func waitUntil(t *testing.T, ok func() bool) {
 	t.Helper()
 	deadline := time.Now().Add(2 * time.Second)
