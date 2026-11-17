@@ -67,6 +67,7 @@
 
 > 本节全部由 Lead 在**所有编辑停止后的单一代码状态**下重跑（第一轮 2026-11-17 13:40–13:50；第二轮在 `ab2b8dc` 上复跑，改动只涉及 deploy/integration/docs，Go 结果不变），日志见 §10。
 > 第一轮的 30 项未提交改动已在 17 日下午以 `c9a5d50`/`1c27947`/`39d8140`/`f2a30b1` 入库；第二轮的 Java 用例数已更新为 20，gofmt 剩余文件数从 3 降为 2。
+> **第三轮（收尾）在 `460c6ab` 上按同一套命令重跑**，结果与本节一致：`go vet`/`go build` exit 0、`go test -count=1 ./...` **7 ok / 0 FAIL**（system 7.506 s、api 2.408 s）、Java `Tests run: 20, Failures: 0, Errors: 0`、pytest **14 passed in 5.22 s**、`uv build` 仍 30,273 B、Vue **2266 modules**（`DashboardView-BaeayJ-X.js` 462.99 kB）、`make compose-config` exit 0、`bash -n deploy/e2e.sh` exit 0；gofmt 仍为同样的 2 个 `HEAD` 既存文件（日志 `/tmp/verify-final.log`）。
 
 | 组件 | 命令 | 结果 |
 |---|---|---|
@@ -410,7 +411,7 @@ K8s `terminationGracePeriodSeconds`：system-core/integration/agent 45 s、front
   README `:74`/`:103` 让人「填写 `deploy/.env`」，实际是 `deploy/compose/.env`，`.gitignore:6` 原也只忽略 `deploy/.env`。
 - 第一轮修复后状态（`f2a30b1`）：`.env.example` 6 个口令改为 `CHANGEME_*` 占位并标「必须修改」（`POSTGRES_PASSWORD`/`GATEWAY_PASSWORD`/`KNOWLEDGE_PASSWORD`/`MAIN_MCP_TOKEN`/`KNOWLEDGE_MCP_TOKEN`/`A2A_TOKEN`，`:30/:33/:36/:39/:42/:45`）；头部用法改为带 `--env-file deploy/compose/.env`；旧拓扑名 `alertflow`→`system-core`、`agent`→`agent-runtime`（`:64/:118/:159`）。README `:73-77` 首条命令补 `--env-file deploy/compose/.env` 与「必须修改口令」提示，`:74`/`:103` 路径改为 `deploy/compose/.env`，`:88` `down` 同样补 `--env-file`。
 - 验证边界（第一轮）：`ENV_FILE=deploy/compose/.env.example make compose-config` → **exit 0**，且渲染结果中 6 个口令均非空，第一轮只做到渲染层。
-- **第二轮已实测起栈**：`cp .env.example .env` 后改 6 个口令，`make e2e` 连续两次 exit 0（§3.1）。首次起栈暴露一个真实回归并已修（`91f5a51`）：`deploy/compose/postgres/init-roles.sh` 在 `set -u` 下需要 `GATEWAY_PASSWORD`/`KNOWLEDGE_PASSWORD`（481c217 把硬编码口令改成变量却漏了给 `db-init` 传这两个 env），导致 `db-init` 以 `GATEWAY_PASSWORD: parameter not set` 退出 2、整栈失败；现已在 `db-init.environment` 补传，且 `e2e.sh` 失败诊断会打印 `db-init` 日志。
+- **第二轮已实测起栈**：`cp .env.example .env` 后改 6 个口令，真实起栈两次均 exit 0（§3.1；第二次用 `ALERTFLOW_E2E_KEEP_STACK=1` 保留现场）。首次起栈暴露一个真实回归并已修（`91f5a51`）：`deploy/compose/postgres/init-roles.sh` 在 `set -u` 下需要 `GATEWAY_PASSWORD`/`KNOWLEDGE_PASSWORD`（481c217 把硬编码口令改成变量却漏了给 `db-init` 传这两个 env），导致 `db-init` 以 `GATEWAY_PASSWORD: parameter not set` 退出 2、整栈失败；现已在 `db-init.environment` 补传，且 `e2e.sh` 失败诊断会打印 `db-init` 日志。
 - **第三轮复测（收尾）**：用 `make e2e` 以默认清理连跑两次，均 exit 0（61 s / 56 s）；期间首次运行因 postgres 就绪竞态失败（`db-init` 连接被拒），已由 `460c6ab` 修复（healthcheck 强制走 TCP + `init-roles.sh` 有界重试），修复后两次均通过。
 - 因此 §8-B1 从「已改未实测」升级为「**已修并实测**」。
 
@@ -501,7 +502,7 @@ K8s `terminationGracePeriodSeconds`：system-core/integration/agent 45 s、front
 | revision 增加后旧 query 结果不再命中 | 满足 | 新建服务 → 指针 v7→v8 → `?limit=10` 响应含新服务，随后写入 `...:v8`（§4.2a） |
 | Go 失效范围按真实数据变化，且有测试验证单次写入数量 | 满足 | `revision_test.go` 8 类场景计数 1/1/5/4/0/3/2（§4.2b、`d2853fd`） |
 | K8s README 与 YAML 的端口/探针/资源名/Redis 归属一致 | 满足 | `f4e5707`；6 YAML `safe_load_all` 通过、README `8080` 清零（§6.3） |
-| 验收报告对应当前真实 commit，不混用旧 HEAD 与未提交工作区结果 | 满足 | 被测 `main = ab2b8dc`；两轮口径与各自 commit 在头部与 §11 分列（报告随本提交入库） |
+| 验收报告对应当前真实 commit，不混用旧 HEAD 与未提交工作区结果 | 满足 | 被测 `main = 460c6ab`；三轮口径与各自 commit 在头部与 §11 分列（报告随本提交 `7af5573` 入库） |
 
 > 说明：判定之外的项（真实 K8s 集群部署、真实 LLM、`-race`、pause 自愈的栈级复现、契约 HTTP 重放、并发压测）仍未执行，见 §9，**不计为通过**。
 
@@ -541,7 +542,7 @@ K8s `terminationGracePeriodSeconds`：system-core/integration/agent 45 s、front
 - 缓存接口级检查（保留栈）：`curl -s 'http://127.0.0.1:18080/api/v1/services?limit=10'` / `?limit=20` 后立即 `docker exec <runB>-redis-1 redis-cli --scan --pattern 'af:api:*'`；revision 推进用 `POST /api/v1/services` 建服务，再从 Kafka 消费日志确认指针 v7→v8
 - 监控复现脚本：`/tmp/mon-repro.sh`；P0 现场记录 `/home/sancho/af-monitor-repro.md`
 - 契约矩阵：`/tmp/api_matrix.sh`（Java 公开面 19 条路由）
-- 验证日志：第一轮 `/tmp/lead-go.log`、`/tmp/lead-java.log`、`/tmp/lead-py.log`、`/tmp/lead-vue.log`、`/tmp/lead-compose.log`（脚本 `/tmp/lead-validate.sh`）；第二轮 `/tmp/e2e-run-a.log`、`/tmp/e2e-run-b.log`、`/tmp/rebuild-integration.log`；早期 b1 日志 `/tmp/b1-*.log`（当时工作树被并发改动，仅作参考）
+- 验证日志：第一轮 `/tmp/lead-go.log`、`/tmp/lead-java.log`、`/tmp/lead-py.log`、`/tmp/lead-vue.log`、`/tmp/lead-compose.log`（脚本 `/tmp/lead-validate.sh`）；第二轮 `/tmp/e2e-run-a.log`、`/tmp/e2e-run-b.log`、`/tmp/rebuild-integration.log`；早期 b1 日志 `/tmp/b1-*.log`（当时工作树被并发改动，仅作参考）；第三轮（收尾）全量校验日志 `/tmp/verify-final.log`（脚本 `/tmp/verify-final.sh`）
 
 ---
 
