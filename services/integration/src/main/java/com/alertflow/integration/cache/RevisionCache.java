@@ -34,6 +34,10 @@ public class RevisionCache implements AutoCloseable {
             """;
     private final JedisPooled redis;
     private final ConcurrentHashMap<String, Long> revisions = new ConcurrentHashMap<>();
+    // 指针的本地副本：命中路径据此判断是否可以直接读值键，省掉一次 Redis 往返。
+    private final ConcurrentHashMap<String, Long> pointers = new ConcurrentHashMap<>();
+    // 同一 key 并发未命中时共用一个回源结果。
+    private final ConcurrentHashMap<String, Long> pins = new ConcurrentHashMap<>();
     private final AtomicBoolean closed = new AtomicBoolean();
     private final ObjectMapper json = new ObjectMapper();
     private final Thread consumer;
@@ -51,25 +55,29 @@ public class RevisionCache implements AutoCloseable {
 
     public ResponseEntity<String> around(String scope, String id, Loader loader) throws Exception {
         String key = scope + ":" + id;
-        if (redis != null) {
-            try {
-                Long known = revisions.get(key);
-                String pointer = redis.get(pointer(scope, id));
-                long version = pointer == null ? -1 : Long.parseLong(pointer);
-                if (known != null && known == version) {
-                    String hit = redis.get(value(scope, id, version));
+        // 命中判据是「Redis 指针已知」（指针只由 Kafka 版本事件推进），不是进程内是否收到过该事件：
+        // 冷启动后第一次读到 localStorage 里缓存的版本也会立即命中，不需要先等事件。
+        ResponseEntity<String> fresh;
+        try {
+            // 同一个 key 的并发未命中只回源一次；钉住的版本之后的请求直接回源，避免读到旧值。
+            long pinned = pins.computeIfAbsent(key, ignored -> redis == null ? -1L : cachedPointer(key));
+            if (redis != null) {
+                Long current = cachedPointer(key);
+                if (current != null && current == pinned) {
+                    String hit = redis.get(value(scope, id, current));
                     if (hit != null) {
                         return ResponseEntity.ok().contentType(MediaType.APPLICATION_JSON).body(hit);
                     }
                 }
-            } catch (RuntimeException ignored) {
-                return loader.load();
             }
+            fresh = loader.load();
+        } finally {
+            pins.remove(key);
         }
-        ResponseEntity<String> fresh = loader.load();
         if (redis != null && fresh.getStatusCode().value() == 200 && fresh.getBody() != null) {
             try {
-                long version = revisions.getOrDefault(key, 0L);
+                // 用 Go 的真实版本（指针）写缓存，不能用进程内 map，否则会把指针写回 0。
+                long version = refreshPointer(scope, id);
                 long ttl = 5000 + ThreadLocalRandom.current().nextLong(1000);
                 redis.eval(ADVANCE, java.util.List.of(pointer(scope, id), value(scope, id, version)),
                         java.util.List.of(Long.toString(version), Long.toString(ttl), fresh.getBody()));
@@ -78,6 +86,31 @@ public class RevisionCache implements AutoCloseable {
             }
         }
         return fresh;
+    }
+
+    /** 命中路径只用本地已知指针，避免每个请求多一次 Redis 往返。 */
+    private Long cachedPointer(String key) {
+        Long revision = revisions.get(key);
+        if (revision != null) {
+            return revision;
+        }
+        return (Long) pointers.get(key);
+    }
+
+    /** 回源后读取指针；指针为空时用回源时刻的本地已知版本兜底。 */
+    private long refreshPointer(String scope, String id) {
+        String raw = redis.get(pointer(scope, id));
+        if (raw != null) {
+            try {
+                long version = Long.parseLong(raw);
+                pointers.put(scope + ":" + id, version);
+                return version;
+            } catch (NumberFormatException ignored) {
+                // 指针被外部写成非数字，退回本地已知版本。
+            }
+        }
+        Long known = revisions.get(scope + ":" + id);
+        return known == null ? 0L : known;
     }
 
     private void consume() {
@@ -109,6 +142,7 @@ public class RevisionCache implements AutoCloseable {
             }
             String key = scope + ":" + id;
             revisions.merge(key, revision, Math::max);
+            pointers.put(key, revision);
             if (redis != null) {
                 long ttl = 5000 + ThreadLocalRandom.current().nextLong(1000);
                 redis.eval(ADVANCE, java.util.List.of(pointer(scope, id), value(scope, id, revision)),
