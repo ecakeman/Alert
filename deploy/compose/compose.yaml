@@ -2,7 +2,7 @@ name: alertflow-plus
 
 services:
   postgres:
-    image: pgvector/pgvector:pg16
+    image: ${POSTGRES_IMAGE:-pgvector/pgvector:pg16}
     environment:
       POSTGRES_USER: alertflow
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
@@ -16,7 +16,7 @@ services:
       retries: 30
 
   kafka:
-    image: apache/kafka:3.9.1
+    image: ${KAFKA_IMAGE:-apache/kafka:3.9.1}
     environment:
       KAFKA_NODE_ID: 1
       KAFKA_PROCESS_ROLES: broker,controller
@@ -35,7 +35,7 @@ services:
 
   # 预建任务 topic：消费者组在 topic 不存在时启动会拿不到分区分配，导致首次任务滞留。
   kafka-init:
-    image: apache/kafka:3.9.1
+    image: ${KAFKA_IMAGE:-apache/kafka:3.9.1}
     entrypoint:
       - /bin/bash
       - -c
@@ -54,10 +54,10 @@ services:
         condition: service_started
 
   redis:
-    image: redis:7.4.2
+    image: ${REDIS_IMAGE:-redis:7.4.2}
 
   fault:
-    image: python:3.12-slim-bookworm
+    image: ${PYTHON_IMAGE:-python:3.12-slim-bookworm}
     command: ["python", "/fault.py"]
     volumes:
       - ./fault.py:/fault.py:ro
@@ -69,6 +69,9 @@ services:
     build:
       context: ../../services/system-core
       dockerfile: Dockerfile
+      args:
+        GO_IMAGE: ${GO_IMAGE:-golang:1.25.7-bookworm}
+        DEBIAN_IMAGE: ${DEBIAN_IMAGE:-debian:bookworm-slim}
     environment:
       ALERTFLOW_DATABASE_URL: postgres://alertflow:${POSTGRES_PASSWORD}@postgres:5432/alertflow?sslmode=disable
       ALERTFLOW_GRPC_ADDR: :9090
@@ -88,6 +91,9 @@ services:
     build:
       context: ../../apps/console
       dockerfile: Dockerfile
+      args:
+        NODE_IMAGE: ${NODE_IMAGE:-node:22-alpine}
+        NGINX_IMAGE: ${NGINX_IMAGE:-nginx:1.27-alpine}
     ports:
       - "${FRONTEND_PORT:-13000}:80"
     depends_on:
@@ -98,6 +104,8 @@ services:
     build:
       context: ../../services/agent-runtime
       dockerfile: Dockerfile
+      args:
+        PYTHON_IMAGE: ${PYTHON_IMAGE:-python:3.12-slim-bookworm}
     environment:
       ALERTFLOW_DATABASE_URL: postgres://alertflow:${POSTGRES_PASSWORD}@postgres:5432/alertflow?sslmode=disable
       ALERTFLOW_GRPC_TARGET: integration:9091
@@ -119,7 +127,7 @@ services:
         condition: service_healthy
 
   db-init:
-    image: pgvector/pgvector:pg16
+    image: ${POSTGRES_IMAGE:-pgvector/pgvector:pg16}
     environment:
       POSTGRES_USER: alertflow
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
@@ -132,7 +140,7 @@ services:
         condition: service_healthy
 
   nacos:
-    image: nacos/nacos-server:v2.5.1
+    image: ${NACOS_IMAGE:-nacos/nacos-server:v2.5.1}
     environment:
       MODE: standalone
       NACOS_AUTH_ENABLE: "false"
@@ -145,6 +153,9 @@ services:
     build:
       context: ../..
       dockerfile: services/integration/Dockerfile
+      args:
+        JDK_IMAGE: ${JDK_IMAGE:-eclipse-temurin:25-jdk}
+        JRE_IMAGE: ${JRE_IMAGE:-eclipse-temurin:25-jre}
     environment:
       INTEGRATION_HTTP_ADDR: :8081
       INTEGRATION_GRPC_ADDR: :9091

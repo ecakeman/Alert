@@ -1,7 +1,11 @@
 # syntax=docker/dockerfile:1
 
+# 基础镜像可用 --build-arg NODE_IMAGE=... / NGINX_IMAGE=... 覆盖（Compose 见 compose.yaml build.args）。
+ARG NODE_IMAGE=node:22-alpine
+ARG NGINX_IMAGE=nginx:1.27-alpine
+
 # ---------- 构建阶段：Node 编译前端 ----------
-FROM node:22-alpine AS build
+FROM ${NODE_IMAGE} AS build
 WORKDIR /app
 # 国内网络使用镜像源，可通过 --build-arg NPM_REGISTRY=... 覆盖
 ARG NPM_REGISTRY=https://registry.npmmirror.com
@@ -11,7 +15,7 @@ COPY . .
 RUN npm run build
 
 # ---------- 运行阶段：仅静态文件 + Nginx ----------
-FROM nginx:1.27-alpine
+FROM ${NGINX_IMAGE}
 COPY nginx.conf /etc/nginx/nginx.conf
 COPY --from=build /app/dist /usr/share/nginx/html
 EXPOSE 80

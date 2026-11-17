@@ -3,16 +3,22 @@
 # 真实 HTTP 目标连续失败 -> Go 监控判定 ABNORMAL -> Episode -> 诊断任务 ->
 # 产物可读 -> 恢复/归档。在 deploy 目录执行，可重复运行（每次创建唯一 service_key）。
 #
-# 重要：脚本会创建服务、Episode、产物与 FD 数据。请使用独立的 Compose project /
-# 数据卷运行，勿对既有用户数据或生产环境执行。示例：
-#   COMPOSE_PROJECT_NAME=alertflow-drill-$(date +%s) ./e2e.sh
-# 结束后销毁演练数据：
-#   COMPOSE_PROJECT_NAME=<同一个名字> docker compose down -v
+# 重要：脚本会创建服务、Episode、产物与 FD 数据，因此每次运行使用独立的 Compose
+# project（默认 alertflow-e2e-<run-id>，可用 COMPOSE_PROJECT_NAME 覆盖；禁止使用开发
+# 项目 alertflow-plus）。脚本在 docker compose up 之前注册 EXIT trap：
+#   - 默认结束时只清理本次 project 的容器、网络和命名卷；
+#   - ALERTFLOW_E2E_KEEP_STACK=1 时保留本次栈，并打印准确的清理命令（默认关闭）。
 #
 # 依赖：docker compose、curl、python3（不使用 jq）。
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-cd "$SCRIPT_DIR/compose"
+COMPOSE_DIR="$SCRIPT_DIR/compose"
+COMPOSE_FILE="$COMPOSE_DIR/compose.yaml"
+# 运行时 env 文件：默认 deploy/compose/.env；ALERTFLOW_E2E_ENV_FILE 仅供自测/排障覆盖。
+ENV_FILE="${ALERTFLOW_E2E_ENV_FILE:-$COMPOSE_DIR/.env}"
+# 镜像变量模板（非机密默认值）：Makefile 与脚本使用同一份文件，shell 环境变量优先。
+IMAGES_ENV_FILE="$SCRIPT_DIR/images.env.example"
+cd "$COMPOSE_DIR"
 
 RUN_ID="$(date +%s)-$$"
 export COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-alertflow-e2e-$RUN_ID}"
@@ -23,17 +29,71 @@ fail() {
   exit 1
 }
 
-# 读取变量：优先当前 shell 环境，其次 deploy/.env，最后默认值。
+# 读取变量：优先当前 shell 环境，其次 $ENV_FILE，最后默认值。
 # 不 source .env（模板注释和带空格的值不适合 bash 解析）。
 env_value() {
   local key="$1" default="${2:-}" value=""
   if [[ -n "${!key:-}" ]]; then
     value="${!key}"
-  elif [[ -f .env ]]; then
-    value="$(sed -n "s/^${key}=//p" .env | tail -n 1 | tr -d '\r')"
+  elif [[ -f "$ENV_FILE" ]]; then
+    value="$(sed -n "s/^${key}=//p" "$ENV_FILE" | tail -n 1 | tr -d '\r')"
   fi
   if [[ -n "$value" ]]; then printf '%s' "$value"; else printf '%s' "$default"; fi
 }
+
+# ---------- E2E project / Compose 调用封装 / 退出清理 ----------
+# 本次运行的容器、网络、命名卷都归属这个独立 project，不触碰开发项目 alertflow-plus。
+STACK_STARTED=false   # docker compose up 是否已发起（失败时也要清理半套栈）
+PRIOR_PAUSED=false    # 是否已暂停演练前启用的监控目标（需要恢复）
+E2E_OK=false          # 主链路是否成功走完
+KEEP_STACK="${ALERTFLOW_E2E_KEEP_STACK:-0}"
+
+# 统一 Compose 调用：固定 project、compose 文件与 env 来源，和 Makefile 使用同一份配置。
+dc() {
+  docker compose \
+    --project-name "$COMPOSE_PROJECT_NAME" \
+    --file "$COMPOSE_FILE" \
+    --env-file "$IMAGES_ENV_FILE" \
+    --env-file "$ENV_FILE" \
+    "$@"
+}
+
+cleanup() {
+  local rc=$?
+  set +e
+  trap - EXIT
+
+  # 失败时收集最小诊断：容器状态 + 关键服务末尾日志（不引入日志采集方案）。
+  if [[ "$rc" -ne 0 && "$E2E_OK" != "true" && "$STACK_STARTED" == "true" ]]; then
+    echo "" >&2
+    echo "e2e 失败（exit ${rc}），COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT_NAME}" >&2
+    echo "---- docker compose ps ----" >&2
+    dc ps >&2 || true
+    for svc in system-core integration agent-runtime; do
+      echo "---- docker compose logs --tail=50 ${svc} ----" >&2
+      dc logs --no-color --tail=50 "$svc" >&2 || true
+    done
+  fi
+
+  # 恢复演练前暂停的监控目标（只在本脚本暂停过时执行）。
+  if [[ "$PRIOR_PAUSED" == "true" ]]; then
+    restore_prior_targets || echo "警告：恢复演练前监控目标失败，请检查 project ${COMPOSE_PROJECT_NAME}" >&2
+  fi
+
+  # 只清理本次 E2E project；绝不执行不带 project 限定的全局 down。
+  if [[ "$STACK_STARTED" == "true" ]]; then
+    if [[ "$KEEP_STACK" == "1" ]]; then
+      echo "ALERTFLOW_E2E_KEEP_STACK=1：保留本次 E2E 栈（project=${COMPOSE_PROJECT_NAME}）。" >&2
+      echo "清理命令：docker compose -p \"${COMPOSE_PROJECT_NAME}\" -f \"${COMPOSE_FILE}\" --env-file \"${IMAGES_ENV_FILE}\" --env-file \"${ENV_FILE}\" down -v --remove-orphans" >&2
+    else
+      echo "清理本次 E2E 栈（仅 project=${COMPOSE_PROJECT_NAME}，含命名卷）..." >&2
+      docker compose -p "$COMPOSE_PROJECT_NAME" -f "$COMPOSE_FILE" --env-file "$IMAGES_ENV_FILE" --env-file "$ENV_FILE" down -v --remove-orphans >&2 || echo "警告：清理 E2E 栈失败，请手动执行 docker compose -p \"${COMPOSE_PROJECT_NAME}\" -f \"${COMPOSE_FILE}\" down -v --remove-orphans" >&2
+    fi
+  fi
+
+  exit "$rc"
+}
+trap cleanup EXIT
 
 FAULT_PORT="$(env_value FAULT_PORT 18081)"
 FAULT_URL="http://127.0.0.1:${FAULT_PORT}"
@@ -62,9 +122,9 @@ else
 fi
 export COMPOSE_PROFILES="$PROFILES_IN"
 
-if [[ -z "${COMPOSE_PROJECT_NAME:-}" ]]; then
-  echo "警告：未设置 COMPOSE_PROJECT_NAME，本次演练将写入默认 Compose project 的数据卷。"
-  echo "      建议：COMPOSE_PROJECT_NAME=alertflow-drill-${RUN_ID} ./e2e.sh，结束后 docker compose down -v 销毁。"
+# 不允许把 E2E 数据写进开发项目 alertflow-plus（compose.yaml 的默认 name）。
+if [[ "$COMPOSE_PROJECT_NAME" == "alertflow-plus" ]]; then
+  fail "COMPOSE_PROJECT_NAME=alertflow-plus 是开发项目名；E2E 必须使用独立的 project（留空即自动生成 alertflow-e2e-<run-id>）"
 fi
 
 # ---------- HTTP 辅助函数（curl + python3，不依赖 jq） ----------
@@ -107,11 +167,33 @@ sys.exit(0 if (text or content_json) else 1)
 '
 }
 
-# ---------- 启动服务并等待就绪 ----------
+# ---------- 启动前最小检查：.env / 必填变量 / compose 配置 ----------
+[[ -f "$ENV_FILE" ]] || fail "缺少 ${ENV_FILE}：请先执行 cp deploy/compose/.env.example deploy/compose/.env 并填写必填口令"
+[[ -f "$IMAGES_ENV_FILE" ]] || fail "缺少 ${IMAGES_ENV_FILE}：镜像变量模板丢失，请从 git 恢复该文件"
+
+MISSING_REQUIRED=()
+for key in POSTGRES_PASSWORD GATEWAY_PASSWORD KNOWLEDGE_PASSWORD MCP_TOKEN KNOWLEDGE_MCP_TOKEN A2A_TOKEN; do
+  value="$(env_value "$key")"
+  if [[ -z "$value" || "$value" == CHANGEME* ]]; then
+    MISSING_REQUIRED+=("$key")
+  fi
+done
+if (( ${#MISSING_REQUIRED[@]} > 0 )); then
+  echo "错误：${ENV_FILE} 中以下必填变量仍为空或仍是 CHANGEME 占位值：" >&2
+  printf '  - %s\n' "${MISSING_REQUIRED[@]}" >&2
+  echo "请编辑 ${ENV_FILE} 后重试（首次使用可 cp deploy/compose/.env.example deploy/compose/.env；ALERTFLOW_LLM_API_KEY 非必填，留空时使用 ScriptedModel）。" >&2
+  exit 1
+fi
+
+# 配置无法解析时立即退出，不要启动半套服务。
+dc config --quiet || fail "docker compose config 校验失败：compose.yaml 或 env 配置无法解析，未启动任何容器"
+
+# ---------- 启动服务并等待就绪（EXIT trap 已注册，up 失败也会清理） ----------
+STACK_STARTED=true
 if [[ "${ALERTFLOW_SKIP_IMAGE_BUILD:-}" == "1" ]]; then
-  docker compose up -d --no-build
+  dc up -d --no-build
 else
-  docker compose up -d --build
+  dc up -d --build
 fi
 
 for _ in $(seq 1 60); do
@@ -123,7 +205,7 @@ done
 curl --noproxy '*' -sf "${API_URL}/readyz" >/dev/null
 
 for _ in $(seq 1 30); do
-  if docker compose exec -T agent-runtime python -c 'import sys, urllib.request
+  if dc exec -T agent-runtime python -c 'import sys, urllib.request
 try:
     urllib.request.urlopen("http://127.0.0.1:8000/health/live", timeout=2).read()
     urllib.request.urlopen("http://127.0.0.1:8000/health/ready", timeout=2).read()
@@ -133,24 +215,24 @@ except Exception:
   fi
   sleep 2
 done
-docker compose exec -T agent-runtime python -c 'import urllib.request; urllib.request.urlopen("http://127.0.0.1:8000/health/live", timeout=2).read(); urllib.request.urlopen("http://127.0.0.1:8000/health/ready", timeout=2).read()'
+dc exec -T agent-runtime python -c 'import urllib.request; urllib.request.urlopen("http://127.0.0.1:8000/health/live", timeout=2).read(); urllib.request.urlopen("http://127.0.0.1:8000/health/ready", timeout=2).read()'
 
 for _ in $(seq 1 60); do
-  if docker compose exec -T integration bash -c 'echo >/dev/tcp/127.0.0.1/8081'; then
+  if dc exec -T integration bash -c 'echo >/dev/tcp/127.0.0.1/8081'; then
     break
   fi
   sleep 2
 done
-docker compose exec -T integration bash -c 'echo >/dev/tcp/127.0.0.1/8081'
+dc exec -T integration bash -c 'echo >/dev/tcp/127.0.0.1/8081'
 
 if [[ "$KNOWLEDGE_ON" == "true" ]]; then
   for _ in $(seq 1 60); do
-    if docker compose exec -T knowledge-agent python -c 'import urllib.request; urllib.request.urlopen("http://127.0.0.1:8000/health", timeout=2).read()'; then
+    if dc exec -T knowledge-agent python -c 'import urllib.request; urllib.request.urlopen("http://127.0.0.1:8000/health", timeout=2).read()'; then
       break
     fi
     sleep 2
   done
-  docker compose exec -T knowledge-agent python -c 'import urllib.request; urllib.request.urlopen("http://127.0.0.1:8000/health", timeout=2).read()'
+  dc exec -T knowledge-agent python -c 'import urllib.request; urllib.request.urlopen("http://127.0.0.1:8000/health", timeout=2).read()'
 fi
 
 # 故障辅助服务只绑定宿主机回环地址，确认端口可用（初始 /health 可能是 200 或 500）。
@@ -168,7 +250,7 @@ done
 # ---------- 暂停演练前已启用的监控目标，避免旧目标占满探测 worker ----------
 # 只暂停脚本开始前已经启用的目标；本次新建的目标不在这份名单里。
 # 进程正常退出或失败退出时按原 target_id 恢复；SIGKILL 不会执行恢复。
-PRIOR_TARGETS="$(docker compose exec -T postgres psql -U alertflow -d alertflow -At -c "SELECT target_id FROM system.service_monitor_targets WHERE enabled")"
+PRIOR_TARGETS="$(dc exec -T postgres psql -U alertflow -d alertflow -At -c "SELECT target_id FROM system.service_monitor_targets WHERE enabled")"
 prior_target_list() {
   local id list=""
   while IFS= read -r id; do
@@ -186,15 +268,12 @@ restore_prior_targets() {
   local list
   list="$(prior_target_list)"
   [[ -z "$list" ]] && return 0
-  docker compose exec -T postgres psql -U alertflow -d alertflow -c "UPDATE system.service_monitor_targets SET enabled=true WHERE target_id IN (${list})" >/dev/null
+  dc exec -T postgres psql -U alertflow -d alertflow -c "UPDATE system.service_monitor_targets SET enabled=true WHERE target_id IN (${list})" >/dev/null
 }
-cleanup() {
-  restore_prior_targets || true
-}
-trap cleanup EXIT
 PRIOR_LIST="$(prior_target_list)"
 if [[ -n "$PRIOR_LIST" ]]; then
-  docker compose exec -T postgres psql -U alertflow -d alertflow -c "UPDATE system.service_monitor_targets SET enabled=false WHERE target_id IN (${PRIOR_LIST})"
+  dc exec -T postgres psql -U alertflow -d alertflow -c "UPDATE system.service_monitor_targets SET enabled=false WHERE target_id IN (${PRIOR_LIST})"
+  PRIOR_PAUSED=true
 fi
 
 # ---------- 1. 创建服务与真实 HTTP 目标（间隔 1000ms / 超时 500ms / 失败阈值 3 / 恢复阈值 2） ----------
@@ -352,7 +431,7 @@ echo "Episode 已归档: ${EP}"
 
 # ---------- 7. Knowledge / FD 校验（仅显式启用 Knowledge 时执行） ----------
 if [[ "$KNOWLEDGE_ON" == "true" ]]; then
-  docker compose exec -T agent-runtime python - <<PY
+  dc exec -T agent-runtime python - <<PY
 import asyncio
 import os
 from alertflow_agent.fd import connect, search_faults
@@ -370,18 +449,18 @@ async def main():
 
 asyncio.run(main())
 PY
-  RECEIPTS=$(docker compose exec -T postgres psql -U alertflow -d alertflow -tAc "SELECT count(*) FROM system.episode_fault_document_refs WHERE episode_id='${EP}'::uuid")
+  RECEIPTS=$(dc exec -T postgres psql -U alertflow -d alertflow -tAc "SELECT count(*) FROM system.episode_fault_document_refs WHERE episode_id='${EP}'::uuid")
   if [[ "${RECEIPTS}" -lt 1 ]]; then
     echo "fault document receipt missing" >&2
     exit 1
   fi
-  INVOKED=$(docker compose exec -T postgres psql -U alertflow -d alertflow -tAc "SELECT count(*) FROM gateway.agent_invocations WHERE status='COMPLETED'")
+  INVOKED=$(dc exec -T postgres psql -U alertflow -d alertflow -tAc "SELECT count(*) FROM gateway.agent_invocations WHERE status='COMPLETED'")
   if [[ "${INVOKED}" -lt 1 ]]; then
     echo "knowledge invocation did not complete" >&2
-    docker compose exec -T postgres psql -U alertflow -d alertflow -c "SELECT status, error_code, left(safe_message,120) FROM gateway.agent_invocations" >&2 || true
+    dc exec -T postgres psql -U alertflow -d alertflow -c "SELECT status, error_code, left(safe_message,120) FROM gateway.agent_invocations" >&2 || true
     exit 1
   fi
-  docker compose exec -T -e KNOWLEDGE_A2A_TOKEN="${KNOWLEDGE_A2A_TOKEN}" knowledge-agent python - <<'PY'
+  dc exec -T -e KNOWLEDGE_A2A_TOKEN="${KNOWLEDGE_A2A_TOKEN}" knowledge-agent python - <<'PY'
 import json, os, time, urllib.request
 token = os.environ["KNOWLEDGE_A2A_TOKEN"]
 boundary = "----alertflow"
@@ -440,17 +519,22 @@ fi
 
 # ---------- 8. 恢复演练前暂停的目标，并断言恢复成功 ----------
 restore_prior_targets
+PRIOR_PAUSED=false
 if [[ -n "$PRIOR_LIST" ]]; then
   EXPECTED_COUNT=$(( $(printf '%s' "$PRIOR_LIST" | tr -cd ',' | wc -c) + 1 ))
-  RESTORED_COUNT="$(docker compose exec -T postgres psql -U alertflow -d alertflow -tAc "SELECT count(*) FROM system.service_monitor_targets WHERE enabled AND target_id IN (${PRIOR_LIST})")"
+  RESTORED_COUNT="$(dc exec -T postgres psql -U alertflow -d alertflow -tAc "SELECT count(*) FROM system.service_monitor_targets WHERE enabled AND target_id IN (${PRIOR_LIST})")"
   RESTORED_COUNT="${RESTORED_COUNT//[[:space:]]/}"
   [[ "$RESTORED_COUNT" == "$EXPECTED_COUNT" ]] \
     || fail "演练前已启用目标未全部恢复：期望 ${EXPECTED_COUNT}，实际 ${RESTORED_COUNT}"
   echo "演练前已启用的 ${EXPECTED_COUNT} 个监控目标已恢复 enabled=true"
 fi
-trap - EXIT
+
+E2E_OK=true
 
 echo "e2e archived ${EP}（service_id=${SID}，service_key=${KEY}）"
-echo "提示：本脚本创建了服务/Episode/产物/FD 等演练数据。"
-echo "      如使用独立 COMPOSE_PROJECT_NAME 启动，结束后执行以下命令整体销毁演练数据："
-echo "      COMPOSE_PROJECT_NAME=<演练项目名> docker compose down -v   # -v 会删除该项目全部命名卷数据"
+echo "本次 E2E project: ${COMPOSE_PROJECT_NAME}（成功，退出时自动清理本项目容器/网络/命名卷）"
+if [[ "$KEEP_STACK" == "1" ]]; then
+  echo "ALERTFLOW_E2E_KEEP_STACK=1：保留本次栈，清理命令见上方退出输出。"
+else
+  echo "如需保留现场排障，下次运行可设置 ALERTFLOW_E2E_KEEP_STACK=1。"
+fi

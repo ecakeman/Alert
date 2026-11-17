@@ -1,6 +1,8 @@
 # Python Main Agent：构建阶段根据 pyproject.toml / uv.lock 在镜像内安装依赖，
 # 不依赖宿主机 .venv；最终镜像使用非 root 用户（uid 10001）。
-FROM python:3.12-slim-bookworm
+# 基础镜像可用 --build-arg PYTHON_IMAGE=... 覆盖（Compose 见 compose.yaml build.args）。
+ARG PYTHON_IMAGE=python:3.12-slim-bookworm
+FROM ${PYTHON_IMAGE}
 
 # 默认使用官方 PyPI；国内构建可 --build-arg PIP_INDEX_URL=<镜像源>/simple 覆盖。
 ARG PIP_INDEX_URL=https://pypi.org/simple
