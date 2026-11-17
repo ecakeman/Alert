@@ -24,14 +24,19 @@ import redis.clients.jedis.JedisPooled;
 
 @Component
 public class RevisionCache implements AutoCloseable {
+    // 指针只前进不回退；结果值按 revision + query 独立成键，版本未前进时也必须写入，
+    // 否则同一 revision 下只有第一个 query 回源后能命中，其余 query 变体永远不缓存。
     private static final String ADVANCE = """
             local current = redis.call('GET', KEYS[1])
             local next = tonumber(ARGV[1])
-            if current and tonumber(current) >= next then
+            local known = tonumber(current) or 0
+            if next <= 0 then
               return 0
             end
-            redis.call('SET', KEYS[1], ARGV[1], 'PX', ARGV[2])
-            if ARGV[3] ~= '' then
+            if next > known then
+              redis.call('SET', KEYS[1], ARGV[1], 'PX', ARGV[2])
+            end
+            if next >= known and ARGV[3] ~= '' then
               redis.call('SET', KEYS[2], ARGV[3], 'PX', ARGV[2])
             end
             return 1
