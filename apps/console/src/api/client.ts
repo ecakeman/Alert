@@ -1,7 +1,7 @@
 import axios, { AxiosError } from 'axios'
 import type { ApiErrorBody } from './types'
 
-// 所有请求统一走 /api/v1，开发环境由 Vite 代理到 Go Backend。
+// 所有请求统一走 /api/v1，开发环境由 Vite 代理到 Java Integration（公开面）。
 export const http = axios.create({
   baseURL: '/api/v1',
   timeout: 20000,
@@ -28,7 +28,7 @@ http.interceptors.response.use(
     const message =
       body?.message ||
       (status === 0
-        ? '无法连接后端服务，请确认 Go Backend 已启动且 /api 代理可达'
+        ? '无法连接后端服务，请确认 Java Integration 已启动且 /api 代理可达'
         : error.message || `请求失败（HTTP ${status}）`)
     return Promise.reject(new ApiError(message, body?.error_code || `HTTP_${status}`, status))
   }

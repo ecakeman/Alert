@@ -1,7 +1,13 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import * as echarts from 'echarts'
+// 按需引入：整包 echarts 会把首页体积撑到 1 MB 以上（方案 §12.6 构建产物要求拆分）。
+import { BarChart } from 'echarts/charts'
+import { GridComponent, TooltipComponent } from 'echarts/components'
+import * as echarts from 'echarts/core'
+import { CanvasRenderer } from 'echarts/renderers'
+
+echarts.use([BarChart, GridComponent, TooltipComponent, CanvasRenderer])
 import { fetchDashboardSummary } from '../api/dashboard'
 import { fetchServices } from '../api/services'
 import { errorMessage } from '../api/client'
