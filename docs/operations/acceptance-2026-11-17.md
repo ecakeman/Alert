@@ -1,9 +1,10 @@
 # AlertFlow 整改验收报告（方案第 12 节：12.1–12.7）
 
-- 被测版本：`main` = `ab2b8dc`（第二轮「整改指导执行」的最后一个代码提交；本报告随其后的报告提交入库）
-- **两轮口径**：
+- 被测版本：`main` = `460c6ab`（第三轮「收尾整改」的代码提交；本报告随其后的报告提交入库）
+- **三轮口径**：
   - **第一轮（2026-11-15～17 上午）**：被测 `origin/main = d763fd1`，代码修复当时以 **30 项未提交改动**存在（23 modified + 7 untracked）—— §1.1、§1.3、§1.4、§2.1、§3.2、§5.1、§6.1 等「原始树」证据来自此轮；这些改动已于 17 日下午以 4 个提交入库（`c9a5d50`/`1c27947`/`39d8140`/`f2a30b1`）。
   - **第二轮（2026-11-17 晚）**：执行《AlertFlow整改执行指导-2026-11-17》，在 `f2a30b1` 之后完成 E2E 编排、缓存 query 键、Go 失效范围、镜像变量、Python wheel、K8s 文档六项，并**首次真实起栈连续跑通两次 E2E** —— §1.2、§3.1、§4.2、§5.3、§6、§8、§9、§11 已按此轮结果更新。本轮 6 个代码提交：`d55603c`、`3aba030`、`d2853fd`、`f4e5707`、`91f5a51`、`ab2b8dc`。
+  - **第三轮（2026-11-17 晚收尾）**：执行《AlertFlow 收尾整改指导》，只做三件事——补 E2E 连续运行验收（`make e2e` 两次、均默认清理）、按实测更正本报告、整理远端分支。首次运行时暴露并修复一个 postgres 就绪竞态（`460c6ab`），修复后**两次 `make e2e` 均 exit 0（61 s / 56 s）且均自动清理**。本轮**没有架构/功能改动**。
 - 基线对照：`1aa5b45`（monorepo 重排、整改提交之前）—— 用于判断 d763fd1 的失败是否由整改引入（§1.4）。
 - 测试日期：2026-11-15 至 2026-11-17
 - 测试环境：WSL2 Ubuntu 24.04 / Docker 29.6.1 + Compose v5.2.0 / Go 1.26.6 / JDK 25（Temurin 25.0.5+8）/ Python 3.12（uv）/ Node 22
@@ -23,16 +24,16 @@
 |---|---|---|---|
 | 12.1 静态与单元测试 | 通过 | 两轮 | `go test ./...` **0 FAIL**（7 个 ok 包、56 个 Test 函数）、Java **20/0/0**（含 `RevisionCacheTest` 6）、pytest 14 passed、Vue build exit 0；gofmt 剩 **2** 文件（均 `HEAD` 既存） |
 | 12.2 契约一致性 | 部分修（有测试，无 HTTP 重放） | 两轮 | 19 条公开路由可用；#1–#4 已改且 405/404/409 有单测与真实测试库证据；**未做栈级 HTTP 端到端重放** |
-| 12.3 E2E 主链路 | **通过（第二轮实测）** | 第二轮 | `make e2e` 连续两次 exit 0（65.19 s / 47.32 s），服务→故障→Episode→诊断→归档全链路 + 默认清理；第二次启动无端口/卷残留冲突 |
+| 12.3 E2E 主链路 | **通过（第三轮 `make e2e` 两次默认清理实测）** | 第二轮 + 第三轮 | 第二轮两次真实起栈 exit 0（65.19 s / 47.32 s），其中 runB 用 `ALERTFLOW_E2E_KEEP_STACK=1` 保留现场（**未清理**）；第三轮按收尾指导用 `make e2e` 连跑两次，**两次都默认清理**，均 exit 0（61 s / 56 s），全链路 + 双产物 + `ARCHIVED`，其他 project 不受影响 |
 | 12.4 版本缓存 | 部分修（**已接口级验证**） | 第二轮 | query 进值键（SHA-256 前 16 hex）；不同 query 各自成键、revision 推进后旧值不命中、Redis 故障回源；5–6 s 短 TTL 与 Kafka 异步失效窗口仍在 |
 | 12.5 运行与故障 | P0 **已修**（单测证据） | 两轮 | 三处根因已改 + 10 个监控回归用例全绿；**未做 pause 后自愈的栈级复现** |
 | 12.6 镜像与部署 | 部分修（E2E 已重建镜像） | 第二轮 | `images.env.example` 已接入 Makefile/Compose/Dockerfile ARG，E2E 每次真实 `--build` 四个镜像；K8s 仍只做静态校验、未部署 |
-| 12.7 验收 | **完成判定满足**（另有未执行项） | 两轮 | 指导文档第 10 节 8 条完成判定**全部满足**（单一入口、默认清理、两次 E2E 均 exit 0 且都验证到 `ARCHIVED` + 两个非空产物、query 不共用键、revision 后旧值不命中、Go 失效范围有计数测试、K8s 文档一致、报告对应 `ab2b8dc`）；真实 K8s / 真实 LLM / `-race` / pause 自愈复现 / 契约 HTTP 重放等非判定项未执行（§9） |
+| 12.7 验收 | **完成判定满足**（另有未执行项） | 三轮 | 指导文档第 10 节 8 条完成判定**全部满足**（单一入口、默认清理、两次 E2E 均 exit 0 且都验证到 `ARCHIVED` + 两个非空产物、query 不共用键、revision 后旧值不命中、Go 失效范围有计数测试、K8s 文档一致、报告对应 `460c6ab`）；真实 K8s / 真实 LLM / `-race` / pause 自愈复现 / 契约 HTTP 重放等非判定项未执行（§9） |
 
 阻塞项优先级一览（详见 §8）：
 
 1. **P0**：监控调度永久停摆 —— **已修**（§5.3；确定性回归测试通过，**无栈级复现**）
-2. **P1**：按 README 首条命令启动失败（空口令） —— **已修并实测**（第二轮 `make e2e` 以真实 `.env` 起栈两次成功；§6.2）
+2. **P1**：按 README 首条命令启动失败（空口令） —— **已修并实测**（第二轮以真实 `.env` 起栈两次成功；第三轮又用 `make e2e` 默认清理连跑两次成功，并修掉期间暴露的 postgres 就绪竞态 `460c6ab`；§3.1、§6.2）
 3. **P1**：`RevisionCache` 读路径恒不命中 —— **已修并经接口级验证**（§4.2a；含本轮发现的「同 revision 下只缓存第一个 query」Lua 缺陷）
 4. **P1**：写放大 —— **结论更正 + 已收窄**：`ApplyMonitorSample` 两个 `noteViews()` 调用点在互斥分支，受控测试实测普通采样只 bump `targets` **1** 条，**不是「每采样 10 条」**；元数据操作仍为 5 条，首次异常/恢复采样 5 条（§1.3、§4.2b）
 5. **P2**：gofmt 2 文件（`HEAD` 既存）、无 ruff/OpenAPI 校验 —— **仍存**；Python 空 wheel **已修**（30,273 B，20 个模块）
@@ -190,17 +191,31 @@ gofmt 差异（原始树，均非功能问题）：
 `up` 前注册唯一 `EXIT` trap、默认 `down -v --remove-orphans` 且只作用于本项目、`ALERTFLOW_E2E_KEEP_STACK=1` 保留现场且只打印清理命令、
 失败时打 `dc ps` + 关键服务 `logs --tail=50`、启动前预检 `.env`/镜像变量文件/6 个必填口令非 `CHANGEME`/`compose config --quiet`。
 
-**实际复跑结果（第二轮，真实起栈，非模拟）**：
+**实际复跑结果（真实起栈，非模拟）**：
 
-| 运行 | 命令 | 结果 | 用时 |
-|---|---|---|---|
-| runA | `bash deploy/e2e.sh`（默认清理） | **exit 0**：服务创建 → `/break` → Episode ACTIVE → 诊断 → 双产物（`INVESTIGATION v2` / `DIAGNOSIS_REPORT v2`）→ 恢复 → 归档（Episode `f65e8103-…`），退出时自动 `down -v` 清理，无残留容器 | `65.19 s` |
-| runB | `ALERTFLOW_E2E_KEEP_STACK=1 bash deploy/e2e.sh` | **exit 0**：同样验证到双产物（`INVESTIGATION v2` / `DIAGNOSIS_REPORT v2`）与归档（Episode `b85793a3-…`）；保留栈 project `alertflow-e2e-1794911809-76193`（9 容器 Up、`/readyz` 200），**第二次启动无端口/卷冲突** | `47.32 s` |
+第二轮（指导执行轮；直接调用 `bash deploy/e2e.sh`）：
 
-- 两次 project name 不同（`alertflow-e2e-1794911744-69864` / `alertflow-e2e-1794911809-76193`），runA 清理后 runB 未出现 `Bind for 127.0.0.1:* failed`；开发环境自己的容器（`og-redis`/`og-mysql`）全程未受影响。
-- 首次跑通前遇到的三个真实问题：① 后台 WSL 进程 PATH 无 `make`（改用 `/home/sancho/.local/bin/make`，环境问题非代码）；② 本地 `eclipse-temurin:25-jdk` tag 实际指向 JRE（`No compiler is provided in this environment`）→ 用 daocloud 同名镜像重打 tag；③ **`db-init` 退出 2**：`deploy/compose/postgres/init-roles.sh` 在 `set -u` 下需要 `GATEWAY_PASSWORD`/`KNOWLEDGE_PASSWORD`，而 `db-init` 只传了 postgres 口令（481c217 起的回归）→ `91f5a51` 补齐两个 env 并让失败诊断带上 `db-init`。
-- runB 保留的栈随后用于 §4.2a 的缓存接口级验证，验证完成后已 `down -v --remove-orphans` 清理，无残留容器与卷。
-> 因此 §12.3 的「通过」**现在对修复后脚本也成立**（两次 exit 0 + 产物 + 清理）；第一轮那句「修复后脚本未再起栈」已作废。
+| 运行 | 命令 | 清理行为 | 结果 | 用时 |
+|---|---|---|---|---|
+| runA | `bash deploy/e2e.sh` | **默认清理** | exit 0：服务创建 → `/break` → Episode ACTIVE → 诊断 → 双产物（`INVESTIGATION v2` / `DIAGNOSIS_REPORT v2`）→ 恢复 → 归档（Episode `f65e8103-…`），退出时自动 `down -v` 清理 | `65.19 s` |
+| runB | `ALERTFLOW_E2E_KEEP_STACK=1 bash deploy/e2e.sh` | **保留现场，不清理** | exit 0：同样验证到双产物（`INVESTIGATION v2` / `DIAGNOSIS_REPORT v2`）与归档（Episode `b85793a3-…`）；保留栈 project `alertflow-e2e-1794911809-76193`（9 容器 Up、`/readyz` 200），第二次启动无端口/卷冲突 | `47.32 s` |
+
+第三轮（收尾整改；按指导直接跑 `make e2e`，两次都用默认清理）：
+
+| 运行 | 命令 | 清理行为 | 结果 | 用时 |
+|---|---|---|---|---|
+| runA | `make e2e` | **默认清理** | exit 0：服务创建 → 故障注入 → Episode ACTIVE → 诊断（`DIAGNOSTIC_INFO` `input_version=2`）→ 双产物（`ARTIFACT_TYPE_INVESTIGATION v2` / `ARTIFACT_TYPE_DIAGNOSIS_REPORT v2`）→ 恢复 → 归档（Episode `e6137294-…`）；project `alertflow-e2e-1794914572-135182` 退出时自动清理，清理后 e2e 容器数 **0** | `61 s` |
+| runB | `make e2e` | **默认清理** | exit 0：同样全链路（Episode `0cf8388b-…`）；project `alertflow-e2e-1794914636-141434` 自动清理，清理后 e2e 容器数 **0**；两次之间无端口/卷冲突 | `56 s` |
+
+- 第三轮两次运行结束后，`docker ps -a` 中测试 project 的容器/网络/命名卷均为 0；其他 project 的容器（`og-redis`/`og-mysql`）与测试库容器 `af-test-pg` 全程未受影响（脚本清理只作用于 `-p alertflow-e2e-<runid>`）。
+- **口径区分**：第二轮 runB 用了 `ALERTFLOW_E2E_KEEP_STACK=1`，**不算默认清理**；「两次都默认清理」这一结论由第三轮两次 `make e2e` 单独支撑。
+- 第三轮首次运行（`make e2e` runA）暴露一个真实的就绪竞态并已修复（`460c6ab`）：postgres healthcheck 原来用 `pg_isready -U alertflow`（默认走 unix socket），而 initdb 阶段的临时实例只监听 socket，于是服务在最终 server 尚未监听 TCP 时就被判为 healthy，`db-init` 随即连 TCP 失败——
+  `psql: error: connection to server at "postgres" (…), port 5432 failed: Connection refused` → `service "db-init" didn't complete successfully: exit 2`。
+  修法：healthcheck 改为 `pg_isready -h 127.0.0.1 -U alertflow`（强制走 TCP），并在 `init-roles.sh` 首次 `psql` 前加入 30 次 × 1 s 的有界重试；修复后第三轮两次 `make e2e` 均未再出现该错误。
+- 第二轮/第三轮 project name 各不相同（`alertflow-e2e-1794911744-69864` / `-1794911809-76193` / `-1794914572-135182` / `-1794914636-141434`），前一次清理后下一次未出现 `Bind for 127.0.0.1:* failed`。
+- 第二轮首次跑通前遇到的三个真实问题：① 后台 WSL 进程 PATH 无 `make`（改用 `/home/sancho/.local/bin/make`，环境问题非代码）；② 本地 `eclipse-temurin:25-jdk` tag 实际指向 JRE（`No compiler is provided in this environment`）→ 用 daocloud 同名镜像重打 tag；③ **`db-init` 退出 2**：`deploy/compose/postgres/init-roles.sh` 在 `set -u` 下需要 `GATEWAY_PASSWORD`/`KNOWLEDGE_PASSWORD`，而 `db-init` 只传了 postgres 口令（481c217 起的回归）→ `91f5a51` 补齐两个 env 并让失败诊断带上 `db-init`。
+- 第二轮 runB 保留的栈随后用于 §4.2a 的缓存接口级验证，验证完成后已 `down -v --remove-orphans` 清理，无残留容器与卷。
+> 因此 §12.3 的「通过」对 `bash deploy/e2e.sh`（第二轮）与 `make e2e`（第三轮，两次均默认清理）都成立；第一轮那句「修复后脚本未再起栈」已作废。
 
 通过轮（原始树，`COMPOSE_PROJECT_NAME=af-t1`、ScriptedModel、`FAULT_PORT=18085`）：服务 `fa587c56` 创建 → `POST /break` →
 Episode `b77bb1d4` 1 个 ACTIVE → `DIAGNOSTIC_INFO` accepted（input_version 2）→ 双产物 v2
@@ -396,6 +411,7 @@ K8s `terminationGracePeriodSeconds`：system-core/integration/agent 45 s、front
 - 第一轮修复后状态（`f2a30b1`）：`.env.example` 6 个口令改为 `CHANGEME_*` 占位并标「必须修改」（`POSTGRES_PASSWORD`/`GATEWAY_PASSWORD`/`KNOWLEDGE_PASSWORD`/`MAIN_MCP_TOKEN`/`KNOWLEDGE_MCP_TOKEN`/`A2A_TOKEN`，`:30/:33/:36/:39/:42/:45`）；头部用法改为带 `--env-file deploy/compose/.env`；旧拓扑名 `alertflow`→`system-core`、`agent`→`agent-runtime`（`:64/:118/:159`）。README `:73-77` 首条命令补 `--env-file deploy/compose/.env` 与「必须修改口令」提示，`:74`/`:103` 路径改为 `deploy/compose/.env`，`:88` `down` 同样补 `--env-file`。
 - 验证边界（第一轮）：`ENV_FILE=deploy/compose/.env.example make compose-config` → **exit 0**，且渲染结果中 6 个口令均非空，第一轮只做到渲染层。
 - **第二轮已实测起栈**：`cp .env.example .env` 后改 6 个口令，`make e2e` 连续两次 exit 0（§3.1）。首次起栈暴露一个真实回归并已修（`91f5a51`）：`deploy/compose/postgres/init-roles.sh` 在 `set -u` 下需要 `GATEWAY_PASSWORD`/`KNOWLEDGE_PASSWORD`（481c217 把硬编码口令改成变量却漏了给 `db-init` 传这两个 env），导致 `db-init` 以 `GATEWAY_PASSWORD: parameter not set` 退出 2、整栈失败；现已在 `db-init.environment` 补传，且 `e2e.sh` 失败诊断会打印 `db-init` 日志。
+- **第三轮复测（收尾）**：用 `make e2e` 以默认清理连跑两次，均 exit 0（61 s / 56 s）；期间首次运行因 postgres 就绪竞态失败（`db-init` 连接被拒），已由 `460c6ab` 修复（healthcheck 强制走 TCP + `init-roles.sh` 有界重试），修复后两次均通过。
 - 因此 §8-B1 从「已改未实测」升级为「**已修并实测**」。
 
 ### 6.3 Kubernetes
@@ -452,7 +468,7 @@ K8s `terminationGracePeriodSeconds`：system-core/integration/agent 45 s、front
 
 ### B. P1 —— 交付可用性
 
-1. **README 首条命令失败** —— **已修并实测**：第二轮用自己的 `.env` 连跑两次 `make e2e` 均 exit 0（§3.1、§6.2）。期间还暴露并修掉一个更深的回归——`db-init` 缺 `GATEWAY_PASSWORD`/`KNOWLEDGE_PASSWORD` 导致整栈失败（`91f5a51`，见 D.1）。
+1. **README 首条命令失败** —— **已修并实测**：第二轮用自己的 `.env` 连跑两次 E2E 均 exit 0；第三轮按收尾指导用 `make e2e` **默认清理连跑两次**均 exit 0（61 s / 56 s，§3.1、§6.2）。期间还暴露并修掉两个部署层问题：`db-init` 缺 `GATEWAY_PASSWORD`/`KNOWLEDGE_PASSWORD` 导致整栈失败（`91f5a51`），以及 postgres healthcheck 走 socket 造成的就绪竞态（`460c6ab`）。
 2. **~~目标管理缺 Go 接口~~** —— **删除**。`POST /api/v1/services/{service_id}/targets` 存在（`internal/api/server.go:36-37`，实测 201）。上一版为误判。
 3. **`RevisionCache` 读路径恒不命中** —— **已修并经接口级验证**（`1c27947` + `3aba030` + `ab2b8dc`，§4.2a）：不同 query 各自成键、同 query 命中、revision 推进后旧结果不命中、Redis 故障回源；**并发击穿压测与多副本仍未做**（§9）。
 4. **写放大** —— **结论更正 + 已收窄**（`d2853fd`，§4.2b）：普通采样 **1** 条（旧版「10 条」是把两个互斥 `noteViews` 调用点重复计数，原始树实际 5 条），首次异常/恢复采样 5 条，元数据操作仍 5 条；**仍存**：元数据路径仍全量 5 视图、task 生命周期字段不触发 episodes/dashboard 失效（靠 5 s TTL 兜底）。
@@ -508,6 +524,8 @@ K8s `terminationGracePeriodSeconds`：system-core/integration/agent 45 s、front
 13. **CI**：仓库没有 CI 流水线，本报告全部结果是本地执行，**不记作 CI 通过**。
 
 > 第二轮已完成、因此从本清单移除的旧项：`deploy/e2e.sh` 修复版实跑（现连续两次 exit 0）、`RevisionCache` 接口级验证、按 README 起栈（`make e2e`）、镜像 `--build` 重建、Python wheel 打包、K8s 文档与 YAML 对齐。
+>
+> 第三轮（收尾）只补测「`make e2e` 两次默认清理」并修复 postgres 就绪竞态（`460c6ab`），未改变上述任何未执行项的结论。
 
 ---
 
@@ -518,7 +536,8 @@ K8s `terminationGracePeriodSeconds`：system-core/integration/agent 45 s、front
 - Python：`cd services/agent-runtime && uv sync --frozen && uv run pytest -q && uv build`
 - Vue：`cd apps/console && npx vue-tsc --noEmit && npm run build`
 - Compose：`ENV_FILE=deploy/compose/.env.example make compose-config`；**`make` 不在后台 WSL 的 PATH 里，需写 `/home/sancho/.local/bin/make`**
-- E2E：`cp deploy/compose/.env.example deploy/compose/.env` 并改 6 个 `CHANGEME_*` 口令 → `/home/sancho/.local/bin/make e2e`（第二次加 `ALERTFLOW_E2E_KEEP_STACK=1`；日志 `/tmp/e2e-run-a.log`、`/tmp/e2e-run-b.log`、汇总 `/tmp/e2e-twice.out`）
+- E2E（第二轮）：`cp deploy/compose/.env.example deploy/compose/.env` 并改 6 个 `CHANGEME_*` 口令 → `bash deploy/e2e.sh`（默认清理；第二次用 `ALERTFLOW_E2E_KEEP_STACK=1` 保留现场）；日志 `/tmp/e2e-run-a.log`、`/tmp/e2e-run-b.log`、汇总 `/tmp/e2e-twice.out`
+- E2E（第三轮，收尾）：`/home/sancho/.local/bin/make e2e` **连跑两次，均默认清理**；日志 `/tmp/e2e-final-a.log`、`/tmp/e2e-final-b.log`、汇总 `/tmp/e2e-final-wrapper.log`（脚本 `/tmp/e2e-final-twice.sh`）
 - 缓存接口级检查（保留栈）：`curl -s 'http://127.0.0.1:18080/api/v1/services?limit=10'` / `?limit=20` 后立即 `docker exec <runB>-redis-1 redis-cli --scan --pattern 'af:api:*'`；revision 推进用 `POST /api/v1/services` 建服务，再从 Kafka 消费日志确认指针 v7→v8
 - 监控复现脚本：`/tmp/mon-repro.sh`；P0 现场记录 `/home/sancho/af-monitor-repro.md`
 - 契约矩阵：`/tmp/api_matrix.sh`（Java 公开面 19 条路由）
@@ -577,10 +596,18 @@ K8s `terminationGracePeriodSeconds`：system-core/integration/agent 45 s、front
 
 | # | 提交 | 文件 | 改动 | 验证 |
 |---|---|---|---|---|
-| D-1 | `d55603c` fix(deploy) | `Makefile`、`deploy/e2e.sh`、`deploy/compose/compose.yaml`、`deploy/images.env.example`、4 个 Dockerfile | 单一入口 `make e2e` → `bash deploy/e2e.sh`；脚本自管栈生命周期（唯一 EXIT trap、默认 `down -v --remove-orphans` 限本项目、`ALERTFLOW_E2E_KEEP_STACK=1` 保留现场、失败打印 `ps`+日志、启动前预检 `.env`/口令/`compose config`）；镜像变量接入（11 变量 + `${VAR:-tag}` + `ARG`） | `bash -n` 0；`make compose-config` 0（11 service）；**两次真实 `make e2e` exit 0（65.19 s / 47.32 s）**；无端口冲突、无残留 |
+| D-1 | `d55603c` fix(deploy) | `Makefile`、`deploy/e2e.sh`、`deploy/compose/compose.yaml`、`deploy/images.env.example`、4 个 Dockerfile | 单一入口 `make e2e` → `bash deploy/e2e.sh`；脚本自管栈生命周期（唯一 EXIT trap、默认 `down -v --remove-orphans` 限本项目、`ALERTFLOW_E2E_KEEP_STACK=1` 保留现场、失败打印 `ps`+日志、启动前预检 `.env`/口令/`compose config`）；镜像变量接入（11 变量 + `${VAR:-tag}` + `ARG`） | `bash -n` 0；`make compose-config` 0（11 service）；第二轮两次真实起栈 exit 0（65.19 s / 47.32 s，第二次用 `KEEP_STACK` 保留现场）；无端口冲突、无残留 |
 | D-2 | `3aba030` fix(integration) | `RevisionCache.java`、`PublicApiController.java` | `around(scope,id,query,loader)`；值键 `q<sha256[:16]>:v<rev>`；空 query → `none`；删 `pins` 伪单飞；Redis 故障降级；5 个调用点传入 `request.getQueryString()` | `mvn test` 20/0/0；接口级：两 query 各成键、同 query 命中、键不含原始 query |
 | D-3 | `d2853fd` fix(system-core) | `revision.go`、`apply.go`、`task.go`、`revision_test.go`、`apply_test.go` | `viewChanges` + `noteViewChanges`（每视图最多 bump 一次）；采样/事件按真实可见变化选视图；`CompleteTask` 补归档路径失效；`task.go` 顺带 gofmt | `go test ./internal/system/` 通过；8 类场景计数 1/1/5/4/0/3/2（§4.2b） |
 | D-4 | `f4e5707` fix(agent-runtime) | `pyproject.toml`、`deploy/kubernetes/README.md`、`20-configmap.yaml`、`secret.example.yaml` | wheel `packages=["src/alertflow_agent"]`；K8s 文档与清单对齐（组件表/端口/探针/Redis/Secret 命令/`8080` 清零） | `uv build` 30,273 B / 20 模块 / `import` 成功；6 YAML `safe_load_all` 通过；残留 grep 无匹配 |
 | D-5 | `91f5a51` fix(deploy) | `deploy/compose/compose.yaml`、`deploy/e2e.sh` | `db-init` 补传 `GATEWAY_PASSWORD`/`KNOWLEDGE_PASSWORD`；失败诊断加 `db-init` | 修后 `make e2e` 两次 exit 0（修前 `db-init` 退出 2） |
 | D-6 | `ab2b8dc` fix(integration) | `RevisionCache.java` | Lua `ADVANCE`：指针前移才写指针、`next >= known` 即写值键（修「同 revision 只有第一个 query 落缓存」） | `mvn test` 20/0/0；重建 integration 镜像后接口级复验 v7 双 query 键共存、v8 推进失效 |
 | D-7 | 本报告 | `docs/operations/acceptance-2026-11-17.md` | 第二轮实测与结论更正（提交哈希见 `git log`） | 占位符残留校验为 0；数字与 §1–§9 一致 |
+
+### 11.3 第三轮（`ab2b8dc` → 收尾，按《AlertFlow 收尾整改指导》）
+
+| # | 提交 | 文件 | 改动 | 验证 |
+|---|---|---|---|---|
+| E-1 | `460c6ab` fix(deploy) | `deploy/compose/compose.yaml`、`deploy/compose/postgres/init-roles.sh` | postgres healthcheck 改 `pg_isready -h 127.0.0.1 -U alertflow`（强制 TCP，避免 initdb 临时实例误报 healthy）；`init-roles.sh` 首次 `psql` 前加 30×1 s 有界重试 | 修复前：`db-init` `Connection refused` 退出 2；修复后：第三轮两次 `make e2e` 均 exit 0（61 s / 56 s）且均默认清理 |
+| E-2 | 本报告 | `docs/operations/acceptance-2026-11-17.md` | 第三轮实测补记、E2E 口径区分（`make e2e` vs `bash deploy/e2e.sh`、默认清理 vs `KEEP_STACK`）、就绪竞态与修复、分支同步结果 | 占位符残留 0；数字与 §0/§3.1/§6.2/§8/§10 一致 |
+| E-3 | 分支整理 | 远端 `backend`/`integration`/`agent`/`frontend`/`acceptance/2026-11-17` | 确认无独有提交后 fast-forward 到 `main`（非强推） | `git ls-remote` 五个分支与 `main` 同点；`git status` 干净 |
