@@ -1,6 +1,10 @@
 # AlertFlow 整改验收报告（方案第 12 节：12.1–12.7）
 
-- 被测版本：`main` = `460c6ab`（第三轮「收尾整改」的代码提交；本报告随其后的报告提交入库）
+- **版本边界（三者不要混为同一个“被测版本”）**：
+  - 被测代码基线：`460c6ab`（第三轮修复 PostgreSQL TCP readiness race 的代码提交，也是最后一个业务/部署代码变更提交）；
+  - 报告首次入库：`7af5573`；
+  - 报告最新修订 / 当前 `main` HEAD：`83727c9`。
+  - 说明：`460c6ab` 是被测代码基线，**不是当前 `main` HEAD**；`7af5573` 与 `83727c9` 是报告修订提交，不含业务/部署代码变更。
 - **三轮口径**：
   - **第一轮（2026-11-15～17 上午）**：被测 `origin/main = d763fd1`，代码修复当时以 **30 项未提交改动**存在（23 modified + 7 untracked）—— §1.1、§1.3、§1.4、§2.1、§3.2、§5.1、§6.1 等「原始树」证据来自此轮；这些改动已于 17 日下午以 4 个提交入库（`c9a5d50`/`1c27947`/`39d8140`/`f2a30b1`）。
   - **第二轮（2026-11-17 晚）**：执行《AlertFlow整改执行指导-2026-11-17》，在 `f2a30b1` 之后完成 E2E 编排、缓存 query 键、Go 失效范围、镜像变量、Python wheel、K8s 文档六项，并**首次真实起栈连续跑通两次 E2E** —— §1.2、§3.1、§4.2、§5.3、§6、§8、§9、§11 已按此轮结果更新。本轮 6 个代码提交：`d55603c`、`3aba030`、`d2853fd`、`f4e5707`、`91f5a51`、`ab2b8dc`。
@@ -22,13 +26,13 @@
 
 | 节 | 结果 | 来源 | 一句话 |
 |---|---|---|---|
-| 12.1 静态与单元测试 | 通过 | 两轮 | `go test ./...` **0 FAIL**（7 个 ok 包、56 个 Test 函数）、Java **20/0/0**（含 `RevisionCacheTest` 6）、pytest 14 passed、Vue build exit 0；gofmt 剩 **2** 文件（均 `HEAD` 既存） |
+| 12.1 静态与单元测试 | 通过 | 第一、二轮完成修复；第三轮在 `460c6ab` 全量复跑 | `go test ./...` **0 FAIL**（7 个 ok 包、56 个 Test 函数）、Java **20/0/0**（含 `RevisionCacheTest` 6）、pytest 14 passed、Vue build exit 0；gofmt 剩 **2** 文件（均 `HEAD` 既存） |
 | 12.2 契约一致性 | 部分修（有测试，无 HTTP 重放） | 两轮 | 19 条公开路由可用；#1–#4 已改且 405/404/409 有单测与真实测试库证据；**未做栈级 HTTP 端到端重放** |
 | 12.3 E2E 主链路 | **通过（第三轮 `make e2e` 两次默认清理实测）** | 第二轮 + 第三轮 | 第二轮两次真实起栈 exit 0（65.19 s / 47.32 s），其中 runB 用 `ALERTFLOW_E2E_KEEP_STACK=1` 保留现场（**未清理**）；第三轮按收尾指导用 `make e2e` 连跑两次，**两次都默认清理**，均 exit 0（61 s / 56 s），全链路 + 双产物 + `ARCHIVED`，其他 project 不受影响 |
 | 12.4 版本缓存 | 部分修（**已接口级验证**） | 第二轮 | query 进值键（SHA-256 前 16 hex）；不同 query 各自成键、revision 推进后旧值不命中、Redis 故障回源；5–6 s 短 TTL 与 Kafka 异步失效窗口仍在 |
 | 12.5 运行与故障 | P0 **已修**（单测证据） | 两轮 | 三处根因已改 + 10 个监控回归用例全绿；**未做 pause 后自愈的栈级复现** |
 | 12.6 镜像与部署 | 部分修（E2E 已重建镜像） | 第二轮 | `images.env.example` 已接入 Makefile/Compose/Dockerfile ARG，E2E 每次真实 `--build` 四个镜像；K8s 仍只做静态校验、未部署 |
-| 12.7 验收 | **完成判定满足**（另有未执行项） | 三轮 | 指导文档第 10 节 8 条完成判定**全部满足**（单一入口、默认清理、两次 E2E 均 exit 0 且都验证到 `ARCHIVED` + 两个非空产物、query 不共用键、revision 后旧值不命中、Go 失效范围有计数测试、K8s 文档一致、报告对应 `460c6ab`）；真实 K8s / 真实 LLM / `-race` / pause 自愈复现 / 契约 HTTP 重放等非判定项未执行（§9） |
+| 12.7 验收 | **完成判定满足**（另有未执行项） | 三轮 | 指导文档第 10 节 8 条完成判定**全部满足**（单一入口、默认清理、两次 E2E 均 exit 0 且都验证到 `ARCHIVED` + 两个非空产物、query 不共用键、revision 后旧值不命中、Go 失效范围有计数测试、K8s 文档一致、报告对应当前真实 commit：被测基线 `460c6ab`、报告首次入库 `7af5573`、最新修订 `83727c9`）；真实 K8s / 真实 LLM / `-race` / pause 自愈复现 / 契约 HTTP 重放等非判定项未执行（§9） |
 
 阻塞项优先级一览（详见 §8）：
 
@@ -296,15 +300,18 @@ Episode `b77bb1d4` 1 个 ACTIVE → `DIAGNOSTIC_INFO` accepted（input_version 2
 
 第二轮受控计数（`revision_test.go`，断言「单次增量」：`resource_revisions` delta 恒为 1、outbox `RESOURCE_REVISION` 增量等于变化视图数）：
 
-| 场景 | 单次 `RESOURCE_REVISION` 增量 |
-|---|---|
-| 普通采样（无 Episode） | **1**（仅 `targets:<id>`） |
-| 已有 Episode 的普通采样（版本不变） | 1 |
-| 首次 ABNORMAL 建 Episode / 恢复采样 | 5（五视图均可见变化） |
-| APP `HEALTH_STATUS` 改状态且版本变化 | 4 |
-| 诊断任务完成但 Episode 不变 | 0 |
-| 诊断完成 ACTIVE→RESOLVED | 3 |
-| 归档 RESOLVED→ARCHIVED | 2 |
+| # | 场景 | 单次 `RESOURCE_REVISION` 增量 |
+|---|---|---|
+| 1 | 普通采样（无 Episode） | **1**（仅 `targets:<id>`） |
+| 2 | 已有 Episode 的普通采样（版本不变） | 1 |
+| 3 | 首次 ABNORMAL 创建 Episode | **5**（`targets`、`service`、`services`、`episodes`、`dashboard` 五个视图均可见变化） |
+| 4 | APP `HEALTH_STATUS` 改状态且版本变化 | 4 |
+| 5 | 诊断任务完成但 Episode 不变 | 0 |
+| 6 | 恢复采样 ABNORMAL→NORMAL（进入 resolution_pending） | **5**（同样是五个视图均可见变化，与 #3 是两个独立场景，不能合并计数） |
+| 7 | 诊断完成 ACTIVE→RESOLVED | 3 |
+| 8 | 归档 RESOLVED→ARCHIVED | 2 |
+
+按上表顺序的 8 个计数为 **1/1/5/4/0/5/3/2**（其中两个 `5` 分别指「首次异常创建 Episode」与「恢复采样」；已与 `services/system-core/internal/system/revision_test.go` 的 `TestRevisionFirstAbnormalCreatesEpisode` / `TestRevisionRecoveryAndArchive` 核对）。
 
 改法（`d2853fd`）：`revision.go` 新增 `viewChanges` 集合 + `noteViewChanges`（每视图至多 bump 一次），
 `ApplyMonitorSample`/`ApplyAppEvent` 按真实可见变化选择视图；`task.go` 的 `CompleteTask` 补上此前**完全漏掉**的归档路径失效
@@ -460,7 +467,10 @@ K8s `terminationGracePeriodSeconds`：system-core/integration/agent 45 s、front
 
 > 状态取值：**已修**（本轮改动 + 有实验证据）、**已改未复测**（本轮改动但无端到端复测）、**仍存**（本轮未改）、**未复测**（未改动也未再验证）。
 > 不带证据的「已修」不成立：每条「已修/已改」都必须附本轮实测命令或测试名（见 §1.2、§1.5、§11 的验证列），否则一律记为「未复测」或「仍存」。
-> 第一轮改动已提交并推送：`c9a5d50`、`1c27947`、`39d8140`、`f2a30b1`；第二轮改动已本地提交：`d55603c`、`3aba030`、`d2853fd`、`f4e5707`、`91f5a51`、`ab2b8dc`。**被测版本 `main` = `ab2b8dc`。**
+> - 第一轮提交：`c9a5d50`、`1c27947`、`39d8140`、`f2a30b1`（已提交并推送）；
+> - 第二轮代码提交：`d55603c`、`3aba030`、`d2853fd`、`f4e5707`、`91f5a51`、`ab2b8dc`（已提交并推送）；
+> - 第三轮代码提交：`460c6ab`（已提交并推送）；
+> - 被测代码基线：`460c6ab`；当前 `main` HEAD：`83727c9`（报告最新修订，不含业务/部署代码变更）。
 
 ### A. P0 —— 监控调度停摆
 
@@ -500,9 +510,9 @@ K8s `terminationGracePeriodSeconds`：system-core/integration/agent 45 s、front
 | 两次连续 E2E 均 exit 0，且都验证到 `ARCHIVED` 与两个非空产物 | 满足 | runA `f65e8103-…`、runB `b85793a3-…`，两次都有 `INVESTIGATION v2` + `DIAGNOSIS_REPORT v2`（§3.1） |
 | 不同 query 不共用同一个 Redis 结果缓存键 | 满足 | `...:q9c21d9e643e1dcbf:v7` 与 `...:qa79faec4867b1f10:v7` 共存（§4.2a） |
 | revision 增加后旧 query 结果不再命中 | 满足 | 新建服务 → 指针 v7→v8 → `?limit=10` 响应含新服务，随后写入 `...:v8`（§4.2a） |
-| Go 失效范围按真实数据变化，且有测试验证单次写入数量 | 满足 | `revision_test.go` 8 类场景计数 1/1/5/4/0/3/2（§4.2b、`d2853fd`） |
+| Go 失效范围按真实数据变化，且有测试验证单次写入数量 | 满足 | `revision_test.go` 8 类场景计数 **1/1/5/4/0/5/3/2**（两个 `5` = 首次异常创建 Episode、恢复采样；§4.2b、`d2853fd`） |
 | K8s README 与 YAML 的端口/探针/资源名/Redis 归属一致 | 满足 | `f4e5707`；6 YAML `safe_load_all` 通过、README `8080` 清零（§6.3） |
-| 验收报告对应当前真实 commit，不混用旧 HEAD 与未提交工作区结果 | 满足 | 被测 `main = 460c6ab`；三轮口径与各自 commit 在头部与 §11 分列（报告随本提交 `7af5573` 入库） |
+| 验收报告对应当前真实 commit，不混用旧 HEAD 与未提交工作区结果 | 满足 | 被测代码基线 `460c6ab`；报告首次入库 `7af5573`；报告最新修订 / 当前 `main` HEAD `83727c9`；三轮口径与各自 commit 在头部与 §11 分列 |
 
 > 说明：判定之外的项（真实 K8s 集群部署、真实 LLM、`-race`、pause 自愈的栈级复现、契约 HTTP 重放、并发压测）仍未执行，见 §9，**不计为通过**。
 
@@ -546,10 +556,12 @@ K8s `terminationGracePeriodSeconds`：system-core/integration/agent 45 s、front
 
 ---
 
-## 11. 两轮修复清单（均已提交）
+## 11. 三轮整改与分支整理记录
 
-> 第一轮 30 项已在 2026-11-17 下午分 4 批提交并推送：`c9a5d50`（system-core 监控与错误映射）、`1c27947`（integration 统一错误体 + 缓存指针）、`39d8140`（console echarts 按需引入）、`f2a30b1`（deploy/docs 对齐 + 本报告初版）。
-> 第二轮按整改指导文档继续提交（下表 D 部分）。「验证」列只写实际执行过的检查。
+> - **第一轮**（`d763fd1` → `f2a30b1`）：30 项整改以 4 批提交入库 —— `c9a5d50`（system-core 监控与错误映射）、`1c27947`（integration 统一错误体 + 缓存指针）、`39d8140`（console echarts 按需引入）、`f2a30b1`（deploy/docs 对齐 + 本报告初版）。详见 11.1。
+> - **第二轮**（`f2a30b1` → `ab2b8dc`）：按《AlertFlow整改执行指导-2026-11-17》的 6 个代码提交 —— `d55603c`、`3aba030`、`d2853fd`、`f4e5707`、`91f5a51`、`ab2b8dc`。详见 11.2。
+> - **第三轮**（`ab2b8dc` → `460c6ab` + 文档收尾）：`460c6ab`（postgres TCP 就绪竞态修复）、验收报告收尾（`7af5573`、`83727c9`）、远端 5 个维护分支 fast-forward 同步。详见 11.3。
+> 「验证」列只写实际执行过的检查。
 
 ### 11.1 第一轮（`d763fd1` → `f2a30b1`）
 
@@ -599,7 +611,7 @@ K8s `terminationGracePeriodSeconds`：system-core/integration/agent 45 s、front
 |---|---|---|---|---|
 | D-1 | `d55603c` fix(deploy) | `Makefile`、`deploy/e2e.sh`、`deploy/compose/compose.yaml`、`deploy/images.env.example`、4 个 Dockerfile | 单一入口 `make e2e` → `bash deploy/e2e.sh`；脚本自管栈生命周期（唯一 EXIT trap、默认 `down -v --remove-orphans` 限本项目、`ALERTFLOW_E2E_KEEP_STACK=1` 保留现场、失败打印 `ps`+日志、启动前预检 `.env`/口令/`compose config`）；镜像变量接入（11 变量 + `${VAR:-tag}` + `ARG`） | `bash -n` 0；`make compose-config` 0（11 service）；第二轮两次真实起栈 exit 0（65.19 s / 47.32 s，第二次用 `KEEP_STACK` 保留现场）；无端口冲突、无残留 |
 | D-2 | `3aba030` fix(integration) | `RevisionCache.java`、`PublicApiController.java` | `around(scope,id,query,loader)`；值键 `q<sha256[:16]>:v<rev>`；空 query → `none`；删 `pins` 伪单飞；Redis 故障降级；5 个调用点传入 `request.getQueryString()` | `mvn test` 20/0/0；接口级：两 query 各成键、同 query 命中、键不含原始 query |
-| D-3 | `d2853fd` fix(system-core) | `revision.go`、`apply.go`、`task.go`、`revision_test.go`、`apply_test.go` | `viewChanges` + `noteViewChanges`（每视图最多 bump 一次）；采样/事件按真实可见变化选视图；`CompleteTask` 补归档路径失效；`task.go` 顺带 gofmt | `go test ./internal/system/` 通过；8 类场景计数 1/1/5/4/0/3/2（§4.2b） |
+| D-3 | `d2853fd` fix(system-core) | `revision.go`、`apply.go`、`task.go`、`revision_test.go`、`apply_test.go` | `viewChanges` + `noteViewChanges`（每视图最多 bump 一次）；采样/事件按真实可见变化选视图；`CompleteTask` 补归档路径失效；`task.go` 顺带 gofmt | `go test ./internal/system/` 通过；8 类场景计数 **1/1/5/4/0/5/3/2**（两个 `5` = 首次异常创建 Episode、恢复采样；§4.2b） |
 | D-4 | `f4e5707` fix(agent-runtime) | `pyproject.toml`、`deploy/kubernetes/README.md`、`20-configmap.yaml`、`secret.example.yaml` | wheel `packages=["src/alertflow_agent"]`；K8s 文档与清单对齐（组件表/端口/探针/Redis/Secret 命令/`8080` 清零） | `uv build` 30,273 B / 20 模块 / `import` 成功；6 YAML `safe_load_all` 通过；残留 grep 无匹配 |
 | D-5 | `91f5a51` fix(deploy) | `deploy/compose/compose.yaml`、`deploy/e2e.sh` | `db-init` 补传 `GATEWAY_PASSWORD`/`KNOWLEDGE_PASSWORD`；失败诊断加 `db-init` | 修后 `make e2e` 两次 exit 0（修前 `db-init` 退出 2） |
 | D-6 | `ab2b8dc` fix(integration) | `RevisionCache.java` | Lua `ADVANCE`：指针前移才写指针、`next >= known` 即写值键（修「同 revision 只有第一个 query 落缓存」） | `mvn test` 20/0/0；重建 integration 镜像后接口级复验 v7 双 query 键共存、v8 推进失效 |

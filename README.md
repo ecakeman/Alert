@@ -2,7 +2,7 @@
 
 **面向服务故障的监控、调查与可追溯诊断系统。**
 
-AlertFlow 将 HTTP / TCP 探测、Kubernetes 工作负载观察、应用侧事件和 Agent 诊断组织到同一条故障处理链路中。每次故障以 Episode 管理，保留调查过程 `investigation.md` 与结构化诊断报告 `diagnosis_report`。
+AlertFlow 将 HTTP / TCP 探测、可选的 Kubernetes 工作负载观察（默认关闭，仅单 namespace 下的 Deployment / StatefulSet 只读观察）、应用侧事件和 Agent 诊断组织到同一条故障处理链路中。每次故障以 Episode 管理，保留调查过程 `investigation.md` 与结构化诊断报告 `diagnosis_report`。
 
 ## 故障处理链路
 
@@ -33,7 +33,7 @@ PostgreSQL 保存业务事实；Redis 仅用于查询缓存；Kafka 传递任务
 
 ## 核心能力
 
-- **多源观测**：HTTP、TCP，以及单 namespace 下的 Kubernetes Deployment / StatefulSet。
+- **多源观测**：HTTP、TCP，以及可选的 Kubernetes 工作负载观察（默认关闭，仅单 namespace 下 Deployment / StatefulSet 的只读观察）。
 - **故障建模**：失败与恢复阈值、监控与应用双来源状态、Episode 和输入版本。
 - **可靠任务交付**：PostgreSQL Outbox、Kafka 与 Agent 侧幂等 receipt。
 - **Agent 调查**：查询故障时间轴、历史故障与可选知识库证据。
@@ -63,7 +63,7 @@ PostgreSQL 保存业务事实；Redis 仅用于查询缓存；Kafka 传递任务
 |---|---|
 | ![故障详情](docs/screenshots/07-episode-detail.png) | ![调查记录](docs/screenshots/08-episode-investigation.png) |
 
-截图来自本地 Compose 演练：3 个演示服务、1 个进行中的故障 Episode，诊断由真实模型生成中文报告。
+截图来自单独的一次本地 Compose 演示（3 个演示服务、1 个进行中的故障 Episode），该次演示配置了真实模型并由真实模型生成中文报告；**它不代表本轮自动 E2E 验收结果**——自动 E2E 在未配置模型 Key 时使用 ScriptedModel。
 
 ## 本地启动
 
@@ -97,13 +97,22 @@ docker compose --env-file deploy/compose/.env -f deploy/compose/compose.yaml dow
 演练以 `orders-api` 为前缀创建服务（`service_key` 形如 `orders-api-<时间戳>-<pid>`），监控目标是容器内地址 `http://fault:8081/health`。故障辅助服务只在宿主机回环地址暴露 `127.0.0.1:${FAULT_PORT:-18081}`，不会绑定外网；如果修改了 `FAULT_PORT`，请同步替换下方命令中的端口。
 
 ```bash
-# 从仓库根执行
-deploy/e2e.sh
+# 从仓库根执行（唯一推荐入口）
+make e2e
 ```
+
+Makefile 的 `e2e` target 只调用 `bash deploy/e2e.sh`，由脚本统一负责 Compose project、启动、演练、失败诊断和退出清理。直接执行 `bash deploy/e2e.sh` 仍然可用，但 README 以 `make e2e` 作为统一入口。
 
 需要真实模型结果时，先在 `deploy/compose/.env` 配置 `ALERTFLOW_LLM_API_KEY`、`ALERTFLOW_LLM_BASE_URL`、`ALERTFLOW_LLM_MODEL`。未配置 Key 时 Agent 使用 ScriptedModel，只验证采样、Episode、任务与双产物链路，产物是脚本化结果，不代表真实模型诊断质量。需要 Knowledge Agent 时设置 `COMPOSE_PROFILES=knowledge` 并配置 A2A Token；未启用时脚本跳过 FD 与 Knowledge 相关校验。
 
-演练会写入测试数据，并暂时停用演练前已启用的监控目标（脚本退出时恢复）。建议用独立的 `COMPOSE_PROJECT_NAME` 启动，结束后执行 `docker compose down -v` 销毁演练数据，不要对生产数据库运行。也可以手工操作故障辅助服务：
+演练会写入测试数据，并暂时停用演练前已启用的监控目标（脚本退出时恢复）。关于演练环境与清理：
+
+- 默认情况下，脚本自动生成独立的 `alertflow-e2e-<run-id>` Compose project，不需要手工指定 `COMPOSE_PROJECT_NAME`；
+- 演练结束后自动清理本次 project 的容器、网络和命名卷，不会对开发环境 project 执行全局清理；
+- 默认无需额外执行 `docker compose down -v`；**不要**用不带 `-p`/`--project-name` 的通用清理命令清理 E2E，以免误操作正常开发栈；
+- 需要保留现场排障时执行 `ALERTFLOW_E2E_KEEP_STACK=1 make e2e`，脚本退出时会打印本次 project 对应的准确清理命令。
+
+演练会写入测试数据，不要对生产数据库运行演练。也可以手工操作故障辅助服务：
 
 ```bash
 curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:18081/health  # 故障时 500，恢复后 200
