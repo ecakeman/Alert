@@ -5,7 +5,7 @@
 # 带 example.internal 的地址全部是占位，部署前必须换成集群网络内可达的外部地址。
 #
 # 端口约定：
-#   Go Backend        HTTP 8080 / gRPC 9090
+#   Go Backend        仅 gRPC 9090（无独立 HTTP 端口；控制台 HTTP API 由 gRPC 通道内的 systemapi Handler 提供）
 #   Java Integration  HTTP 8081 / gRPC 9091
 #   Python Agent      HTTP 8000 / gRPC 9000
 #   Frontend          HTTP 80
@@ -56,6 +56,7 @@ data:
   INTEGRATION_GO_GRPC_TARGET: "system-core:9090"
   INTEGRATION_PYTHON_GRPC_TARGET: "agent:9000"
   # 版本缓存与 revision 事件：换成你的外部 Redis / Kafka 地址（集群内不部署中间件）。
+  # Redis 仅 Java Integration 用作版本 / 查询缓存（RevisionCache），Go 不使用 Redis。
   INTEGRATION_REDIS_URL: "redis://redis.example.internal:6379/0"
   INTEGRATION_KAFKA_BROKERS: "kafka.example.internal:9092"
   JAVA_TOOL_OPTIONS: "-Xms128m -Xmx512m"

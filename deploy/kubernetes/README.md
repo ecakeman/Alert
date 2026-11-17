@@ -2,14 +2,16 @@
 
 本目录只包含 AlertFlow **应用组件** 的 Kubernetes 清单：
 
-| 组件 | 镜像 | HTTP | gRPC |
-|---|---|---:|---:|
-| Go Backend | `ghcr.io/ecakeman/alertflow-system-core:v0.1.0` | 8080 | 9090 |
-| Java Integration | `ghcr.io/ecakeman/alertflow-integration:v0.1.0` | 8081 | 9091 |
-| Python Main Agent | `ghcr.io/ecakeman/alertflow-agent-runtime:v0.1.0` | 8000 | 9000 |
-| Frontend（Nginx） | `ghcr.io/ecakeman/alertflow-frontend:v0.1.0` | 80 | — |
+| 组件 | 镜像 | Service / Deployment | HTTP | gRPC |
+|---|---|---|---:|---:|
+| Go Backend | `ghcr.io/ecakeman/alertflow-system-core:v0.1.0` | `system-core` | 无 / 不对外提供 | 9090 |
+| Java Integration | `ghcr.io/ecakeman/alertflow-integration:v0.1.0` | `integration` | 8081 | 9091 |
+| Python Main Agent | `ghcr.io/ecakeman/alertflow-agent-runtime:v0.1.0` | `agent` | 8000 | 9000 |
+| Frontend（Nginx） | `ghcr.io/ecakeman/alertflow-frontend:v0.1.0` | `frontend` | 80 | — |
 
-PostgreSQL、Kafka、Redis、Nacos 使用**外部已有环境**，本目录不部署。Knowledge Agent 为可选组件，本期不提供其清单（见文末说明）。
+Go 不监听独立 HTTP 端口：控制台 HTTP API 由 gRPC 通道内的 `systemapi` Handler 提供，`30-services.yaml` 的 `system-core` Service 只暴露 gRPC `9090`。
+
+PostgreSQL、Kafka、Redis、Nacos 使用**外部已有环境**，本目录不部署。其中 Redis 只由 Java Integration 用作查询缓存（`INTEGRATION_REDIS_URL`），Go 不访问 Redis。Knowledge Agent 为可选组件，本期不提供其清单（见文末说明）。
 
 ## 目录与清单
 
@@ -18,7 +20,7 @@ PostgreSQL、Kafka、Redis、Nacos 使用**外部已有环境**，本目录不�
 | `00-namespace.yaml` | `Namespace alertflow` + 专用 ServiceAccount `alertflow-go` |
 | `10-rbac.yaml` | `Role alertflow-k8s-reader` + `RoleBinding`（仅 apps/deployments、statefulsets 的 get） |
 | `20-configmap.yaml` | 三个服务的非敏感配置：`alertflow-go-config`、`alertflow-integration-config`、`alertflow-agent-config` |
-| `30-services.yaml` | 四个 ClusterIP Service：`alertflow`、`integration`、`agent`、`frontend` |
+| `30-services.yaml` | 四个 ClusterIP Service：`system-core`、`integration`、`agent`、`frontend` |
 | `40-deployments.yaml` | 四个 Deployment：单副本、`strategy: Recreate`、探针、资源限制 |
 | `secret.example.yaml` | Secret `alertflow-secrets` 的字段示例，**占位值，不能用于真实环境** |
 
@@ -33,7 +35,7 @@ ConfigMap 的键名就是环境变量名；Deployment 通过 `envFrom` 注入 Co
    - Java Flyway 在首次启动时创建 `gateway` schema（`create-schemas: true`），`gateway_app` 账号需要对库有 CREATE 权限，可参考 `deploy/postgres/init-roles.sh`；
    - Knowledge 库（`knowledge`）仅在使用 Knowledge Agent 时需要，本期可选。
 3. **外部 Kafka**：broker 地址可达；topic `alertflow.agent-task-ready.v1` 必须在 Go 启动前已存在（消费者组在 topic 不存在时加入会拿不到分区分配，首次任务会滞留；Compose 用 `kafka-init` 预建，K8s 环境请提前创建 topic，或首次任务后重启 Go Pod）。
-4. **外部 Redis**：地址可达（Go 用作旁路缓存，未配置时功能降级）。
+4. **外部 Redis**：地址可达（**仅 Java Integration** 用作版本 / 查询缓存，连接串是 `20-configmap.yaml` 里 `alertflow-integration-config` 的 `INTEGRATION_REDIS_URL`；未配置时不启用缓存，属功能降级）。
 5. **外部 Nacos**：地址可达；JIT 注册中心用于 Knowledge Agent 发现，未启用时可忽略连接错误。
 6. **四个镜像已构建并推送到集群可拉取的仓库**（见下一节）。集群节点能够访问该 registry。
 7. 集群网络能够访问上述外部中间件与大模型 API。
@@ -67,7 +69,7 @@ docker push ghcr.io/ecakeman/alertflow-frontend:v0.1.0
 镜像要求：
 
 - Go / Java / Python 必须是非 root 进程，且 Dockerfile 用**数字 UID** 设置 `USER`（如 `USER 10001`）。清单里设置了 `runAsNonRoot: true`，非数字用户名会导致 Pod 校验失败。
-- Frontend 使用标准 Nginx（root master 绑定 80 端口），清单对 Frontend 不设置 `runAsNonRoot`；其 `nginx.conf` 必须提供 `location = /healthz { return 200; }`（探针依赖），并把 `/api/` 代理到 `http://integration:8081`。
+- Frontend 使用标准 Nginx（root master 绑定 80 端口），清单对 Frontend 不设置 `runAsNonRoot`；其 `nginx.conf` 必须提供 `location = /healthz { return 200; }`（**Frontend** 的 liveness/readiness 探针依赖，与 Go 无关），并把 `/api/` 代理到 `http://integration:8081`。
 - Go 镜像需要 `system-core health` 子命令（liveness / readiness 探针依赖），Java 镜像的 Actuator 需开启健康探针（本仓库 `application.yaml` 已开启）。
 
 如果镜像仓库地址或 tag 不同，修改 `40-deployments.yaml` 中四个 `image` 字段即可。
@@ -95,7 +97,6 @@ kubectl apply -f deploy/kubernetes/base/00-namespace.yaml
 # 方式 A：用 kubectl 命令创建（推荐，避免在仓库中留下明文副本）
 kubectl -n alertflow create secret generic alertflow-secrets \
   --from-literal=ALERTFLOW_DATABASE_URL='postgres://alertflow:CHANGE_ME@postgres.example.internal:5432/alertflow?sslmode=disable' \
-  --from-literal=ALERTFLOW_REDIS_URL='redis://:CHANGE_ME@redis.example.internal:6379/0' \
   --from-literal=ALERTFLOW_KAFKA_BROKERS='kafka.example.internal:9092' \
   --from-literal=INTEGRATION_DATABASE_PASSWORD='CHANGE_ME' \
   --from-literal=KNOWLEDGE_A2A_TOKEN='' \
@@ -115,6 +116,7 @@ kubectl apply -f /tmp/alertflow-secret.yaml
 
 - `secret.example.yaml` 只是字段示例，**不要直接 apply，也不要提交真实值**；它没有数字前缀，不在下面的 apply 顺序里。
 - `INTEGRATION_DATABASE_URL` / `INTEGRATION_DATABASE_USER` 默认是非敏感配置，放在 `20-configmap.yaml`。若外部地址或账号也需要保密，可改为从 Secret 注入（把 Deployment 的这两个变量改成 `secretKeyRef`，并从 ConfigMap 删除同名键，避免同一变量有两个来源）。
+- `ALERTFLOW_REDIS_URL` 不属于 Go，也不在本 Secret 中：Redis 只服务 Java Integration，地址由 `20-configmap.yaml` 的 `INTEGRATION_REDIS_URL` 提供（`40-deployments.yaml` 中没有任何 Go 容器读取 Redis）。若该地址也需要保密，改为在 Secret 中用同名键 `INTEGRATION_REDIS_URL`，同时把 integration 容器改成 `secretKeyRef`，并从 ConfigMap 删除同名键。
 - `KNOWLEDGE_A2A_TOKEN`、`ALERTFLOW_LLM_API_KEY`、`NACOS_USERNAME/PASSWORD` 是可选项，Deployment 里对应 `secretKeyRef` 带 `optional: true`；填占位值或留空均可，但不要填真实值到示例文件。
 - `ALERTFLOW_MAIN_MCP_TOKEN`（Java 校验）与 `ALERTFLOW_MCP_TOKEN`（Python 调用）是 MCP 鉴权的两端，**必须一致**；建议用 `openssl rand -hex 24` 生成。不配置时 Pod 正常启动，但 Agent 不会注册 MCP 工具（功能降级）。
 
@@ -140,7 +142,7 @@ kubectl -n alertflow get pods -w
 kubectl -n alertflow get deploy,svc
 
 # 组件日志
-kubectl -n alertflow logs deploy/alertflow --tail=100
+kubectl -n alertflow logs deploy/system-core --tail=100
 kubectl -n alertflow logs deploy/integration --tail=100
 kubectl -n alertflow logs deploy/agent --tail=100
 kubectl -n alertflow logs deploy/frontend --tail=100
@@ -153,12 +155,12 @@ kubectl -n alertflow describe pod <pod-name>
 
 | 组件 | liveness | readiness |
 |---|---|---|
-| Go | `GET :8080/healthz` | `GET :8080/readyz`（只检查 DB） |
-| Java | `GET :8081/actuator/health/liveness` | `GET :8081/actuator/health/readiness` |
-| Python | `GET :8000/health/live` | `GET :8000/health/ready` |
-| Frontend | `GET :80/healthz` | `GET :80/healthz` |
+| Go（`system-core`） | 容器内 exec `system-core health` | 容器内 exec `system-core health`（只检查 DB 连通性） |
+| Java（`integration`） | `GET :8081/actuator/health/liveness` | `GET :8081/actuator/health/readiness` |
+| Python（`agent`） | `GET :8000/health/live` | `GET :8000/health/ready` |
+| Frontend（`frontend`） | `GET :80/healthz` | `GET :80/healthz` |
 
-Go readiness 只依赖数据库；Kafka、模型 API 不可用不会让 Go 处于未就绪状态。
+Go 的两个探针都在容器内执行 `system-core health`，由它发起 gRPC health Check 并调用 `Ready`（仅 Ping DB）；Go 没有对外 HTTP 端口，探针不使用 HTTP 路径。Kafka、模型 API 不可用不会让 Go 处于未就绪状态。
 
 ## 6. 访问 Web 控制台
 
@@ -186,7 +188,7 @@ kubectl -n alertflow patch configmap alertflow-go-config --type merge -p \
   '{"data":{"ALERTFLOW_K8S_ENABLED":"true","ALERTFLOW_K8S_NAMESPACE":"alertflow"}}'
 
 # 2. 重启 Go Backend 使配置生效
-kubectl -n alertflow rollout restart deploy/alertflow
+kubectl -n alertflow rollout restart deploy/system-core
 
 # 3. 在 Web 控制台为服务新增 Kubernetes 监控目标：
 #    resource_kind = Deployment | StatefulSet
@@ -232,9 +234,9 @@ kubectl -n alertflow rollout restart deploy/alertflow
 | 现象 | 排查方向 |
 |---|---|
 | `ImagePullBackOff` / `ErrImagePull` | 镜像仓库地址、tag、集群拉取凭据（imagePullSecrets） |
-| `CreateContainerConfigError` | Secret `alertflow-secrets` 不存在或缺必填键（DB / Redis / Kafka / Java DB 密码） |
+| `CreateContainerConfigError` | Secret `alertflow-secrets` 不存在或缺必填键（DB / Kafka / Java DB 密码） |
 | Go Pod CrashLoop，日志 `database` 错误 | Secret 中 `ALERTFLOW_DATABASE_URL` 地址/账号/密码，或网络不通 |
-| Go readiness 一直失败 | `/readyz` 只检查 DB，确认数据库连通与迁移成功（Go 启动会先跑 goose 迁移） |
+| Go readiness 一直失败 | 探针为容器内 exec `system-core health`（gRPC Health Check，只检查 DB），确认数据库连通与迁移成功（Go 启动会先跑 goose 迁移），并确认镜像内含 `system-core` 可执行文件 |
 | Java liveness 重启循环 | Spring Boot 启动较慢，可先加大 `initialDelaySeconds`；确认 Actuator 探针已开启 |
 | Agent readiness 失败 | 业务库连接、`/health/ready` 的 gRPC / worker / 连接池状态，见 Agent 日志 |
 | 前端页面 502 | Nginx `/api/` 代理目标是否为 `integration:8081`；integration Service / Pod 是否就绪 |
