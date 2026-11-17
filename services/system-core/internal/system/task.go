@@ -222,6 +222,7 @@ func (s *Store) CompleteTask(ctx context.Context, in CompleteInput) (TaskAck, er
 		if err != nil {
 			return err
 		}
+		statusBefore := ep.Status
 		if task.Generation != in.Generation {
 			ack.Message = "stale execution generation"
 			return nil
@@ -306,6 +307,18 @@ func (s *Store) CompleteTask(ctx context.Context, in CompleteInput) (TaskAck, er
 					}
 				}
 			}
+			// Episode 状态迁移（ACTIVE→RESOLVED 的解析、RESOLVED→ARCHIVED 的归档）会改变
+			// episodes 列表与 Dashboard 的 Episode 计数；离开 ACTIVE 还会改变 services 列表的
+			// active_episode_id。此处是本包唯一不经过 Apply* 的 Episode 状态迁移路径。
+			if ep.Status != statusBefore {
+				changes := viewChanges{serviceID: ep.ServiceID, dashboard: true, episodes: true}
+				if statusBefore == EpisodeActive {
+					changes.services = true
+				}
+				if err := s.noteViewChanges(ctx, tx, changes); err != nil {
+					return err
+				}
+			}
 			ack.Accepted = true
 			ack.Message = "completed"
 		case "RETRYABLE_FAILURE", "PERMANENT_FAILURE":
@@ -368,11 +381,11 @@ func archiveReady(ctx context.Context, tx *sql.Tx, episodeID, taskID uuid.UUID, 
 
 // RegisterFaultDocumentInput 是 Python 在 FD 就绪后交给 Go 的回执。
 type RegisterFaultDocumentInput struct {
-	TaskID       uuid.UUID
-	EpisodeID    uuid.UUID
-	Generation   int64
-	FDID         string
-	ContentHash  string
+	TaskID      uuid.UUID
+	EpisodeID   uuid.UUID
+	Generation  int64
+	FDID        string
+	ContentHash string
 }
 
 // RegisterFaultDocument 把归档回执写入 system 表。相同内容重复登记是幂等的。

@@ -48,6 +48,41 @@ type episodeRow struct {
 	FinalInputVersion     sql.NullInt64
 }
 
+// episodeViewState 记录一次 Apply* 事务开始时 Episode 列表响应中可见的字段，
+// 用于在修改后判断 episodes / dashboard 视图是否需要失效。
+//
+// 刻意不比较 updated_at：syncEpisode 每次都会刷新它，若纳入判断会让“普通采样”
+// 再次无条件失效全局视图（正是本轮要收敛的写放大）。读缓存的 5s TTL 为该抖动兜底。
+type episodeViewState struct {
+	created bool
+	status  string
+	pending bool
+	version int64
+}
+
+func newEpisodeViewState(ep *episodeRow, created bool) episodeViewState {
+	if ep == nil {
+		return episodeViewState{created: created}
+	}
+	return episodeViewState{
+		created: created,
+		status:  ep.Status,
+		pending: ep.ResolutionPending,
+		version: ep.InputVersion,
+	}
+}
+
+// changed 判断 Episode 列表 / Dashboard 最近 Episode 摘要在本事务后是否真的变了。
+func (prev episodeViewState) changed(ep *episodeRow) bool {
+	if prev.created {
+		return true
+	}
+	if ep == nil {
+		return false
+	}
+	return ep.Status != prev.status || ep.ResolutionPending != prev.pending || ep.InputVersion != prev.version
+}
+
 // ApplyMonitorSample 写入 Service Timeline，更新目标与 MONITOR 来源，并在需要时维护 Episode。
 func (s *Store) ApplyMonitorSample(ctx context.Context, sample MonitorSample) (ApplyResult, error) {
 	var out ApplyResult
@@ -76,15 +111,16 @@ func (s *Store) ApplyMonitorSample(ctx context.Context, sample MonitorSample) (A
 		if err != nil {
 			return err
 		}
-		var status string
+		var previousTargetStatus string
 		var fails, oks int
 		err = tx.QueryRowContext(ctx, `
 			SELECT status, consecutive_failures, consecutive_successes
 			FROM system.service_monitor_target_states WHERE target_id=$1 FOR UPDATE`, sample.TargetID).
-			Scan(&status, &fails, &oks)
+			Scan(&previousTargetStatus, &fails, &oks)
 		if err != nil {
 			return err
 		}
+		status := previousTargetStatus
 		now := s.now()
 		if sample.ObservedAt.IsZero() {
 			sample.ObservedAt = now
@@ -168,9 +204,22 @@ func (s *Store) ApplyMonitorSample(ctx context.Context, sample MonitorSample) (A
 			}
 			out.CreatedEpisode = true
 		}
+		// 失效范围按真实变化推进：targets 每次采样都会写 point、更新 last_check_at
+		// 与连续成功/失败次数，所以普通采样至少需要推进该服务的 targets 视图。
+		changes := viewChanges{serviceID: sample.ServiceID, targets: true}
+		targetStatusChanged := status != previousTargetStatus
 		if ep == nil {
-			return s.noteViews(ctx, tx, sample.ServiceID)
+			// 没有活跃 Episode 也没有新建：Global 视图只在聚合/故障状态变化时失效。
+			if prevMonitor != nextMonitor {
+				changes.service = true
+				changes.services = true
+			}
+			if targetStatusChanged || prevMonitor != nextMonitor {
+				changes.dashboard = true
+			}
+			return s.noteViewChanges(ctx, tx, changes)
 		}
+		beforeEpisode := newEpisodeViewState(ep, out.CreatedEpisode)
 		open := nextMonitor == StatusAbnormal || (prevMonitor == StatusAbnormal && nextMonitor == StatusNormal)
 		var changedIDs []string
 		if open {
@@ -191,7 +240,25 @@ func (s *Store) ApplyMonitorSample(ctx context.Context, sample MonitorSample) (A
 		out.EpisodeID = ep.ID
 		out.EpisodeStatus = ep.Status
 		out.InputVersion = ep.InputVersion
-		return s.noteViews(ctx, tx, sample.ServiceID)
+		// Episode 创建 / 状态 / resolution_pending / 输入版本变化会影响 episodes 列表与
+		// Dashboard 的 Episode 计数与最近 Episode 摘要；services 列表只在活跃 Episode 出现
+		// 或离开 ACTIVE 时变化（active_episode_id）。
+		episodeChanged := beforeEpisode.changed(ep)
+		leftActive := beforeEpisode.status == EpisodeActive && ep.Status != EpisodeActive
+		if prevMonitor != nextMonitor {
+			changes.service = true
+			changes.services = true
+		}
+		if beforeEpisode.created || leftActive {
+			changes.services = true
+		}
+		if episodeChanged {
+			changes.episodes = true
+		}
+		if episodeChanged || targetStatusChanged || prevMonitor != nextMonitor {
+			changes.dashboard = true
+		}
+		return s.noteViewChanges(ctx, tx, changes)
 	})
 	return out, err
 }
@@ -250,7 +317,8 @@ func (s *Store) ApplyAppEvent(ctx context.Context, serviceID uuid.UUID, ev AppEv
 		if qerr != sql.ErrNoRows {
 			return qerr
 		}
-		body, status, err := s.applyNewAppEvent(ctx, tx, serviceID, ev)
+		var changes viewChanges
+		body, status, err := s.applyNewAppEvent(ctx, tx, serviceID, ev, &changes)
 		if err != nil {
 			return err
 		}
@@ -271,12 +339,14 @@ func (s *Store) ApplyAppEvent(ctx context.Context, serviceID uuid.UUID, ev AppEv
 		if status != 200 {
 			return nil
 		}
-		return s.noteViews(ctx, tx, serviceID)
+		changes.serviceID = serviceID
+		return s.noteViewChanges(ctx, tx, changes)
 	})
 	return result, err
 }
 
-func (s *Store) applyNewAppEvent(ctx context.Context, tx *sql.Tx, serviceID uuid.UUID, ev AppEvent) (map[string]any, int, error) {
+// applyNewAppEvent 返回响应体与状态码，并把本次事件真正影响的读视图记录到 changes。
+func (s *Store) applyNewAppEvent(ctx context.Context, tx *sql.Tx, serviceID uuid.UUID, ev AppEvent, changes *viewChanges) (map[string]any, int, error) {
 	if ev.EventID == "" || ev.ProducerID == "" || ev.EventTime.IsZero() || ev.SchemaVersion != 1 {
 		return nil, 0, errCode("VALIDATION", "event_id, producer_id, event_time and schema_version=1 are required", 400)
 	}
@@ -313,10 +383,12 @@ func (s *Store) applyNewAppEvent(ctx context.Context, tx *sql.Tx, serviceID uuid
 	if err != nil {
 		return nil, 0, err
 	}
+	prevApp := app
 	ep, err := lockActiveEpisode(ctx, tx, serviceID)
 	if err != nil {
 		return nil, 0, err
 	}
+	hadEpisode := ep != nil
 	if ev.EventKind == "DIAGNOSTIC_INFO" && ep == nil {
 		return failBody("NO_ACTIVE_EPISODE", "DIAGNOSTIC_INFO requires an active episode", 409), 409, nil
 	}
@@ -338,12 +410,16 @@ func (s *Store) applyNewAppEvent(ctx context.Context, tx *sql.Tx, serviceID uuid
 			return nil, 0, err
 		}
 	}
+	createdEpisode := false
 	if ep == nil && (monitor == StatusAbnormal || app == StatusAbnormal) {
 		ep, err = insertEpisode(ctx, tx, serviceID, SourceApp, now)
 		if err != nil {
 			return nil, 0, err
 		}
+		createdEpisode = true
 	}
+	// 快照必须在写入事件 / syncEpisode 之前，用于判断 Episode 可见字段是否真的变化。
+	beforeEpisode := newEpisodeViewState(ep, createdEpisode)
 	repeatNormal := ev.EventKind == "HEALTH_STATUS" && ev.HealthStatus == StatusNormal && ep != nil && ep.ResolutionPending
 	var eventRecord string
 	if ep != nil && !repeatNormal {
@@ -373,6 +449,24 @@ func (s *Store) applyNewAppEvent(ctx context.Context, tx *sql.Tx, serviceID uuid
 	} else if ep != nil {
 		if err := s.syncEpisode(ctx, tx, ep, nil, nil, nil, monitor, app, now); err != nil {
 			return nil, 0, err
+		}
+	}
+	if ev.EventKind == "HEALTH_STATUS" && app != prevApp {
+		// service 详情与 services 列表都直接暴露 APP 聚合状态。
+		changes.service = true
+		changes.services = true
+	}
+	if ep != nil {
+		episodeChanged := beforeEpisode.changed(ep)
+		leftActive := hadEpisode && beforeEpisode.status == EpisodeActive && ep.Status != EpisodeActive
+		if createdEpisode || leftActive {
+			// services 列表的 active_episode_id 变了。
+			changes.services = true
+		}
+		if episodeChanged {
+			// episodes 列表与 Dashboard 的 Episode 计数 / 最近 Episode 摘要变了。
+			changes.episodes = true
+			changes.dashboard = true
 		}
 	}
 	body := map[string]any{

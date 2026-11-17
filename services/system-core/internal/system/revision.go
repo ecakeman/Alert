@@ -9,23 +9,70 @@ import (
 	"github.com/google/uuid"
 )
 
-func (s *Store) noteViews(ctx context.Context, tx *sql.Tx, serviceID uuid.UUID) error {
-	views := []struct {
-		scope string
-		id    uuid.UUID
-	}{
-		{"dashboard", uuid.Nil},
-		{"services", uuid.Nil},
-		{"episodes", uuid.Nil},
-		{"service", serviceID},
-		{"targets", serviceID},
+// viewChanges 描述一次事务中需要推进的读视图。每个 scope + resource_id 最多推进一次，
+// 因此同一事务内不会重复 bump 同一视图。
+//
+// 失效范围按 API 实际返回的数据划分，而不是按“写入了什么”：
+//   - targets:<service_id>  目标状态 / 连续成功失败次数 / 最近检查时间
+//   - service:<service_id>  服务详情自己的字段（聚合状态、元数据）
+//   - services             服务列表可见字段（聚合状态、活跃 Episode 概览）
+//   - episodes             Episode 创建 / 输入版本 / 状态 / resolution_pending
+//   - dashboard            统计与摘要（按状态的计数、最近 Episode 列表）
+//
+// 纯时间戳抖动（target last_check_at、episode updated_at）以及 Page/列表里的
+// last_check_at 不单独触发全局视图失效：读缓存自身有 5s TTL 兜底，且这正是本轮
+// 要收敛的写放大来源。确实影响结果的字段变化必须置 true，不能漏。
+type viewChanges struct {
+	serviceID uuid.UUID
+	dashboard bool
+	services  bool
+	episodes  bool
+	service   bool
+	targets   bool
+}
+
+// noteViewChanges 只推进本次事务中确实发生变化的视图。
+func (s *Store) noteViewChanges(ctx context.Context, tx *sql.Tx, ch viewChanges) error {
+	if ch.dashboard {
+		if err := s.bumpRevision(ctx, tx, "dashboard", uuid.Nil); err != nil {
+			return err
+		}
 	}
-	for _, view := range views {
-		if err := s.bumpRevision(ctx, tx, view.scope, view.id); err != nil {
+	if ch.services {
+		if err := s.bumpRevision(ctx, tx, "services", uuid.Nil); err != nil {
+			return err
+		}
+	}
+	if ch.episodes {
+		if err := s.bumpRevision(ctx, tx, "episodes", uuid.Nil); err != nil {
+			return err
+		}
+	}
+	if ch.service {
+		if err := s.bumpRevision(ctx, tx, "service", ch.serviceID); err != nil {
+			return err
+		}
+	}
+	if ch.targets {
+		if err := s.bumpRevision(ctx, tx, "targets", ch.serviceID); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// noteViews 会在一次事务里推进该服务的全部 5 个视图，用于服务/目标元数据变更
+// （创建、Patch、软删除）这类无法按字段精确判断的操作。监控采样与应用事件应按
+// 真实变化调用 noteViewChanges，而不是走这里。
+func (s *Store) noteViews(ctx context.Context, tx *sql.Tx, serviceID uuid.UUID) error {
+	return s.noteViewChanges(ctx, tx, viewChanges{
+		serviceID: serviceID,
+		dashboard: true,
+		services:  true,
+		episodes:  true,
+		service:   true,
+		targets:   true,
+	})
 }
 
 func (s *Store) bumpRevision(ctx context.Context, tx *sql.Tx, scope string, id uuid.UUID) error {

@@ -394,7 +394,8 @@ func TestPublishPendingMarksSent(t *testing.T) {
 	if _, err := s.ApplyMonitorSample(context.Background(), sample(svc, target, false, "5xx", time.Now())); err != nil {
 		t.Fatal(err)
 	}
-	// 一次采样会同时产生 AGENT_TASK_READY 与 RESOURCE_REVISION（5 个视图各 1 条）两类事件，
+	// 一次采样会同时产生 AGENT_TASK_READY 与 RESOURCE_REVISION 两类事件：本次采样首次建
+	// Episode，触发 targets/service/services/episodes/dashboard 5 个视图各 1 条 revision。
 	// 前者由 PublishPending 发送，后者由 gateway 的 PublishByType("RESOURCE_REVISION") 发送。
 	n, err := s.PublishPending(context.Background(), 10, func(payload []byte) error { return nil })
 	if err != nil || n != 1 {
