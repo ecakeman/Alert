@@ -10,7 +10,10 @@ services:
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U alertflow"]
+      # 必须指定 -h 127.0.0.1 走 TCP：initdb 阶段的临时实例只监听 unix socket，
+      # 若用默认 socket 探测，会在临时实例存活期间就报 healthy，db-init 随即因
+      # TCP 连接被拒而失败（E2E 上表现为 db-init exit 2）。
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U alertflow"]
       interval: 2s
       timeout: 5s
       retries: 30
