@@ -69,7 +69,7 @@ cleanup() {
     echo "e2e 失败（exit ${rc}），COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT_NAME}" >&2
     echo "---- docker compose ps ----" >&2
     dc ps >&2 || true
-    for svc in system-core integration agent-runtime; do
+    for svc in db-init system-core integration agent-runtime; do
       echo "---- docker compose logs --tail=50 ${svc} ----" >&2
       dc logs --no-color --tail=50 "$svc" >&2 || true
     done

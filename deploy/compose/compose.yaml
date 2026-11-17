@@ -131,6 +131,10 @@ services:
     environment:
       POSTGRES_USER: alertflow
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      # init-roles.sh 用这两个口令创建 gateway_app / knowledge_app 角色，
+      # 不传时脚本 set -u 直接失败，db-init 退出 2 会阻塞整个栈启动。
+      GATEWAY_PASSWORD: ${GATEWAY_PASSWORD}
+      KNOWLEDGE_PASSWORD: ${KNOWLEDGE_PASSWORD}
     volumes:
       - ./postgres/init-roles.sh:/init-roles.sh:ro
     entrypoint: ["sh", "/init-roles.sh"]
