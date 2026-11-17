@@ -51,12 +51,12 @@ public class PublicApiController {
 
     @GetMapping("/api/v1/dashboard/summary")
     public ResponseEntity<String> dashboard(HttpServletRequest request) {
-        return cached("dashboard", ALL, () -> json(bridge.systemApi().dashboard(jsonCall(request, null, ""))));
+        return cached("dashboard", ALL, request, () -> json(bridge.systemApi().dashboard(jsonCall(request, null, ""))));
     }
 
     @GetMapping("/api/v1/services")
     public ResponseEntity<String> listServices(HttpServletRequest request) {
-        return cached("services", ALL, () -> json(bridge.systemApi().listServices(jsonCall(request, null, ""))));
+        return cached("services", ALL, request, () -> json(bridge.systemApi().listServices(jsonCall(request, null, ""))));
     }
 
     @PostMapping("/api/v1/services")
@@ -66,7 +66,7 @@ public class PublicApiController {
 
     @GetMapping("/api/v1/services/{serviceId}")
     public ResponseEntity<String> getService(HttpServletRequest request, @PathVariable String serviceId) {
-        return cached("service", serviceId, () -> json(bridge.systemApi().getService(jsonCall(request, serviceId, ""))));
+        return cached("service", serviceId, request, () -> json(bridge.systemApi().getService(jsonCall(request, serviceId, ""))));
     }
 
     @PatchMapping("/api/v1/services/{serviceId}")
@@ -81,7 +81,7 @@ public class PublicApiController {
 
     @GetMapping("/api/v1/services/{serviceId}/targets")
     public ResponseEntity<String> listTargets(HttpServletRequest request, @PathVariable String serviceId) {
-        return cached("targets", serviceId, () -> json(bridge.systemApi().listTargets(jsonCall(request, serviceId, ""))));
+        return cached("targets", serviceId, request, () -> json(bridge.systemApi().listTargets(jsonCall(request, serviceId, ""))));
     }
 
     @PostMapping("/api/v1/services/{serviceId}/targets")
@@ -101,7 +101,7 @@ public class PublicApiController {
 
     @GetMapping("/api/v1/episodes")
     public ResponseEntity<String> listEpisodes(HttpServletRequest request) {
-        return cached("episodes", ALL, () -> json(bridge.systemApi().listEpisodes(jsonCall(request, null, ""))));
+        return cached("episodes", ALL, request, () -> json(bridge.systemApi().listEpisodes(jsonCall(request, null, ""))));
     }
 
     @GetMapping("/api/v1/services/{serviceId}/timeline")
@@ -167,8 +167,9 @@ public class PublicApiController {
         return call(() -> json(bridge.systemApi().retryArchive(jsonCall(request, episodeId, body))));
     }
 
-    private ResponseEntity<String> cached(String scope, String id, RevisionCache.Loader loader) {
-        return call(() -> cache.around(scope, id, loader));
+    private ResponseEntity<String> cached(String scope, String id, HttpServletRequest request, RevisionCache.Loader loader) {
+        // 查询身份 = 原始 query string；jsonCall 仍把同一份 query 原样传给 Go，缓存键不改变查询语义。
+        return call(() -> cache.around(scope, id, request.getQueryString(), loader));
     }
 
     private ResponseEntity<String> call(java.util.concurrent.Callable<ResponseEntity<String>> action) {
