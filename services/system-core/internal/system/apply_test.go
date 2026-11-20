@@ -1,7 +1,6 @@
 package system
 
 import (
-	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -204,15 +203,19 @@ func TestAppTriggerFreezesMonitorSnapshot(t *testing.T) {
 		t.Fatal(err)
 	}
 	var storedWatermark int64
-	var projection []byte
-	if err := s.DB.QueryRow(`SELECT monitor_point_watermark, monitor_projection FROM system.episode_input_versions WHERE episode_id=$1 AND input_version=1`, episodeID).Scan(&storedWatermark, &projection); err != nil {
+	var projectionRaw []byte
+	if err := s.DB.QueryRow(`SELECT monitor_point_watermark, monitor_projection FROM system.episode_input_versions WHERE episode_id=$1 AND input_version=1`, episodeID).Scan(&storedWatermark, &projectionRaw); err != nil {
+		t.Fatal(err)
+	}
+	var projection []MonitorField
+	if err := json.Unmarshal(projectionRaw, &projection); err != nil {
 		t.Fatal(err)
 	}
 	if storedWatermark != pointWatermark {
 		t.Fatalf("snapshot watermark=%d, want %d", storedWatermark, pointWatermark)
 	}
-	if !bytes.Contains(projection, []byte(`"status":"NORMAL"`)) {
-		t.Fatalf("initial projection omitted current monitor state: %s", projection)
+	if len(projection) != 1 || projection[0].Status != StatusNormal {
+		t.Fatalf("initial projection omitted current monitor state: %+v", projection)
 	}
 	episode, err := s.GetEpisode(ctx, episodeID)
 	if err != nil || episode.ActiveTaskID == nil {
@@ -248,15 +251,19 @@ func TestAppTriggerWithoutMonitorPointsHasBoundedWatermark(t *testing.T) {
 		t.Fatal(err)
 	}
 	var watermark sql.NullInt64
-	var projection []byte
-	if err := s.DB.QueryRow(`SELECT monitor_point_watermark, monitor_projection FROM system.episode_input_versions WHERE episode_id=$1 AND input_version=1`, opened.Body["episode_id"]).Scan(&watermark, &projection); err != nil {
+	var projectionRaw []byte
+	if err := s.DB.QueryRow(`SELECT monitor_point_watermark, monitor_projection FROM system.episode_input_versions WHERE episode_id=$1 AND input_version=1`, opened.Body["episode_id"]).Scan(&watermark, &projectionRaw); err != nil {
+		t.Fatal(err)
+	}
+	var projection []MonitorField
+	if err := json.Unmarshal(projectionRaw, &projection); err != nil {
 		t.Fatal(err)
 	}
 	if !watermark.Valid || watermark.Int64 != 0 {
 		t.Fatalf("empty snapshot watermark=%+v, want bounded zero", watermark)
 	}
-	if string(projection) != "[]" {
-		t.Fatalf("empty monitor projection=%s", projection)
+	if len(projection) != 1 || projection[0].Status != StatusUnknown {
+		t.Fatalf("snapshot should retain the configured unknown target: %+v", projection)
 	}
 }
 
@@ -551,11 +558,15 @@ func TestExpiredLeaseIsRecovered(t *testing.T) {
 	svc, target := newSvc(t, s, 1, 1)
 	ctx := context.Background()
 	opened, err := s.ApplyMonitorSample(ctx, sample(svc, target, false, "5xx", time.Now().UTC()))
-	if err != nil || opened.ActiveTaskID == nil {
+	if err != nil || opened.EpisodeID == uuid.Nil {
 		t.Fatalf("open episode %+v %v", opened, err)
 	}
+	ep, err := s.GetEpisode(ctx, opened.EpisodeID)
+	if err != nil || ep.ActiveTaskID == nil {
+		t.Fatalf("diagnosis task %+v %v", ep, err)
+	}
 	past := time.Now().UTC().Add(-time.Minute)
-	if err := s.ForceLeaseExpired(ctx, *opened.ActiveTaskID, past); err != nil {
+	if err := s.ForceLeaseExpired(ctx, *ep.ActiveTaskID, past); err != nil {
 		t.Fatal(err)
 	}
 	now := time.Now().UTC()
@@ -564,7 +575,7 @@ func TestExpiredLeaseIsRecovered(t *testing.T) {
 		t.Fatal(err)
 	}
 	var status string
-	if err := s.DB.QueryRow(`SELECT status FROM system.agent_tasks WHERE task_id=$1`, *opened.ActiveTaskID).Scan(&status); err != nil {
+	if err := s.DB.QueryRow(`SELECT status FROM system.agent_tasks WHERE task_id=$1`, *ep.ActiveTaskID).Scan(&status); err != nil {
 		t.Fatal(err)
 	}
 	if status != TaskRetryWait {
@@ -578,12 +589,12 @@ func TestFailedTaskIsNotAutomaticallyBackfilled(t *testing.T) {
 	svc, target := newSvc(t, s, 1, 1)
 	ctx := context.Background()
 	opened, err := s.ApplyMonitorSample(ctx, sample(svc, target, false, "5xx", time.Now().UTC()))
-	if err != nil || opened.ActiveTaskID == nil {
+	if err != nil || opened.EpisodeID == uuid.Nil {
 		t.Fatalf("open episode %+v %v", opened, err)
 	}
 	ep, err := s.GetEpisode(ctx, opened.EpisodeID)
-	if err != nil {
-		t.Fatal(err)
+	if err != nil || ep.ActiveTaskID == nil {
+		t.Fatalf("diagnosis task %+v %v", ep, err)
 	}
 	startTask(t, s, *ep.ActiveTaskID, ep.EpisodeID, 1)
 	failed, err := s.CompleteTask(ctx, CompleteInput{
@@ -624,9 +635,9 @@ func TestPublishPendingMarksSent(t *testing.T) {
 	if err != nil || n != 1 {
 		t.Fatalf("published %d %v", n, err)
 	}
-	left, err := s.UnpublishedCount(context.Background())
-	if err != nil || left != 0 {
-		t.Fatalf("unpublished %d %v", left, err)
+	var left int
+	if err := s.DB.QueryRow(`SELECT COUNT(*) FROM system.outbox_events WHERE event_type='AGENT_TASK_READY' AND published_at IS NULL`).Scan(&left); err != nil || left != 0 {
+		t.Fatalf("unpublished task events=%d %v", left, err)
 	}
 }
 

@@ -13,7 +13,7 @@ from alertflow_agent.artifacts import write_artifact
 from alertflow_agent.fd import connect
 from alertflow_agent.gen.alertflow.agent.v1 import agent_pb2, agent_pb2_grpc
 from alertflow_agent.http_app import create_app
-from alertflow_agent.receipts import accept_task
+from alertflow_agent.receipts import accept_task, mark_running
 from alertflow_agent.runtime import AgentRuntime, SystemClient, TaskLeaseLost
 
 
@@ -233,8 +233,13 @@ async def test_health_and_grpc_roundtrip(clean):
         episode = str(uuid.uuid4())
         task_id = str(uuid.uuid4())
         seed = _task(episode=episode, task_id=task_id)
-        await accept_task(await _conn(), seed)
-        await write_artifact(await _conn(), episode, "INVESTIGATION", "MARKDOWN", "body", None, task_id, 1, None)
+        conn = await _conn()
+        try:
+            await accept_task(conn, seed)
+            await mark_running(conn, task_id, 1)
+            await write_artifact(conn, episode, "INVESTIGATION", "MARKDOWN", "body", None, task_id, 1, None)
+        finally:
+            await conn.close()
         channel = grpc.aio.insecure_channel(f"127.0.0.1:{runtime.bound_port}")
         stub = agent_pb2_grpc.AgentExecutionServiceStub(channel)
         submitted = await stub.SubmitTask(agent_pb2.SubmitTaskRequest(

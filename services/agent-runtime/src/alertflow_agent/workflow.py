@@ -54,7 +54,7 @@ def _evidence_snapshot(state: dict) -> tuple[list[dict], list[str]]:
         evidence.append(ref)
         content = json.dumps(item.get("content") or {}, ensure_ascii=False, default=str)
         label = f"时间轴 {ref['source_type']} id={ref['source_id']} time={ref['event_time']} source={ref['source']}"
-        observations.append(f"{label}: {content[:max(0, 500-len(label))]}")
+        observations.append(f"{label}: {content[:max(0, 500-len(label)-2)]}")
     for hit in (state.get("search_hits") or [])[:10]:
         source_id = hit.get("fd_id")
         source = hit.get("source") or "fault_document"
@@ -75,13 +75,13 @@ def _evidence_snapshot(state: dict) -> tuple[list[dict], list[str]]:
         traceable = bool(source_id or refs)
         evidence.append({"source_type": "KNOWLEDGE", "source_id": source_id, "citations": refs, "traceable": traceable})
         label = f"知识参考（source_id={source_id or 'missing citation'}）"
-        observations.append(f"{label}: {str(hit.get('content') or '')[:max(0, 450-len(label))]}")
+        observations.append(f"{label}: {str(hit.get('content') or '')[:max(0, 450-len(label)-2)]}")
     for item in (state.get("mcp_results") or [])[:10]:
         name = item.get("name") if isinstance(item, dict) else None
         evidence.append({"source_type": "MCP", "source": name or "unknown_tool", "traceable": False})
         label = f"MCP 工具 {name or 'unknown_tool'} 结果"
         text = item.get("text") if isinstance(item, dict) else str(item)
-        observations.append(f"{label}: {str(text)[:max(0, 450-len(label))]}")
+        observations.append(f"{label}: {str(text)[:max(0, 450-len(label)-2)]}")
     if state.get("knowledge_error"):
         evidence.append({"source_type": "KNOWLEDGE_ERROR", "traceable": False})
         observations.append(f"知识检索失败: {str(state['knowledge_error'])[:450]}")

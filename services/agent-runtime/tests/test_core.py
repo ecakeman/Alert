@@ -183,10 +183,10 @@ async def test_archive_search_roundtrip(db):
     assert "investigation_content" in hits[0]
 
 
+async def test_mcp_allowlist_and_disabled_knowledge_are_enforced(db):
     class Gateway:
-        db = None
-
-        def __init__(self):
+        def __init__(self, database):
+            self.db = database
             self.mcp_calls = 0
             self.knowledge_calls = 0
             self.registered = []
@@ -215,21 +215,25 @@ async def test_archive_search_roundtrip(db):
         def next_action(self, state):
             return self.action
 
-    gateway = Gateway()
-    episode = str(uuid.uuid4())
-    task = {
-        "episode_id": episode, "task_id": str(uuid.uuid4()), "execution_generation": 1,
-        "input_version_from": 1, "input_version_to": 1, "service_name": "orders", "service_id": "svc",
-        "episode_started_at": datetime.now(timezone.utc).isoformat(), "thread_id": f"diagnosis:{episode}",
-        "mcp_tools": [{"name": "safe.read"}], "knowledge_enabled": False,
-    }
-    result = await run_diagnosis(Model({"type": "call_mcp_tool", "name": "fake.write"}), gateway, task)
+    async def run(action):
+        episode = str(uuid.uuid4())
+        task = {
+            "episode_id": episode, "task_id": str(uuid.uuid4()), "task_type": "DIAGNOSIS", "execution_generation": 1,
+            "input_version_from": 1, "input_version_to": 1, "service_name": "orders", "service_id": "svc",
+            "episode_started_at": datetime.now(timezone.utc).isoformat(), "thread_id": f"diagnosis:{episode}",
+            "mcp_tools": [{"name": "safe.read"}], "knowledge_enabled": False,
+        }
+        await accept_task(db, task)
+        await mark_running(db, task["task_id"], 1)
+        gateway = Gateway(db)
+        return await run_diagnosis(Model(action), gateway, task), gateway
+
+    result, gateway = await run({"type": "call_mcp_tool", "name": "fake.write"})
     assert result["action"]["type"] == "finish"
     assert gateway.mcp_calls == 0
     assert any("外部动作未执行" in item for item in result["action"]["report"]["observations"])
 
-    task["knowledge_enabled"] = False
-    result = await run_diagnosis(Model({"type": "invoke_knowledge_agent"}), gateway, task)
+    result, gateway = await run({"type": "invoke_knowledge_agent"})
     assert result["action"]["type"] == "finish"
     assert gateway.knowledge_calls == 0
     assert any("外部动作未执行" in item for item in result["action"]["report"]["observations"])
