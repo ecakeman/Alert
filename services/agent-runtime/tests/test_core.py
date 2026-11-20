@@ -15,7 +15,7 @@ from alertflow_agent.fd import connect, save_fault_document, search_faults, stab
 from alertflow_agent.receipts import accept_task, advisory_lock, advisory_unlock, mark_finished, mark_running
 from alertflow_agent.schemas import FaultSearchIndex, QueryTimelineInput
 from alertflow_agent.textutil import rrf
-from alertflow_agent.workflow import OpenAICompatibleModel, ScriptedModel, build_diagnosis_graph, run_archive, run_diagnosis
+from alertflow_agent.workflow import OpenAICompatibleModel, ScriptedModel, _evidence_snapshot, build_diagnosis_graph, run_archive, run_diagnosis
 
 
 class FakeGateway:
@@ -301,6 +301,33 @@ async def test_tool_budget_falls_back_without_external_calls():
         workflow_module.write_artifact = original_write
     assert result["action"]["type"] == "finish"
     assert gateway.mcp_calls == 0 and gateway.knowledge_calls == 0
+
+
+async def test_evidence_snapshot_labels_sources_and_preserves_timeline_refs():
+    state = {
+        "timeline_records": [{
+            "record_type": "APP_EVENT", "record_id": "event-42", "event_time": "2026-11-20T10:00:00Z",
+            "received_at": "2026-11-20T10:00:01Z", "source": "APP", "content": {"message": "x" * 2000},
+        }],
+        "search_hits": [{"fd_id": "fd-7", "summary": "historic failure"}],
+        "knowledge_results": [
+            {"content": "manual excerpt", "citations": [{"document_id": "doc-3", "chunk_id": "chunk-9"}]},
+            {"content": "uncited excerpt"},
+        ],
+        "mcp_results": [{"name": "provider.read", "text": "result"}],
+        "knowledge_error": "", "action_error": "",
+    }
+    evidence, observations = _evidence_snapshot(state)
+    assert [item["source_type"] for item in evidence] == [
+        "APP_EVENT", "FAULT_DOCUMENT", "KNOWLEDGE", "KNOWLEDGE", "MCP",
+    ]
+    assert evidence[0]["source_id"] == "event-42"
+    assert evidence[0]["event_time"] == "2026-11-20T10:00:00Z"
+    assert evidence[2]["traceable"] is True and evidence[2]["citations"][0]["chunk_id"] == "chunk-9"
+    assert evidence[3]["traceable"] is False
+    assert "历史故障参考（非当前事实，fd_id=fd-7）" in observations[1]
+    assert len(observations[0]) <= 500
+    assert "event-42" in observations[0] and "2026-11-20T10:00:00Z" in observations[0] and "source=APP" in observations[0]
 
 
 async def test_scripted_model_and_async_http():

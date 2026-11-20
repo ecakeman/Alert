@@ -32,23 +32,7 @@ class ScriptedModel:
         return self.finish_action(state)
 
     def finish_action(self, state: dict) -> dict:
-        records = state.get("timeline_records") or []
-        observations = []
-        for item in records[:8]:
-            content = json.dumps(item.get("content") or {}, ensure_ascii=False, default=str)
-            observations.append(f"时间轴 {item.get('record_type')} {item.get('record_id')} {content}"[:500])
-        for hit in (state.get("search_hits") or [])[:4]:
-            observations.append(f"历史故障参考（非当前事实）: {str(hit.get('summary') or hit.get('investigation_content') or '')[:400]}")
-        if state.get("knowledge_error"):
-            observations.append(f"知识检索失败: {state['knowledge_error']}"[:500])
-        if state.get("action_error"):
-            observations.append(f"外部动作未执行: {state['action_error']}"[:500])
-        for hit in (state.get("knowledge_results") or [])[:4]:
-            observations.append(f"知识参考: {str(hit.get('content') or '')[:450]}")
-        for item in (state.get("mcp_results") or [])[:2]:
-            observations.append(f"MCP 结果: {str(item)[:450]}")
-        if not observations:
-            observations = ["本批次时间轴没有返回记录"]
+        _, observations = _evidence_snapshot(state)
         report = DiagnosisReport(
             summary=f"{state.get('service_name') or 'service'} 处于故障历程，输入版本 {state.get('input_version_from')}-{state.get('input_version_to')}",
             observations=observations,
@@ -57,6 +41,56 @@ class ScriptedModel:
             next_steps=["核对应用日志与依赖健康"],
         )
         return {"type": "finish", "report": report.model_dump()}
+
+
+def _evidence_snapshot(state: dict) -> tuple[list[dict], list[str]]:
+    evidence = []
+    observations = []
+    for item in (state.get("timeline_records") or [])[:40]:
+        ref = {
+            "source_type": item.get("record_type"), "source_id": item.get("record_id"),
+            "source": item.get("source"), "event_time": item.get("event_time"),
+        }
+        evidence.append(ref)
+        content = json.dumps(item.get("content") or {}, ensure_ascii=False, default=str)
+        label = f"时间轴 {ref['source_type']} id={ref['source_id']} time={ref['event_time']} source={ref['source']}"
+        observations.append(f"{label}: {content[:max(0, 500-len(label))]}")
+    for hit in (state.get("search_hits") or [])[:10]:
+        source_id = hit.get("fd_id")
+        source = hit.get("source") or "fault_document"
+        if not source_id:
+            evidence.append({"source_type": "FAULT_SEARCH", "source": source, "traceable": False})
+            observations.append(f"历史故障参考（非当前事实，来源不可追溯）: {str(hit.get('summary') or '')[:400]}")
+            continue
+        evidence.append({"source_type": "FAULT_DOCUMENT", "source_id": source_id, "source": source})
+        observations.append(f"历史故障参考（非当前事实，fd_id={source_id}）: {str(hit.get('summary') or hit.get('investigation_content') or '')[:350]}")
+    for hit in (state.get("knowledge_results") or [])[:10]:
+        citations = hit.get("citations") or hit.get("sources") or []
+        refs = [citation for citation in citations if isinstance(citation, dict)]
+        source_id = hit.get("id") or next((
+            citation.get(key) for citation in refs
+            for key in ("document_id", "documentId", "document_version_id", "documentVersionId", "chunk_id", "chunkId", "id")
+            if citation.get(key)
+        ), None)
+        traceable = bool(source_id or refs)
+        evidence.append({"source_type": "KNOWLEDGE", "source_id": source_id, "citations": refs, "traceable": traceable})
+        label = f"知识参考（source_id={source_id or 'missing citation'}）"
+        observations.append(f"{label}: {str(hit.get('content') or '')[:max(0, 450-len(label))]}")
+    for item in (state.get("mcp_results") or [])[:10]:
+        name = item.get("name") if isinstance(item, dict) else None
+        evidence.append({"source_type": "MCP", "source": name or "unknown_tool", "traceable": False})
+        label = f"MCP 工具 {name or 'unknown_tool'} 结果"
+        text = item.get("text") if isinstance(item, dict) else str(item)
+        observations.append(f"{label}: {str(text)[:max(0, 450-len(label))]}")
+    if state.get("knowledge_error"):
+        evidence.append({"source_type": "KNOWLEDGE_ERROR", "traceable": False})
+        observations.append(f"知识检索失败: {str(state['knowledge_error'])[:450]}")
+    if state.get("action_error"):
+        evidence.append({"source_type": "ACTION_REJECTED", "traceable": False})
+        observations.append(f"外部动作未执行: {str(state['action_error'])[:450]}")
+    if not observations:
+        observations = ["本批次时间轴没有返回记录"]
+    return evidence, observations
 
 
 class OpenAICompatibleModel:
@@ -184,7 +218,11 @@ def build_diagnosis_graph(model, gateway, checkpointer=None):
 
     async def write_node(state: dict):
         report = DiagnosisReport.model_validate(state["action"]["report"])
-        findings = json.dumps(state.get("timeline_records") or [], ensure_ascii=False, default=str)[:4000]
+        evidence, observations = _evidence_snapshot(state)
+        report.observations = observations
+        report_json = report.model_dump()
+        report_json["evidence"] = evidence
+        findings = "\n".join(observations)
         existing = await read_artifact(gateway.db, state["episode_id"], "INVESTIGATION")
         text = render_investigation(
             state.get("service_name") or "",
@@ -201,7 +239,7 @@ def build_diagnosis_graph(model, gateway, checkpointer=None):
         report_current = await read_artifact(gateway.db, state["episode_id"], "DIAGNOSIS_REPORT")
         report_expected = None if report_current is None else report_current["version"]
         report_saved = await write_artifact(
-            gateway.db, state["episode_id"], "DIAGNOSIS_REPORT", "JSON", None, report.model_dump(),
+            gateway.db, state["episode_id"], "DIAGNOSIS_REPORT", "JSON", None, report_json,
             state["task_id"], state["execution_generation"], report_expected,
         )
         await gateway.register_artifact(state, "DIAGNOSIS_REPORT", report_saved["version"], "JSON", report_saved["content_hash"])
