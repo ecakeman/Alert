@@ -143,7 +143,7 @@ func (s *Store) ApplyMonitorSample(ctx context.Context, sample MonitorSample) (A
 		if err != nil {
 			return err
 		}
-		nextMonitor, err := aggregateMonitor(ctx, tx, sample.ServiceID, prevMonitor)
+		nextMonitor, err := aggregateMonitor(ctx, tx, sample.ServiceID)
 		if err != nil {
 			return err
 		}
@@ -416,12 +416,12 @@ func setSourceStatus(ctx context.Context, tx *sql.Tx, serviceID uuid.UUID, sourc
 }
 
 // aggregateMonitor 按 ANY_REQUIRED：任一必需目标异常即异常，全部必需目标正常才正常，否则保持原状态。
-func aggregateMonitor(ctx context.Context, tx *sql.Tx, serviceID uuid.UUID, previous string) (string, error) {
+func aggregateMonitor(ctx context.Context, tx *sql.Tx, serviceID uuid.UUID) (string, error) {
 	rows, err := tx.QueryContext(ctx, `
 		SELECT st.status
 		FROM system.service_monitor_targets t
 		JOIN system.service_monitor_target_states st ON st.target_id=t.target_id
-		WHERE t.service_id=$1 AND t.enabled AND t.is_required`, serviceID)
+		WHERE t.service_id=$1 AND t.enabled AND t.is_required AND t.deleted_at IS NULL`, serviceID)
 	if err != nil {
 		return "", err
 	}
@@ -447,10 +447,44 @@ func aggregateMonitor(ctx context.Context, tx *sql.Tx, serviceID uuid.UUID, prev
 	if n > 0 && normal == n {
 		return StatusNormal, nil
 	}
-	if previous == "" {
-		return StatusUnknown, nil
+	return StatusUnknown, nil
+}
+
+func (s *Store) refreshMonitorAfterTargetChange(ctx context.Context, tx *sql.Tx, serviceID uuid.UUID, now time.Time) error {
+	previous, err := sourceStatus(ctx, tx, serviceID, SourceMonitor)
+	if err != nil {
+		return err
 	}
-	return previous, nil
+	monitor, err := aggregateMonitor(ctx, tx, serviceID)
+	if err != nil {
+		return err
+	}
+	if err := setSourceStatus(ctx, tx, serviceID, SourceMonitor, monitor, now); err != nil {
+		return err
+	}
+	app, err := sourceStatus(ctx, tx, serviceID, SourceApp)
+	if err != nil {
+		return err
+	}
+	ep, err := lockActiveEpisode(ctx, tx, serviceID)
+	if err != nil || ep == nil {
+		return err
+	}
+	if previous == monitor && monitor == StatusNormal {
+		return nil
+	}
+	projection, err := loadProjection(ctx, tx, serviceID)
+	if err != nil {
+		return err
+	}
+	if monitor == StatusAbnormal || (previous == StatusAbnormal && monitor == StatusNormal) {
+		ep.Projection = projection
+	}
+	if monitor != StatusNormal || app != StatusNormal {
+		ep.ResolutionPending = false
+		ep.FinalInputVersion = sql.NullInt64{}
+	}
+	return s.syncEpisode(ctx, tx, ep, []string{"TARGET_CHANGE"}, nil, nil, monitor, app, now)
 }
 
 func lockActiveEpisode(ctx context.Context, tx *sql.Tx, serviceID uuid.UUID) (*episodeRow, error) {

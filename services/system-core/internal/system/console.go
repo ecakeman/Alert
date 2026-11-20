@@ -151,6 +151,9 @@ func (s *Store) SoftDeleteService(ctx context.Context, id uuid.UUID) error {
 		if err != nil {
 			return err
 		}
+		if err := s.refreshMonitorAfterTargetChange(ctx, tx, id, now); err != nil {
+			return err
+		}
 		return s.noteViews(ctx, tx, id)
 	})
 }
@@ -167,6 +170,9 @@ func (s *Store) CreateTarget(ctx context.Context, serviceID uuid.UUID, in Target
 			return err
 		}
 		tid = id
+		if err := s.refreshMonitorAfterTargetChange(ctx, tx, serviceID, s.now()); err != nil {
+			return err
+		}
 		return s.noteViews(ctx, tx, serviceID)
 	})
 	if err != nil {
@@ -192,6 +198,15 @@ type PatchTargetInput struct {
 func (s *Store) UpdateTarget(ctx context.Context, targetID uuid.UUID, in PatchTargetInput) (Target, uuid.UUID, error) {
 	var serviceID uuid.UUID
 	err := s.withTx(ctx, func(tx *sql.Tx) error {
+		if err := tx.QueryRowContext(ctx, `SELECT service_id FROM system.service_monitor_targets WHERE target_id=$1 AND deleted_at IS NULL`, targetID).Scan(&serviceID); err != nil {
+			if err == sql.ErrNoRows {
+				return errCode("TARGET_NOT_FOUND", "target not found", 404)
+			}
+			return err
+		}
+		if err := lockService(ctx, tx, serviceID); err != nil {
+			return err
+		}
 		cur, sid, err := lockTarget(ctx, tx, targetID)
 		if err != nil {
 			return err
@@ -251,6 +266,9 @@ func (s *Store) UpdateTarget(ctx context.Context, targetID uuid.UUID, in PatchTa
 		if err != nil {
 			return err
 		}
+		if err := s.refreshMonitorAfterTargetChange(ctx, tx, serviceID, s.now()); err != nil {
+			return err
+		}
 		return s.noteViews(ctx, tx, serviceID)
 	})
 	if err != nil {
@@ -269,9 +287,18 @@ func reqValue(v *bool) bool {
 
 // SoftDeleteTarget 软删除目标并停用，允许之后用同一 target_key 重建。
 func (s *Store) SoftDeleteTarget(ctx context.Context, targetID uuid.UUID) (uuid.UUID, error) {
-	now := s.now()
 	var serviceID uuid.UUID
 	err := s.withTx(ctx, func(tx *sql.Tx) error {
+		now := s.now()
+		if err := tx.QueryRowContext(ctx, `SELECT service_id FROM system.service_monitor_targets WHERE target_id=$1 AND deleted_at IS NULL`, targetID).Scan(&serviceID); err != nil {
+			if err == sql.ErrNoRows {
+				return errCode("TARGET_NOT_FOUND", "target not found", 404)
+			}
+			return err
+		}
+		if err := lockService(ctx, tx, serviceID); err != nil {
+			return err
+		}
 		err := tx.QueryRowContext(ctx, `
 			UPDATE system.service_monitor_targets
 			SET deleted_at=$2, enabled=FALSE, updated_at=$2
@@ -281,6 +308,9 @@ func (s *Store) SoftDeleteTarget(ctx context.Context, targetID uuid.UUID) (uuid.
 			return errCode("TARGET_NOT_FOUND", "target not found", 404)
 		}
 		if err != nil {
+			return err
+		}
+		if err := s.refreshMonitorAfterTargetChange(ctx, tx, serviceID, now); err != nil {
 			return err
 		}
 		return s.noteViews(ctx, tx, serviceID)

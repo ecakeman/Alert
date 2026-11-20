@@ -260,6 +260,46 @@ func TestAppTriggerWithoutMonitorPointsHasBoundedWatermark(t *testing.T) {
 	}
 }
 
+func TestTargetChangeToUnknownClearsResolutionPending(t *testing.T) {
+	s := testStore(t)
+	svc, target := newSvc(t, s, 1, 1)
+	ctx := context.Background()
+	base := time.Date(2026, 11, 3, 8, 0, 0, 0, time.UTC)
+	if _, err := s.ApplyMonitorSample(ctx, sample(svc, target, false, "5xx", base)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.ApplyMonitorSample(ctx, sample(svc, target, true, "2xx", base.Add(time.Minute))); err != nil {
+		t.Fatal(err)
+	}
+	opened, err := s.ApplyMonitorSample(ctx, sample(svc, target, true, "2xx", base.Add(2*time.Minute)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var rev int64 = 1
+	raw, ev := appBody("target-change-normal", "HEALTH_STATUS", StatusNormal, &rev)
+	result, err := s.ApplyAppEvent(ctx, svc, ev, raw)
+	if err != nil || result.Body["resolution_pending"] != true {
+		t.Fatalf("episode should be pending resolution: %+v %v", result.Body, err)
+	}
+	if _, _, err := s.UpdateTarget(ctx, target, PatchTargetInput{Required: boolPtr(false)}); err != nil {
+		t.Fatal(err)
+	}
+	episode, err := s.GetEpisode(ctx, opened.EpisodeID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if episode.Status != EpisodeActive || episode.ResolutionPending || episode.FinalInputVersion != nil {
+		t.Fatalf("episode resolved with no required targets: %+v", episode)
+	}
+	var monitor string
+	if err := s.DB.QueryRow(`SELECT status FROM system.service_source_states WHERE service_id=$1 AND source='MONITOR'`, svc).Scan(&monitor); err != nil {
+		t.Fatal(err)
+	}
+	if monitor != StatusUnknown {
+		t.Fatalf("monitor status=%s, want UNKNOWN", monitor)
+	}
+}
+
 func TestAppEventRules(t *testing.T) {
 	s := testStore(t)
 	svc, _ := newSvc(t, s, 2, 2)
