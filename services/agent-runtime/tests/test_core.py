@@ -10,12 +10,12 @@ import pytest
 
 os.environ.setdefault("ALERTFLOW_DATABASE_URL", "postgres://alertflow:alertflow@127.0.0.1:55433/alertflow?sslmode=disable")
 
-from alertflow_agent.artifacts import write_artifact
+from alertflow_agent.artifacts import read_artifact, write_artifact
 from alertflow_agent.fd import connect, save_fault_document, search_faults, stable_fd_id
-from alertflow_agent.receipts import accept_task, advisory_lock, advisory_unlock
+from alertflow_agent.receipts import accept_task, advisory_lock, advisory_unlock, mark_finished, mark_running
 from alertflow_agent.schemas import FaultSearchIndex, QueryTimelineInput
 from alertflow_agent.textutil import rrf
-from alertflow_agent.workflow import OpenAICompatibleModel, ScriptedModel, run_archive, run_diagnosis
+from alertflow_agent.workflow import OpenAICompatibleModel, ScriptedModel, _evidence_snapshot, build_diagnosis_graph, run_archive, run_diagnosis
 
 
 class FakeGateway:
@@ -40,7 +40,10 @@ class FakeGateway:
         self.registered.append(artifact_type)
 
     async def save_fault(self, task, investigation, report, index):
-        return await save_fault_document(self.db, task["episode_id"], task["service_id"], investigation, report, index)
+        return await save_fault_document(
+            self.db, task["episode_id"], task["service_id"], task["task_id"], int(task["execution_generation"]),
+            investigation, report, index,
+        )
 
 
 @pytest.fixture
@@ -92,9 +95,35 @@ async def test_advisory_lock_blocks_other_connection(db):
         await again.close()
 
 
+async def test_stale_generation_cannot_update_receipt_or_artifact(db):
+    episode = str(uuid.uuid4())
+    task_id = str(uuid.uuid4())
+    task = {"task_id": task_id, "episode_id": episode, "task_type": "DIAGNOSIS", "execution_generation": 1}
+    await accept_task(db, task)
+    task["execution_generation"] = 2
+    await accept_task(db, task)
+    await mark_running(db, task_id, 2)
+    current = await write_artifact(db, episode, "INVESTIGATION", "MARKDOWN", "generation two", None, task_id, 2, None)
+    with pytest.raises(ValueError, match="stale execution generation"):
+        await mark_finished(db, task_id, 1, "FAILED", {"error": "stale"}, "SENT")
+    with pytest.raises(ValueError, match="stale execution generation"):
+        await write_artifact(db, episode, "INVESTIGATION", "MARKDOWN", "generation one", None, task_id, 1, current["version"])
+    with pytest.raises(ValueError, match="stale execution generation"):
+        await save_fault_document(
+            db, episode, str(uuid.uuid4()), task_id, 1, "stale", {},
+            FaultSearchIndex(summary="stale", symptoms=[], observations=[], diagnosis=[]),
+        )
+    saved = await read_artifact(db, episode, "INVESTIGATION")
+    assert saved["content_text"] == "generation two"
+    assert saved["execution_generation"] == 2
+
+
 async def test_artifact_version_conflict(db):
     episode = str(uuid.uuid4())
     task_id = str(uuid.uuid4())
+    task = {"task_id": task_id, "episode_id": episode, "task_type": "DIAGNOSIS", "execution_generation": 1}
+    await accept_task(db, task)
+    await mark_running(db, task_id, 1)
     first = await write_artifact(db, episode, "INVESTIGATION", "MARKDOWN", "one", None, task_id, 1, None)
     same = await write_artifact(db, episode, "INVESTIGATION", "MARKDOWN", "one", None, task_id, 1, first["version"])
     assert same["version"] == 1
@@ -113,6 +142,8 @@ async def test_diagnosis_writes_artifacts_once_per_task(db):
         "thread_id": f"diagnosis:{episode_id}", "service_name": "orders",
         "episode_started_at": datetime.now(timezone.utc).isoformat(),
     }
+    await accept_task(db, task)
+    await mark_running(db, task["task_id"], 1)
     await run_diagnosis(ScriptedModel(), gateway, task)
     await run_diagnosis(ScriptedModel(), gateway, task)
     async with db.cursor() as cur:
@@ -126,7 +157,10 @@ async def test_archive_search_roundtrip(db):
     gateway = FakeGateway(db)
     episode = str(uuid.uuid4())
     service = str(uuid.uuid4())
-    task = {"episode_id": episode, "service_id": service, "task_id": str(uuid.uuid4()), "execution_generation": 1}
+    task = {"episode_id": episode, "service_id": service, "task_id": str(uuid.uuid4()), "execution_generation": 1,
+            "task_type": "ARCHIVE"}
+    await accept_task(db, task)
+    await mark_running(db, task["task_id"], 1)
     await write_artifact(db, episode, "INVESTIGATION", "MARKDOWN", "# 故障概况\n\npool exhausted\n", None, task["task_id"], 1, None)
     await write_artifact(db, episode, "DIAGNOSIS_REPORT", "JSON", None, {
         "summary": "连接池耗尽", "observations": ["pool exhausted"], "hypotheses": ["数据库连接池耗尽"],
@@ -139,14 +173,169 @@ async def test_archive_search_roundtrip(db):
 
     fd_id = await run_archive(Model(), gateway, task)
     assert fd_id == stable_fd_id(episode)
-    again = await save_fault_document(db, episode, service, "doc", {"summary": "连接池耗尽"}, FaultSearchIndex(summary="连接池耗尽", symptoms=["pool exhausted"], observations=["pool exhausted"], diagnosis=["数据库连接池耗尽"]))
+    again = await save_fault_document(
+        db, episode, service, task["task_id"], 1, "doc", {"summary": "连接池耗尽"},
+        FaultSearchIndex(summary="连接池耗尽", symptoms=["pool exhausted"], observations=["pool exhausted"], diagnosis=["数据库连接池耗尽"]),
+    )
     assert again == fd_id
     hits = await search_faults(db, service, "连接池耗尽")
     assert hits and hits[0]["fd_id"] == fd_id
     assert "investigation_content" in hits[0]
 
 
+async def test_mcp_allowlist_and_disabled_knowledge_are_enforced(db):
+    class Gateway:
+        def __init__(self, database):
+            self.db = database
+            self.mcp_calls = 0
+            self.knowledge_calls = 0
+            self.registered = []
+
+        async def invoke_knowledge(self, state):
+            self.knowledge_calls += 1
+            return {"results": []}
+
+        async def call_mcp(self, state, action):
+            self.mcp_calls += 1
+            return {"name": action["name"], "text": "ok"}
+
+        async def query_timeline(self, state, parsed):
+            return [{"record_type": "APP_EVENT", "record_id": "r1", "event_time": "t", "received_at": "t", "source": "APP", "content": {}}]
+
+        async def search_faults(self, state, query):
+            return []
+
+        async def register_artifact(self, state, artifact_type, version, content_type, content_hash):
+            self.registered.append(artifact_type)
+
+    class Model:
+        def __init__(self, action):
+            self.action = action
+
+        def next_action(self, state):
+            return self.action
+
+    async def run(action):
+        episode = str(uuid.uuid4())
+        task = {
+            "episode_id": episode, "task_id": str(uuid.uuid4()), "task_type": "DIAGNOSIS", "execution_generation": 1,
+            "input_version_from": 1, "input_version_to": 1, "service_name": "orders", "service_id": "svc",
+            "episode_started_at": datetime.now(timezone.utc).isoformat(), "thread_id": f"diagnosis:{episode}",
+            "mcp_tools": [{"name": "safe.read"}], "knowledge_enabled": False,
+        }
+        await accept_task(db, task)
+        await mark_running(db, task["task_id"], 1)
+        gateway = Gateway(db)
+        return await run_diagnosis(Model(action), gateway, task), gateway
+
+    result, gateway = await run({"type": "call_mcp_tool", "name": "fake.write"})
+    assert result["action"]["type"] == "finish"
+    assert gateway.mcp_calls == 0
+    assert any("外部动作未执行" in item for item in result["action"]["report"]["observations"])
+
+    result, gateway = await run({"type": "invoke_knowledge_agent"})
+    assert result["action"]["type"] == "finish"
+    assert gateway.knowledge_calls == 0
+    assert any("外部动作未执行" in item for item in result["action"]["report"]["observations"])
+
+
+async def test_tool_budget_falls_back_without_external_calls():
+    class Gateway:
+        db = None
+
+        def __init__(self):
+            self.mcp_calls = 0
+            self.knowledge_calls = 0
+            self.registered = []
+
+        async def query_timeline(self, state, parsed):
+            return [{"record_type": "APP_EVENT", "record_id": "r1", "event_time": "t", "received_at": "t", "source": "APP", "content": {}}]
+
+        async def search_faults(self, state, query):
+            return [{"fd_id": "fd1", "summary": "historic"}]
+
+        async def invoke_knowledge(self, state):
+            self.knowledge_calls += 1
+            return {"results": []}
+
+        async def call_mcp(self, state, action):
+            self.mcp_calls += 1
+            return {"name": action["name"], "text": "side effect"}
+
+        async def register_artifact(self, state, artifact_type, version, content_type, content_hash):
+            self.registered.append(artifact_type)
+
+    class Model:
+        def next_action(self, state):
+            return {"type": "call_mcp_tool", "name": "untrusted.write"}
+
+    gateway = Gateway()
+    episode = str(uuid.uuid4())
+    task = {
+        "episode_id": episode, "task_id": str(uuid.uuid4()), "execution_generation": 1,
+        "input_version_from": 1, "input_version_to": 1, "service_name": "orders", "service_id": "svc",
+        "episode_started_at": datetime.now(timezone.utc).isoformat(), "thread_id": f"diagnosis:{episode}",
+        "knowledge_enabled": True, "mcp_tools": [{"name": "untrusted.write"}],
+    }
+    from alertflow_agent import workflow as workflow_module
+    original_read = workflow_module.read_artifact
+    original_write = workflow_module.write_artifact
+
+    async def read(_conn, _episode, _kind):
+        return None
+
+    async def write(_conn, episode, kind, content_type, text, data, task_id, generation, expected):
+        digest = "0" * 64
+        await gateway.register_artifact({}, kind, 1, content_type, digest)
+        return {"version": 1, "content_text": text, "content_hash": digest}
+
+    workflow_module.read_artifact = read
+    workflow_module.write_artifact = write
+    try:
+        state = {
+            "episode_id": episode, "task_id": task["task_id"], "execution_generation": 1,
+            "input_version_from": 1, "input_version_to": 1, "service_name": "orders", "service_id": "svc",
+            "episode_started_at": task["episode_started_at"], "monitor_point_ids": [], "app_event_ids": [],
+            "tool_rounds": 6, "current_stage": "decide", "knowledge_enabled": True,
+            "mcp_tools": task["mcp_tools"], "thread_id": task["thread_id"],
+        }
+        result = await build_diagnosis_graph(Model(), gateway).ainvoke(state, config={"configurable": {"thread_id": task["thread_id"]}})
+    finally:
+        workflow_module.read_artifact = original_read
+        workflow_module.write_artifact = original_write
+    assert result["action"]["type"] == "finish"
+    assert gateway.mcp_calls == 0 and gateway.knowledge_calls == 0
+
+
+async def test_evidence_snapshot_labels_sources_and_preserves_timeline_refs():
+    state = {
+        "timeline_records": [{
+            "record_type": "APP_EVENT", "record_id": "event-42", "event_time": "2026-11-20T10:00:00Z",
+            "received_at": "2026-11-20T10:00:01Z", "source": "APP", "content": {"message": "x" * 2000},
+        }],
+        "search_hits": [{"fd_id": "fd-7", "summary": "historic failure"}],
+        "knowledge_results": [
+            {"content": "manual excerpt", "citations": [{"document_id": "doc-3", "chunk_id": "chunk-9"}]},
+            {"content": "uncited excerpt"},
+        ],
+        "mcp_results": [{"name": "provider.read", "text": "result"}],
+        "knowledge_error": "", "action_error": "",
+    }
+    evidence, observations = _evidence_snapshot(state)
+    assert [item["source_type"] for item in evidence] == [
+        "APP_EVENT", "FAULT_DOCUMENT", "KNOWLEDGE", "KNOWLEDGE", "MCP",
+    ]
+    assert evidence[0]["source_id"] == "event-42"
+    assert evidence[0]["event_time"] == "2026-11-20T10:00:00Z"
+    assert evidence[2]["traceable"] is True and evidence[2]["citations"][0]["chunk_id"] == "chunk-9"
+    assert evidence[3]["traceable"] is False
+    assert "历史故障参考（非当前事实，fd_id=fd-7）" in observations[1]
+    assert len(observations[0]) <= 500
+    assert "event-42" in observations[0] and "2026-11-20T10:00:00Z" in observations[0] and "source=APP" in observations[0]
+
+
 async def test_scripted_model_and_async_http():
+
     seen = {}
 
     def handler(request: httpx.Request) -> httpx.Response:

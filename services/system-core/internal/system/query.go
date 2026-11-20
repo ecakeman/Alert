@@ -292,7 +292,7 @@ func (s *Store) QueryTimeline(ctx context.Context, taskID, episodeID uuid.UUID, 
 		SELECT point_id::text, observed_at, received_at, check_status, raw_result, diagnostic_fields
 		FROM system.service_monitor_points
 		WHERE service_id=$1
-		  AND point_seq >= COALESCE($2::bigint, 0)
+		  AND point_seq > COALESCE($2::bigint, 0)
 		  AND ($3::bigint IS NULL OR point_seq <= $3)
 		  AND observed_at >= $4 AND observed_at <= $5`
 	args := []any{snap.ServiceID, snap.MonitorStart, snap.PointWatermark, start, end}

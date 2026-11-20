@@ -179,7 +179,7 @@ func (s *Store) ApplyMonitorSample(ctx context.Context, sample MonitorSample) (A
 		if err != nil {
 			return err
 		}
-		nextMonitor, err := aggregateMonitor(ctx, tx, sample.ServiceID, prevMonitor)
+		nextMonitor, err := aggregateMonitor(ctx, tx, sample.ServiceID)
 		if err != nil {
 			return err
 		}
@@ -510,12 +510,12 @@ func setSourceStatus(ctx context.Context, tx *sql.Tx, serviceID uuid.UUID, sourc
 }
 
 // aggregateMonitor 按 ANY_REQUIRED：任一必需目标异常即异常，全部必需目标正常才正常，否则保持原状态。
-func aggregateMonitor(ctx context.Context, tx *sql.Tx, serviceID uuid.UUID, previous string) (string, error) {
+func aggregateMonitor(ctx context.Context, tx *sql.Tx, serviceID uuid.UUID) (string, error) {
 	rows, err := tx.QueryContext(ctx, `
 		SELECT st.status
 		FROM system.service_monitor_targets t
 		JOIN system.service_monitor_target_states st ON st.target_id=t.target_id
-		WHERE t.service_id=$1 AND t.enabled AND t.is_required`, serviceID)
+		WHERE t.service_id=$1 AND t.enabled AND t.is_required AND t.deleted_at IS NULL`, serviceID)
 	if err != nil {
 		return "", err
 	}
@@ -541,10 +541,44 @@ func aggregateMonitor(ctx context.Context, tx *sql.Tx, serviceID uuid.UUID, prev
 	if n > 0 && normal == n {
 		return StatusNormal, nil
 	}
-	if previous == "" {
-		return StatusUnknown, nil
+	return StatusUnknown, nil
+}
+
+func (s *Store) refreshMonitorAfterTargetChange(ctx context.Context, tx *sql.Tx, serviceID uuid.UUID, now time.Time) error {
+	previous, err := sourceStatus(ctx, tx, serviceID, SourceMonitor)
+	if err != nil {
+		return err
 	}
-	return previous, nil
+	monitor, err := aggregateMonitor(ctx, tx, serviceID)
+	if err != nil {
+		return err
+	}
+	if err := setSourceStatus(ctx, tx, serviceID, SourceMonitor, monitor, now); err != nil {
+		return err
+	}
+	app, err := sourceStatus(ctx, tx, serviceID, SourceApp)
+	if err != nil {
+		return err
+	}
+	ep, err := lockActiveEpisode(ctx, tx, serviceID)
+	if err != nil || ep == nil {
+		return err
+	}
+	if previous == monitor && monitor == StatusNormal {
+		return nil
+	}
+	projection, err := loadProjection(ctx, tx, serviceID)
+	if err != nil {
+		return err
+	}
+	if monitor == StatusAbnormal || (previous == StatusAbnormal && monitor == StatusNormal) {
+		ep.Projection = projection
+	}
+	if monitor != StatusNormal || app != StatusNormal {
+		ep.ResolutionPending = false
+		ep.FinalInputVersion = sql.NullInt64{}
+	}
+	return s.syncEpisode(ctx, tx, ep, []string{"TARGET_CHANGE"}, nil, nil, monitor, app, now)
 }
 
 func lockActiveEpisode(ctx context.Context, tx *sql.Tx, serviceID uuid.UUID) (*episodeRow, error) {
@@ -599,14 +633,25 @@ func insertEpisode(ctx context.Context, tx *sql.Tx, serviceID uuid.UUID, started
 	if err := tx.QueryRowContext(ctx, `SELECT MAX(point_seq) FROM system.service_monitor_points WHERE service_id=$1`, serviceID).Scan(&maxSeq); err != nil {
 		return nil, err
 	}
+	if !maxSeq.Valid {
+		maxSeq = sql.NullInt64{Int64: 0, Valid: true}
+	}
+	projection, err := loadProjection(ctx, tx, serviceID)
+	if err != nil {
+		return nil, err
+	}
+	projectionJSON, err := json.Marshal(projection)
+	if err != nil {
+		return nil, err
+	}
 	id := uuid.New()
-	_, err := tx.ExecContext(ctx, `
+	_, err = tx.ExecContext(ctx, `
 		INSERT INTO system.episodes
 		(episode_id, service_id, status, resolution_pending, started_by, started_at,
-		 monitor_start_point_seq, current_monitor_projection, input_hash, input_version,
+		 monitor_start_point_seq, monitor_point_watermark, current_monitor_projection, input_hash, input_version,
 		 processed_input_version, created_at, updated_at)
-		VALUES ($1,$2,'ACTIVE',FALSE,$3,$4,$5,'[]','',0,0,$4,$4)`,
-		id, serviceID, startedBy, now, maxSeq)
+		VALUES ($1,$2,'ACTIVE',FALSE,$3,$4,$5,$5,$6,'',0,0,$4,$4)`,
+		id, serviceID, startedBy, now, maxSeq, projectionJSON)
 	if err != nil {
 		return nil, err
 	}
@@ -694,8 +739,10 @@ func (s *Store) syncEpisode(ctx context.Context, tx *sql.Tx, ep *episodeRow, tri
 	if hash != ep.InputHash {
 		ep.InputVersion++
 		ep.InputHash = hash
-		if len(pointIDs) > 0 && pointWM.Valid {
+		if pointWM.Valid {
 			ep.MonitorWatermark = pointWM
+		} else {
+			ep.MonitorWatermark = sql.NullInt64{Int64: 0, Valid: true}
 		}
 		projJSON, _ := json.Marshal(ep.Projection)
 		refs := changedRefs{MonitorPointIDs: pointIDs, AppEventIDs: eventIDs}

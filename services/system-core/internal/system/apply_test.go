@@ -2,6 +2,7 @@ package system
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"sync"
@@ -63,6 +64,17 @@ func newSvc(t *testing.T, s *Store, failTh, recTh int) (uuid.UUID, uuid.UUID) {
 
 func sample(svc, target uuid.UUID, ok bool, class string, at time.Time) MonitorSample {
 	return MonitorSample{ServiceID: svc, TargetID: target, ObservedAt: at, Success: ok, StatusClass: class}
+}
+
+func startTask(t *testing.T, s *Store, taskID, episodeID uuid.UUID, generation int64) {
+	t.Helper()
+	if err := s.MarkDispatched(context.Background(), taskID, generation); err != nil {
+		t.Fatal(err)
+	}
+	ack, err := s.ReportTaskStarted(context.Background(), taskID, episodeID, generation)
+	if err != nil || !ack.Accepted {
+		t.Fatalf("start task %+v %v", ack, err)
+	}
 }
 
 func appBody(id, kind, health string, rev *int64) ([]byte, AppEvent) {
@@ -163,6 +175,135 @@ func TestConcurrentSourcesCreateOneEpisode(t *testing.T) {
 	}
 	if active != 1 {
 		t.Fatalf("active = %d", active)
+	}
+}
+
+func TestAppTriggerFreezesMonitorSnapshot(t *testing.T) {
+	s := testStore(t)
+	svc, target := newSvc(t, s, 1, 2)
+	ctx := context.Background()
+	base := time.Date(2026, 11, 2, 8, 0, 0, 0, time.UTC)
+	for i := 0; i < 2; i++ {
+		if _, err := s.ApplyMonitorSample(ctx, sample(svc, target, true, "2xx", base.Add(time.Duration(i)*time.Minute))); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var pointWatermark int64
+	if err := s.DB.QueryRow(`SELECT MAX(point_seq) FROM system.service_monitor_points WHERE service_id=$1`, svc).Scan(&pointWatermark); err != nil {
+		t.Fatal(err)
+	}
+	rev := int64(1)
+	raw, ev := appBody("app-first", "HEALTH_STATUS", StatusAbnormal, &rev)
+	opened, err := s.ApplyAppEvent(ctx, svc, ev, raw)
+	if err != nil || opened.Body["episode_status"] != EpisodeActive {
+		t.Fatalf("open episode %+v %v", opened.Body, err)
+	}
+	episodeID, err := uuid.Parse(opened.Body["episode_id"].(string))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var storedWatermark int64
+	var projectionRaw []byte
+	if err := s.DB.QueryRow(`SELECT monitor_point_watermark, monitor_projection FROM system.episode_input_versions WHERE episode_id=$1 AND input_version=1`, episodeID).Scan(&storedWatermark, &projectionRaw); err != nil {
+		t.Fatal(err)
+	}
+	var projection []MonitorField
+	if err := json.Unmarshal(projectionRaw, &projection); err != nil {
+		t.Fatal(err)
+	}
+	if storedWatermark != pointWatermark {
+		t.Fatalf("snapshot watermark=%d, want %d", storedWatermark, pointWatermark)
+	}
+	if len(projection) != 1 || projection[0].Status != StatusNormal {
+		t.Fatalf("initial projection omitted current monitor state: %+v", projection)
+	}
+	episode, err := s.GetEpisode(ctx, episodeID)
+	if err != nil || episode.ActiveTaskID == nil {
+		t.Fatalf("diagnosis task %+v %v", episode, err)
+	}
+	var generation int64
+	if err := s.DB.QueryRow(`SELECT execution_generation FROM system.agent_tasks WHERE task_id=$1`, *episode.ActiveTaskID).Scan(&generation); err != nil {
+		t.Fatal(err)
+	}
+	later := base.Add(10 * time.Minute)
+	if _, err := s.ApplyMonitorSample(ctx, sample(svc, target, true, "2xx", later)); err != nil {
+		t.Fatal(err)
+	}
+	records, err := s.QueryTimeline(ctx, *episode.ActiveTaskID, episodeID, 1, generation, base.Add(-time.Minute), later.Add(time.Minute), nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, record := range records {
+		if record.RecordType == "MONITOR_POINT" && record.EventTime.Equal(later) {
+			t.Fatalf("old input version exposed later monitor point: %+v", record)
+		}
+	}
+}
+
+func TestAppTriggerWithoutMonitorPointsHasBoundedWatermark(t *testing.T) {
+	s := testStore(t)
+	svc, _ := newSvc(t, s, 1, 1)
+	ctx := context.Background()
+	rev := int64(1)
+	raw, ev := appBody("app-first-empty", "HEALTH_STATUS", StatusAbnormal, &rev)
+	opened, err := s.ApplyAppEvent(ctx, svc, ev, raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var watermark sql.NullInt64
+	var projectionRaw []byte
+	if err := s.DB.QueryRow(`SELECT monitor_point_watermark, monitor_projection FROM system.episode_input_versions WHERE episode_id=$1 AND input_version=1`, opened.Body["episode_id"]).Scan(&watermark, &projectionRaw); err != nil {
+		t.Fatal(err)
+	}
+	var projection []MonitorField
+	if err := json.Unmarshal(projectionRaw, &projection); err != nil {
+		t.Fatal(err)
+	}
+	if !watermark.Valid || watermark.Int64 != 0 {
+		t.Fatalf("empty snapshot watermark=%+v, want bounded zero", watermark)
+	}
+	if len(projection) != 1 || projection[0].Status != StatusUnknown {
+		t.Fatalf("snapshot should retain the configured unknown target: %+v", projection)
+	}
+}
+
+func TestTargetChangeToUnknownClearsResolutionPending(t *testing.T) {
+	s := testStore(t)
+	svc, target := newSvc(t, s, 1, 1)
+	ctx := context.Background()
+	base := time.Date(2026, 11, 3, 8, 0, 0, 0, time.UTC)
+	if _, err := s.ApplyMonitorSample(ctx, sample(svc, target, false, "5xx", base)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.ApplyMonitorSample(ctx, sample(svc, target, true, "2xx", base.Add(time.Minute))); err != nil {
+		t.Fatal(err)
+	}
+	opened, err := s.ApplyMonitorSample(ctx, sample(svc, target, true, "2xx", base.Add(2*time.Minute)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var rev int64 = 1
+	raw, ev := appBody("target-change-normal", "HEALTH_STATUS", StatusNormal, &rev)
+	result, err := s.ApplyAppEvent(ctx, svc, ev, raw)
+	if err != nil || result.Body["resolution_pending"] != true {
+		t.Fatalf("episode should be pending resolution: %+v %v", result.Body, err)
+	}
+	if _, _, err := s.UpdateTarget(ctx, target, PatchTargetInput{Required: boolPtr(false)}); err != nil {
+		t.Fatal(err)
+	}
+	episode, err := s.GetEpisode(ctx, opened.EpisodeID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if episode.Status != EpisodeActive || episode.ResolutionPending || episode.FinalInputVersion != nil {
+		t.Fatalf("episode resolved with no required targets: %+v", episode)
+	}
+	var monitor string
+	if err := s.DB.QueryRow(`SELECT status FROM system.service_source_states WHERE service_id=$1 AND source='MONITOR'`, svc).Scan(&monitor); err != nil {
+		t.Fatal(err)
+	}
+	if monitor != StatusUnknown {
+		t.Fatalf("monitor status=%s, want UNKNOWN", monitor)
 	}
 }
 
@@ -282,6 +423,7 @@ func TestRegionHashAndResolution(t *testing.T) {
 		if err := s.DB.QueryRow(`SELECT input_version_to, execution_generation FROM system.agent_tasks WHERE task_id=$1`, *view.ActiveTaskID).Scan(&to, &gen); err != nil {
 			t.Fatal(err)
 		}
+		startTask(t, s, *view.ActiveTaskID, view.EpisodeID, gen)
 		ack, err := s.CompleteTask(ctx, CompleteInput{
 			TaskID: *view.ActiveTaskID, EpisodeID: view.EpisodeID, TaskType: TaskDiagnosis,
 			Generation: gen, Outcome: "SUCCEEDED", ProcessedInputVersion: to,
@@ -295,6 +437,7 @@ func TestRegionHashAndResolution(t *testing.T) {
 		t.Fatalf("resolved %+v %v", done, err)
 	}
 	fd := uuid.New()
+	startTask(t, s, *done.ActiveTaskID, done.EpisodeID, 1)
 	rejected, err := s.CompleteTask(ctx, CompleteInput{
 		TaskID: *done.ActiveTaskID, EpisodeID: done.EpisodeID, TaskType: TaskArchive,
 		Generation: 1, Outcome: "SUCCEEDED", FDID: fd.String(),
@@ -356,6 +499,21 @@ func TestBatchBoundaryAndFailure(t *testing.T) {
 		t.Fatalf("pending=%d %v", pending, err)
 	}
 	ep, _ := s.GetEpisode(ctx, opened.EpisodeID)
+	startTask(t, s, *ep.ActiveTaskID, ep.EpisodeID, 1)
+	expiredAt := time.Now().UTC().Add(time.Minute)
+	s.Now = func() time.Time { return expiredAt }
+	heartbeat, err := s.HeartbeatTask(ctx, *ep.ActiveTaskID, ep.EpisodeID, 1)
+	if err != nil || heartbeat.Accepted || heartbeat.Message != "execution lease expired" {
+		t.Fatalf("expired heartbeat %+v %v", heartbeat, err)
+	}
+	expiredComplete, err := s.CompleteTask(ctx, CompleteInput{
+		TaskID: *ep.ActiveTaskID, EpisodeID: ep.EpisodeID, TaskType: TaskDiagnosis, Generation: 1,
+		Outcome: "SUCCEEDED", ProcessedInputVersion: 1,
+	})
+	if err != nil || expiredComplete.Accepted || expiredComplete.Message != "execution lease expired" {
+		t.Fatalf("expired completion %+v %v", expiredComplete, err)
+	}
+	s.Now = time.Now
 	fail, err := s.CompleteTask(ctx, CompleteInput{
 		TaskID: *ep.ActiveTaskID, EpisodeID: ep.EpisodeID, TaskType: TaskDiagnosis, Generation: 1,
 		Outcome: "RETRYABLE_FAILURE", ErrorCode: "MODEL", ProcessedInputVersion: 1,
@@ -366,6 +524,13 @@ func TestBatchBoundaryAndFailure(t *testing.T) {
 	var processed int64
 	if err := s.DB.QueryRow(`SELECT processed_input_version FROM system.episodes WHERE episode_id=$1`, ep.EpisodeID).Scan(&processed); err != nil || processed != 0 {
 		t.Fatalf("processed=%d", processed)
+	}
+	lateRetry, err := s.CompleteTask(ctx, CompleteInput{
+		TaskID: *ep.ActiveTaskID, EpisodeID: ep.EpisodeID, TaskType: TaskDiagnosis, Generation: 1,
+		Outcome: "SUCCEEDED", ProcessedInputVersion: 1,
+	})
+	if err != nil || lateRetry.Accepted || lateRetry.Message != "task is not running" {
+		t.Fatalf("retry-wait completion %+v %v", lateRetry, err)
 	}
 	stale, err := s.ReportTaskStarted(ctx, *ep.ActiveTaskID, ep.EpisodeID, 1)
 	if err != nil {
@@ -386,6 +551,78 @@ func TestBatchBoundaryAndFailure(t *testing.T) {
 		t.Fatalf("old generation must be rejected: %+v %v", late, err)
 	}
 	_ = stale
+}
+
+func TestExpiredLeaseIsRecovered(t *testing.T) {
+	s := testStore(t)
+	svc, target := newSvc(t, s, 1, 1)
+	ctx := context.Background()
+	opened, err := s.ApplyMonitorSample(ctx, sample(svc, target, false, "5xx", time.Now().UTC()))
+	if err != nil || opened.EpisodeID == uuid.Nil {
+		t.Fatalf("open episode %+v %v", opened, err)
+	}
+	ep, err := s.GetEpisode(ctx, opened.EpisodeID)
+	if err != nil || ep.ActiveTaskID == nil {
+		t.Fatalf("diagnosis task %+v %v", ep, err)
+	}
+	past := time.Now().UTC().Add(-time.Minute)
+	if err := s.ForceLeaseExpired(ctx, *ep.ActiveTaskID, past); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	s.Now = func() time.Time { return now }
+	if err := s.RecoverOnce(ctx); err != nil {
+		t.Fatal(err)
+	}
+	var status string
+	if err := s.DB.QueryRow(`SELECT status FROM system.agent_tasks WHERE task_id=$1`, *ep.ActiveTaskID).Scan(&status); err != nil {
+		t.Fatal(err)
+	}
+	if status != TaskRetryWait {
+		t.Fatalf("expired task status=%s", status)
+	}
+}
+
+func TestFailedTaskIsNotAutomaticallyBackfilled(t *testing.T) {
+	s := testStore(t)
+	s.MaxAttempts = 1
+	svc, target := newSvc(t, s, 1, 1)
+	ctx := context.Background()
+	opened, err := s.ApplyMonitorSample(ctx, sample(svc, target, false, "5xx", time.Now().UTC()))
+	if err != nil || opened.EpisodeID == uuid.Nil {
+		t.Fatalf("open episode %+v %v", opened, err)
+	}
+	ep, err := s.GetEpisode(ctx, opened.EpisodeID)
+	if err != nil || ep.ActiveTaskID == nil {
+		t.Fatalf("diagnosis task %+v %v", ep, err)
+	}
+	startTask(t, s, *ep.ActiveTaskID, ep.EpisodeID, 1)
+	failed, err := s.CompleteTask(ctx, CompleteInput{
+		TaskID: *ep.ActiveTaskID, EpisodeID: ep.EpisodeID, TaskType: TaskDiagnosis, Generation: 1,
+		Outcome: "RETRYABLE_FAILURE", ErrorCode: "MODEL", ErrorMessage: "model failed",
+	})
+	if err != nil || !failed.Accepted {
+		t.Fatalf("failure %+v %v", failed, err)
+	}
+	for i := 0; i < 2; i++ {
+		if err := s.RecoverOnce(ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var tasks int
+	if err := s.DB.QueryRow(`SELECT COUNT(*) FROM system.agent_tasks WHERE episode_id=$1`, ep.EpisodeID).Scan(&tasks); err != nil {
+		t.Fatal(err)
+	}
+	if tasks != 1 {
+		t.Fatalf("failed task was backfilled: tasks=%d", tasks)
+	}
+	var status string
+	if err := s.DB.QueryRow(`SELECT status FROM system.agent_tasks WHERE task_id=$1`, *ep.ActiveTaskID).Scan(&status); err != nil {
+		t.Fatal(err)
+	}
+	if status != TaskFailed {
+		t.Fatalf("status=%s, want FAILED", status)
+	}
 }
 
 func TestPublishPendingMarksSent(t *testing.T) {

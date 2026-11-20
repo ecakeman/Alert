@@ -120,13 +120,25 @@ func finishActiveTask(t *testing.T, s *Store, episodeID uuid.UUID, wantType stri
 		t.Fatalf("active task = %q %v, want %q", view.ActiveTaskType, view.ActiveTaskID, wantType)
 	}
 	var to, generation int64
+	var status string
 	if err := s.DB.QueryRow(`
-		SELECT COALESCE(input_version_to, 0), execution_generation
-		FROM system.agent_tasks WHERE task_id=$1`, *view.ActiveTaskID).Scan(&to, &generation); err != nil {
+		SELECT COALESCE(input_version_to, 0), execution_generation, status
+		FROM system.agent_tasks WHERE task_id=$1`, *view.ActiveTaskID).Scan(&to, &generation, &status); err != nil {
 		t.Fatal(err)
 	}
 	if wantType == TaskDiagnosis && to != processedInputVersion {
 		t.Fatalf("diagnosis input_version_to = %d, want %d", to, processedInputVersion)
+	}
+	if status != TaskRunning {
+		if status == TaskPending {
+			if err := s.MarkDispatched(ctx, *view.ActiveTaskID, generation); err != nil {
+				t.Fatal(err)
+			}
+		}
+		started, err := s.ReportTaskStarted(ctx, *view.ActiveTaskID, episodeID, generation)
+		if err != nil || !started.Accepted {
+			t.Fatalf("start %s: %+v %v", wantType, started, err)
+		}
 	}
 	ack, err := s.CompleteTask(ctx, CompleteInput{
 		TaskID: *view.ActiveTaskID, EpisodeID: episodeID, TaskType: wantType, Generation: generation,
@@ -283,6 +295,7 @@ func TestRevisionRecoveryAndArchive(t *testing.T) {
 	// 6. 归档 RESOLVED→ARCHIVED：episodes 与 dashboard 失效，services 的活跃 Episode 概览不变。
 	fdID := uuid.New().String()
 	hash := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	startTask(t, s, *resolved.ActiveTaskID, resolved.EpisodeID, 1)
 	registered, message, err := s.RegisterFaultDocument(ctx, RegisterFaultDocumentInput{
 		TaskID: *resolved.ActiveTaskID, EpisodeID: resolved.EpisodeID, Generation: 1,
 		FDID: fdID, ContentHash: hash,

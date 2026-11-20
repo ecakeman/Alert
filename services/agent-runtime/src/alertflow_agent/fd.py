@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 import psycopg
 from pgvector.psycopg import register_vector_async
 
+from alertflow_agent.receipts import assert_execution_owner
 from alertflow_agent.schemas import FaultSearchIndex
 from alertflow_agent.textutil import embed, rrf, search_text, segment, token_overlap
 
@@ -27,7 +28,8 @@ async def connect(dsn: str | None = None):
     return conn
 
 
-async def save_fault_document(conn, episode_id: str, service_id: str, investigation: str, report: dict, index: FaultSearchIndex) -> str:
+async def save_fault_document(conn, episode_id: str, service_id: str, task_id: str, generation: int, investigation: str, report: dict, index: FaultSearchIndex) -> str:
+    await assert_execution_owner(conn, task_id, generation)
     fd_id = stable_fd_id(episode_id)
     text = search_text(index.summary, index.symptoms, index.observations, index.diagnosis)
     vector = embed(text)

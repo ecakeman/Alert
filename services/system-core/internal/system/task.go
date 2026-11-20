@@ -25,8 +25,13 @@ type taskRow struct {
 	To           sql.NullInt64
 	Final        sql.NullInt64
 	Generation   int64
+	LeaseUntil   sql.NullTime
 	AttemptCount int
 	MaxAttempts  int
+}
+
+func taskLeaseActive(task taskRow, now time.Time) bool {
+	return task.LeaseUntil.Valid && task.LeaseUntil.Time.After(now)
 }
 
 func (s *Store) ensureDiagnosisTask(ctx context.Context, tx *sql.Tx, ep *episodeRow, now time.Time) error {
@@ -173,24 +178,37 @@ func (s *Store) touchTask(ctx context.Context, taskID, episodeID uuid.UUID, gene
 			return nil
 		}
 		now := s.now()
-		lease := now.Add(s.Lease)
-		if start {
-			if task.Status != TaskPending && task.Status != TaskDispatched && task.Status != TaskRunning {
-				ack.Message = "task is not startable"
-				return nil
-			}
+		if start && task.Status == TaskPending && !task.LeaseUntil.Valid {
+			lease := now.Add(s.Lease)
 			_, err = tx.ExecContext(ctx, `
 				UPDATE system.agent_tasks
 				SET status='RUNNING', started_at=COALESCE(started_at,$2), lease_until=$3, updated_at=$2
 				WHERE task_id=$1`, taskID, now, lease)
 			ack.Message = "started"
-		} else if task.Status != TaskRunning {
-			ack.Message = "task is not running"
-			return nil
 		} else {
-			_, err = tx.ExecContext(ctx, `
-				UPDATE system.agent_tasks SET lease_until=$2, updated_at=$3 WHERE task_id=$1`, taskID, lease, now)
-			ack.Message = "heartbeat"
+			if !taskLeaseActive(task, now) {
+				ack.Message = "execution lease expired"
+				return nil
+			}
+			lease := now.Add(s.Lease)
+			if start {
+				if task.Status != TaskDispatched && task.Status != TaskRunning {
+					ack.Message = "task is not startable"
+					return nil
+				}
+				_, err = tx.ExecContext(ctx, `
+					UPDATE system.agent_tasks
+					SET status='RUNNING', started_at=COALESCE(started_at,$2), lease_until=$3, updated_at=$2
+					WHERE task_id=$1`, taskID, now, lease)
+				ack.Message = "started"
+			} else if task.Status != TaskRunning {
+				ack.Message = "task is not running"
+				return nil
+			} else {
+				_, err = tx.ExecContext(ctx, `
+					UPDATE system.agent_tasks SET lease_until=$2, updated_at=$3 WHERE task_id=$1`, taskID, lease, now)
+				ack.Message = "heartbeat"
+			}
 		}
 		if err != nil {
 			return err
@@ -236,11 +254,15 @@ func (s *Store) CompleteTask(ctx context.Context, in CompleteInput) (TaskAck, er
 			ack.Message = "duplicate completion"
 			return nil
 		}
-		if task.Status == TaskFailed || task.Status == TaskSucceeded {
-			ack.Message = "task already finished"
+		now := s.now()
+		if task.Status != TaskRunning {
+			ack.Message = "task is not running"
 			return nil
 		}
-		now := s.now()
+		if !taskLeaseActive(task, now) {
+			ack.Message = "execution lease expired"
+			return nil
+		}
 		switch in.Outcome {
 		case "SUCCEEDED":
 			if task.Type == TaskDiagnosis {
@@ -429,6 +451,14 @@ func (s *Store) RegisterFaultDocument(ctx context.Context, in RegisterFaultDocum
 		if err != sql.ErrNoRows {
 			return err
 		}
+		if task.Status != TaskRunning {
+			message = "task is not running"
+			return nil
+		}
+		if !taskLeaseActive(task, s.now()) {
+			message = "execution lease expired"
+			return nil
+		}
 		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO system.episode_fault_document_refs
 			(episode_id, fd_id, task_id, execution_generation, content_hash, registered_at)
@@ -462,10 +492,10 @@ func (s *Store) lockTask(ctx context.Context, tx *sql.Tx, taskID, episodeID uuid
 	var task taskRow
 	err = tx.QueryRowContext(ctx, `
 		SELECT task_id, episode_id, task_type, status, input_version_from, input_version_to,
-		       final_input_version, execution_generation, attempt_count, max_attempts
+		       final_input_version, execution_generation, lease_until, attempt_count, max_attempts
 		FROM system.agent_tasks WHERE task_id=$1 FOR UPDATE`, taskID).Scan(
 		&task.ID, &task.EpisodeID, &task.Type, &task.Status, &task.From, &task.To, &task.Final,
-		&task.Generation, &task.AttemptCount, &task.MaxAttempts)
+		&task.Generation, &task.LeaseUntil, &task.AttemptCount, &task.MaxAttempts)
 	if err == sql.ErrNoRows {
 		return nil, taskRow{}, errCode("TASK_NOT_FOUND", "task not found", 404)
 	}
@@ -501,6 +531,9 @@ func (s *Store) RegisterArtifact(ctx context.Context, in RegisterArtifactInput) 
 		if task.Generation != in.Generation {
 			return errCode("STALE_GENERATION", "stale execution generation", 409)
 		}
+		if task.Type != TaskDiagnosis {
+			return errCode("TASK_TYPE", "not a diagnosis task", 409)
+		}
 		var cur sql.NullInt64
 		var hash sql.NullString
 		err = tx.QueryRowContext(ctx, `
@@ -508,6 +541,14 @@ func (s *Store) RegisterArtifact(ctx context.Context, in RegisterArtifactInput) 
 			WHERE episode_id=$1 AND artifact_type=$2`, in.EpisodeID, in.ArtifactType).Scan(&cur, &hash)
 		if err != nil && err != sql.ErrNoRows {
 			return err
+		}
+		if err == nil && cur.Int64 == in.Version && hash.String == in.ContentHash {
+			registered = true
+			version = cur.Int64
+			return nil
+		}
+		if task.Status != TaskRunning || !taskLeaseActive(task, s.now()) {
+			return errCode("EXECUTION_LEASE_LOST", "task is not running with a live lease", 409)
 		}
 		now := s.now()
 		if err == sql.ErrNoRows {
@@ -621,13 +662,7 @@ func (s *Store) expireTask(ctx context.Context, taskID, episodeID uuid.UUID) err
 		if !task.From.Valid && task.Type == TaskDiagnosis {
 			return nil
 		}
-		leaseExpired := true
-		var lease sql.NullTime
-		_ = tx.QueryRowContext(ctx, `SELECT lease_until FROM system.agent_tasks WHERE task_id=$1`, taskID).Scan(&lease)
-		if lease.Valid && lease.Time.After(now) {
-			leaseExpired = false
-		}
-		if !leaseExpired {
+		if taskLeaseActive(task, now) {
 			return nil
 		}
 		in := CompleteInput{
@@ -718,14 +753,6 @@ func (s *Store) requeueTask(ctx context.Context, taskID, episodeID uuid.UUID) er
 }
 
 func (s *Store) backfillTasks(ctx context.Context, now time.Time) error {
-	// 启动自愈：永久失败任务占用的输入版本必须退回 PENDING，否则历史数据会让该 Episode 永远 INPUT_GAP。
-	if _, err := s.DB.ExecContext(ctx, `
-		UPDATE system.episode_input_versions v
-		SET queue_status='PENDING', assigned_task_id=NULL
-		FROM system.agent_tasks t
-		WHERE v.assigned_task_id=t.task_id AND v.queue_status='ASSIGNED' AND t.status='FAILED'`); err != nil {
-		return err
-	}
 	rows, err := s.DB.QueryContext(ctx, `
 		SELECT e.episode_id, e.service_id
 		FROM system.episodes e
@@ -734,8 +761,15 @@ func (s *Store) backfillTasks(ctx context.Context, now time.Time) error {
 		    SELECT 1 FROM system.episode_input_versions v
 		    WHERE v.episode_id=e.episode_id AND v.queue_status='PENDING')
 		  AND NOT EXISTS (
-		    SELECT 1 FROM system.agent_tasks t
-		    WHERE t.episode_id=e.episode_id AND t.status IN ('PENDING','DISPATCHED','RUNNING','RETRY_WAIT'))`)
+		    SELECT 1 FROM system.agent_tasks active
+		    WHERE active.episode_id=e.episode_id AND active.status IN ('PENDING','DISPATCHED','RUNNING','RETRY_WAIT'))
+		  AND NOT EXISTS (
+		    SELECT 1 FROM system.agent_tasks failed
+		    JOIN system.episode_input_versions pending
+		      ON pending.episode_id=failed.episode_id
+		     AND pending.input_version BETWEEN failed.input_version_from AND failed.input_version_to
+		     AND pending.queue_status='PENDING'
+		    WHERE failed.episode_id=e.episode_id AND failed.task_type='DIAGNOSIS' AND failed.status='FAILED')`)
 	if err != nil {
 		return err
 	}
@@ -773,7 +807,7 @@ func (s *Store) backfillArchive(ctx context.Context, now time.Time) error {
 		  AND NOT EXISTS (
 		    SELECT 1 FROM system.agent_tasks t
 		    WHERE t.episode_id=e.episode_id AND t.task_type='ARCHIVE'
-		      AND t.status IN ('PENDING','DISPATCHED','RUNNING','RETRY_WAIT','SUCCEEDED'))`)
+		      AND t.status IN ('PENDING','DISPATCHED','RUNNING','RETRY_WAIT','SUCCEEDED','FAILED'))`)
 	if err != nil {
 		return err
 	}

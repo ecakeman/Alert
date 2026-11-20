@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -112,6 +113,77 @@ func TestTargetCRUDAndSoftDelete(t *testing.T) {
 	}
 	if _, err := s.GetTargets(ctx, uuid.New()); !IsCode(err, "SERVICE_NOT_FOUND") {
 		t.Fatalf("unknown service err = %v", err)
+	}
+}
+
+func TestTargetChangesRecomputeMonitorStatus(t *testing.T) {
+	s := testStore(t)
+	svc, target := newSvc(t, s, 1, 1)
+	ctx := context.Background()
+	if _, err := s.ApplyMonitorSample(ctx, sample(svc, target, false, "5xx", time.Now().UTC())); err != nil {
+		t.Fatal(err)
+	}
+	view, err := s.GetService(ctx, svc)
+	if err != nil || view.MonitorStatus != StatusAbnormal {
+		t.Fatalf("monitor before update=%s err=%v", view.MonitorStatus, err)
+	}
+	if _, _, err := s.UpdateTarget(ctx, target, PatchTargetInput{Required: boolPtr(false)}); err != nil {
+		t.Fatal(err)
+	}
+	view, err = s.GetService(ctx, svc)
+	if err != nil || view.MonitorStatus != StatusUnknown {
+		t.Fatalf("monitor after removing required target=%s err=%v", view.MonitorStatus, err)
+	}
+	targets, err := s.GetTargets(ctx, svc)
+	if err != nil || len(targets) != 1 {
+		t.Fatalf("targets=%d err=%v", len(targets), err)
+	}
+	if _, _, err := s.UpdateTarget(ctx, target, PatchTargetInput{Required: boolPtr(true)}); err != nil {
+		t.Fatal(err)
+	}
+	view, err = s.GetService(ctx, svc)
+	if err != nil || view.MonitorStatus != StatusAbnormal {
+		t.Fatalf("monitor after re-enabling required target=%s err=%v", view.MonitorStatus, err)
+	}
+	if _, err := s.SoftDeleteTarget(ctx, target); err != nil {
+		t.Fatal(err)
+	}
+	view, err = s.GetService(ctx, svc)
+	if err != nil || view.MonitorStatus != StatusUnknown {
+		t.Fatalf("monitor after deleting last required target=%s err=%v", view.MonitorStatus, err)
+	}
+}
+
+func TestTargetChangeSerializesWithMonitorSample(t *testing.T) {
+	s := testStore(t)
+	svc, target := newSvc(t, s, 1, 1)
+	ctx := context.Background()
+	if _, err := s.ApplyMonitorSample(ctx, sample(svc, target, false, "5xx", time.Now().UTC())); err != nil {
+		t.Fatal(err)
+	}
+	var wg sync.WaitGroup
+	errCh := make(chan error, 2)
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		_, err := s.ApplyMonitorSample(ctx, sample(svc, target, true, "2xx", time.Now().UTC()))
+		errCh <- err
+	}()
+	go func() {
+		defer wg.Done()
+		_, _, err := s.UpdateTarget(ctx, target, PatchTargetInput{Required: boolPtr(false)})
+		errCh <- err
+	}()
+	wg.Wait()
+	close(errCh)
+	for err := range errCh {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	view, err := s.GetService(ctx, svc)
+	if err != nil || view.MonitorStatus != StatusUnknown {
+		t.Fatalf("monitor after concurrent target change=%s err=%v", view.MonitorStatus, err)
 	}
 }
 

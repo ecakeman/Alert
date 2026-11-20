@@ -28,6 +28,11 @@ except Exception:  # pragma: no cover
 
 RPC_TIMEOUT = 30
 
+
+class TaskLeaseLost(RuntimeError):
+    pass
+
+
 LOGGER = logging.getLogger(__name__)
 
 
@@ -58,8 +63,12 @@ class SystemClient:
     async def call_mcp(self, state, action):
         if self.mcp is None:
             raise RuntimeError("mcp gateway is not configured")
-        text = await self.mcp.call_tool(action.get("name") or "", {"episode_id": state.get("episode_id")})
-        return {"name": action.get("name"), "text": text}
+        name = action.get("name") if isinstance(action, dict) else None
+        allowed = {tool.get("name") for tool in state.get("mcp_tools") or [] if isinstance(tool, dict)}
+        if not isinstance(name, str) or not name or name not in allowed:
+            raise ValueError("mcp tool is not in the task tool list")
+        text = await self.mcp.call_tool(name, {"episode_id": state.get("episode_id")})
+        return {"name": name, "text": text}
 
     async def get_input(self, task: dict):
         return await self.stub.GetEpisodeInput(agent_pb2.GetEpisodeInputRequest(
@@ -101,7 +110,10 @@ class SystemClient:
 
     async def save_fault(self, task, investigation, report, index):
         self.fault_hash = fault_content_hash(investigation, report)
-        return await save_fault_document(self.db, task["episode_id"], task["service_id"], investigation, report, index)
+        return await save_fault_document(
+            self.db, task["episode_id"], task["service_id"], task["task_id"], int(task["execution_generation"]),
+            investigation, report, index,
+        )
 
     async def register_fault_document(self, task, fd_id: str, content_hash: str):
         response = await self.stub.RegisterFaultDocument(agent_pb2.RegisterFaultDocumentRequest(
@@ -109,29 +121,35 @@ class SystemClient:
             execution_generation=int(task["execution_generation"]), fd_id=fd_id, content_hash=content_hash,
         ), timeout=RPC_TIMEOUT)
         if not response.registered:
-            raise RuntimeError(response.message or "fault document registration rejected")
+            raise TaskLeaseLost(response.message or "fault document registration rejected")
 
     async def started(self, task):
-        await self.stub.ReportTaskStarted(agent_pb2.ReportTaskStartedRequest(
+        response = await self.stub.ReportTaskStarted(agent_pb2.ReportTaskStartedRequest(
             task_id=task["task_id"], episode_id=task["episode_id"], execution_generation=int(task["execution_generation"]),
         ), timeout=RPC_TIMEOUT)
+        if not response.accepted:
+            raise TaskLeaseLost(response.message or "task start rejected")
+        return response
 
     async def heartbeat(self, task):
-        await self.stub.HeartbeatTask(agent_pb2.HeartbeatTaskRequest(
+        response = await self.stub.HeartbeatTask(agent_pb2.HeartbeatTaskRequest(
             task_id=task["task_id"], episode_id=task["episode_id"], execution_generation=int(task["execution_generation"]),
         ), timeout=RPC_TIMEOUT)
+        if not response.accepted:
+            raise TaskLeaseLost(response.message or "heartbeat rejected")
+        return response
 
     async def complete(self, task, outcome: str, processed: int = 0, fd_id: str = "", error: str = ""):
         kind = agent_pb2.AGENT_TASK_TYPE_ARCHIVE if task["task_type"] == "ARCHIVE" else agent_pb2.AGENT_TASK_TYPE_DIAGNOSIS
         # Go 侧 last_error_code 为 varchar(100)，这里拆分为短错误码与完整错误信息，避免回调被 SQL 拒绝。
         error_code = (error.split(":", 1)[0].strip() or "AGENT_ERROR")[:100]
-        ack = await self.stub.CompleteTask(agent_pb2.CompleteTaskRequest(
+        response = await self.stub.CompleteTask(agent_pb2.CompleteTaskRequest(
             task_id=task["task_id"], episode_id=task["episode_id"], task_type=kind,
             execution_generation=int(task["execution_generation"]), outcome=outcome,
             processed_input_version=int(processed), fd_id=fd_id, error_code=error_code, error_message=error[:400],
         ), timeout=RPC_TIMEOUT)
-        if not ack.accepted:
-            raise RuntimeError(ack.message or "complete rejected")
+        if not response.accepted:
+            raise TaskLeaseLost(response.message or "complete rejected")
 
 
 def _ts(value: datetime):
@@ -268,63 +286,95 @@ class AgentRuntime:
                 self.queue.task_done()
 
     async def _heartbeat_loop(self, client, task):
-        """真实模型推理可能持续数十秒，期间周期续租，避免执行租约过期。"""
         while True:
             await asyncio.sleep(10)
             try:
                 await client.heartbeat(task)
             except asyncio.CancelledError:
                 raise
-            except Exception:
-                continue
+            except Exception as exc:
+                raise TaskLeaseLost("heartbeat could not be confirmed") from exc
+
+    async def _execute_task(self, client, task):
+        if task["task_type"] == "ARCHIVE":
+            snap = await client.get_input(task)
+            task["service_id"] = snap.service_id
+            fd_id = await run_archive(self.archive_model, client, task)
+            await client.register_fault_document(task, fd_id, client.fault_hash)
+            await client.complete(task, "SUCCEEDED", fd_id=fd_id)
+            return
+        snap = await client.get_input(task)
+        task["service_name"] = snap.service_name
+        task["service_id"] = snap.service_id
+        task["episode_started_at"] = snap.episode_started_at.ToDatetime(timezone.utc).isoformat()
+        task["knowledge_enabled"] = self.knowledge_enabled
+        task["mcp_tools"] = await self.mcp_client.list_tools() if self.mcp_client is not None else []
+        await run_diagnosis(self.model, client, task, self.checkpointer)
+        await client.complete(task, "SUCCEEDED", processed=int(task.get("input_version_to") or 0))
 
     async def execute(self, task: dict):
         conn = await connect(self.dsn)
         thread_id = task.get("thread_id") or f"diagnosis:{task['episode_id']}"
         key = None
         heartbeat = None
+        execution = None
         client = SystemClient(agent_pb2_grpc.SystemGatewayServiceStub(self.channel), conn)
         client.invocation = self.invocation_client
         client.mcp = self.mcp_client
         try:
             key = await advisory_lock(conn, thread_id)
-            await mark_running(conn, task["task_id"])
-            await client.started(task)
-            await client.heartbeat(task)
+            await mark_running(conn, task["task_id"], int(task["execution_generation"]))
+            try:
+                await client.started(task)
+                await client.heartbeat(task)
+            except Exception as exc:
+                raise TaskLeaseLost("task start could not be confirmed") from exc
             heartbeat = asyncio.create_task(self._heartbeat_loop(client, task))
-            if task["task_type"] == "ARCHIVE":
-                snap = await client.get_input(task)
-                task["service_id"] = snap.service_id
-                fd_id = await run_archive(self.archive_model, client, task)
-                await client.register_fault_document(task, fd_id, client.fault_hash)
-                await client.complete(task, "SUCCEEDED", fd_id=fd_id)
-            else:
-                snap = await client.get_input(task)
-                task["service_name"] = snap.service_name
-                task["service_id"] = snap.service_id
-                task["episode_started_at"] = snap.episode_started_at.ToDatetime(timezone.utc).isoformat()
-                task["knowledge_enabled"] = self.knowledge_enabled
-                task["mcp_tools"] = await self.mcp_client.list_tools() if self.mcp_client is not None else []
-                await run_diagnosis(self.model, client, task, self.checkpointer)
-                await client.complete(task, "SUCCEEDED", processed=int(task.get("input_version_to") or 0))
-            await mark_finished(conn, task["task_id"], "COMPLETED", {"outcome": "SUCCEEDED"}, "CONFIRMED")
+            execution = asyncio.create_task(self._execute_task(client, task))
+            done, _ = await asyncio.wait({heartbeat, execution}, return_when=asyncio.FIRST_COMPLETED)
+            if execution not in done:
+                await heartbeat
+            await execution
+            await mark_finished(
+                conn, task["task_id"], int(task["execution_generation"]),
+                "COMPLETED", {"outcome": "SUCCEEDED"}, "CONFIRMED",
+            )
         except asyncio.CancelledError:
             raise
+        except TaskLeaseLost as exc:
+            LOGGER.info("task %s lost execution lease: %s", task.get("task_id"), exc)
+            with contextlib.suppress(Exception):
+                await mark_finished(
+                    conn, task["task_id"], int(task["execution_generation"]),
+                    "FAILED", {"error": str(exc)[:400]}, "LOST",
+                )
         except Exception as exc:
             LOGGER.exception("task %s failed", task.get("task_id"))
+            ownership_lost = False
             try:
                 await client.complete(task, "RETRYABLE_FAILURE", error=type(exc).__name__ + ": " + str(exc)[:400])
+            except TaskLeaseLost as complete_exc:
+                ownership_lost = True
+                LOGGER.info("task %s lost execution lease while reporting failure: %s", task.get("task_id"), complete_exc)
             except Exception as complete_exc:
                 LOGGER.warning("complete task %s failed: %r", task.get("task_id"), complete_exc)
-            try:
-                await mark_finished(conn, task["task_id"], "FAILED", {"error": str(exc)[:400]}, "SENT")
-            except Exception:
-                await conn.rollback()
+            if not ownership_lost:
+                try:
+                    await mark_finished(
+                        conn, task["task_id"], int(task["execution_generation"]),
+                        "FAILED", {"error": str(exc)[:400]}, "SENT",
+                    )
+                except Exception:
+                    await conn.rollback()
         finally:
             if heartbeat is not None:
                 heartbeat.cancel()
-                with contextlib.suppress(asyncio.CancelledError):
-                    await heartbeat
+            if execution is not None and not execution.done():
+                execution.cancel()
+            for worker in (heartbeat, execution):
+                if worker is not None:
+                    with contextlib.suppress(asyncio.CancelledError, Exception):
+                        await worker
             if key is not None:
                 try:
                     await advisory_unlock(conn, key)
