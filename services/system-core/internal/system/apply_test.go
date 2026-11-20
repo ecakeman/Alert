@@ -65,6 +65,17 @@ func sample(svc, target uuid.UUID, ok bool, class string, at time.Time) MonitorS
 	return MonitorSample{ServiceID: svc, TargetID: target, ObservedAt: at, Success: ok, StatusClass: class}
 }
 
+func startTask(t *testing.T, s *Store, taskID, episodeID uuid.UUID, generation int64) {
+	t.Helper()
+	if err := s.MarkDispatched(context.Background(), taskID, generation); err != nil {
+		t.Fatal(err)
+	}
+	ack, err := s.ReportTaskStarted(context.Background(), taskID, episodeID, generation)
+	if err != nil || !ack.Accepted {
+		t.Fatalf("start task %+v %v", ack, err)
+	}
+}
+
 func appBody(id, kind, health string, rev *int64) ([]byte, AppEvent) {
 	ev := AppEvent{
 		EventID: id, ProducerID: "order-api", EventTime: time.Date(2026, 11, 1, 7, 0, 0, 0, time.UTC),
@@ -282,6 +293,7 @@ func TestRegionHashAndResolution(t *testing.T) {
 		if err := s.DB.QueryRow(`SELECT input_version_to, execution_generation FROM system.agent_tasks WHERE task_id=$1`, *view.ActiveTaskID).Scan(&to, &gen); err != nil {
 			t.Fatal(err)
 		}
+		startTask(t, s, *view.ActiveTaskID, view.EpisodeID, gen)
 		ack, err := s.CompleteTask(ctx, CompleteInput{
 			TaskID: *view.ActiveTaskID, EpisodeID: view.EpisodeID, TaskType: TaskDiagnosis,
 			Generation: gen, Outcome: "SUCCEEDED", ProcessedInputVersion: to,
@@ -295,6 +307,7 @@ func TestRegionHashAndResolution(t *testing.T) {
 		t.Fatalf("resolved %+v %v", done, err)
 	}
 	fd := uuid.New()
+	startTask(t, s, *done.ActiveTaskID, done.EpisodeID, 1)
 	rejected, err := s.CompleteTask(ctx, CompleteInput{
 		TaskID: *done.ActiveTaskID, EpisodeID: done.EpisodeID, TaskType: TaskArchive,
 		Generation: 1, Outcome: "SUCCEEDED", FDID: fd.String(),
@@ -356,6 +369,21 @@ func TestBatchBoundaryAndFailure(t *testing.T) {
 		t.Fatalf("pending=%d %v", pending, err)
 	}
 	ep, _ := s.GetEpisode(ctx, opened.EpisodeID)
+	startTask(t, s, *ep.ActiveTaskID, ep.EpisodeID, 1)
+	expiredAt := time.Now().UTC().Add(time.Minute)
+	s.Now = func() time.Time { return expiredAt }
+	heartbeat, err := s.HeartbeatTask(ctx, *ep.ActiveTaskID, ep.EpisodeID, 1)
+	if err != nil || heartbeat.Accepted || heartbeat.Message != "execution lease expired" {
+		t.Fatalf("expired heartbeat %+v %v", heartbeat, err)
+	}
+	expiredComplete, err := s.CompleteTask(ctx, CompleteInput{
+		TaskID: *ep.ActiveTaskID, EpisodeID: ep.EpisodeID, TaskType: TaskDiagnosis, Generation: 1,
+		Outcome: "SUCCEEDED", ProcessedInputVersion: 1,
+	})
+	if err != nil || expiredComplete.Accepted || expiredComplete.Message != "execution lease expired" {
+		t.Fatalf("expired completion %+v %v", expiredComplete, err)
+	}
+	s.Now = time.Now
 	fail, err := s.CompleteTask(ctx, CompleteInput{
 		TaskID: *ep.ActiveTaskID, EpisodeID: ep.EpisodeID, TaskType: TaskDiagnosis, Generation: 1,
 		Outcome: "RETRYABLE_FAILURE", ErrorCode: "MODEL", ProcessedInputVersion: 1,
@@ -366,6 +394,13 @@ func TestBatchBoundaryAndFailure(t *testing.T) {
 	var processed int64
 	if err := s.DB.QueryRow(`SELECT processed_input_version FROM system.episodes WHERE episode_id=$1`, ep.EpisodeID).Scan(&processed); err != nil || processed != 0 {
 		t.Fatalf("processed=%d", processed)
+	}
+	lateRetry, err := s.CompleteTask(ctx, CompleteInput{
+		TaskID: *ep.ActiveTaskID, EpisodeID: ep.EpisodeID, TaskType: TaskDiagnosis, Generation: 1,
+		Outcome: "SUCCEEDED", ProcessedInputVersion: 1,
+	})
+	if err != nil || lateRetry.Accepted || lateRetry.Message != "task is not running" {
+		t.Fatalf("retry-wait completion %+v %v", lateRetry, err)
 	}
 	stale, err := s.ReportTaskStarted(ctx, *ep.ActiveTaskID, ep.EpisodeID, 1)
 	if err != nil {
@@ -386,6 +421,32 @@ func TestBatchBoundaryAndFailure(t *testing.T) {
 		t.Fatalf("old generation must be rejected: %+v %v", late, err)
 	}
 	_ = stale
+}
+
+func TestExpiredLeaseIsRecovered(t *testing.T) {
+	s := testStore(t)
+	svc, target := newSvc(t, s, 1, 1)
+	ctx := context.Background()
+	opened, err := s.ApplyMonitorSample(ctx, sample(svc, target, false, "5xx", time.Now().UTC()))
+	if err != nil || opened.ActiveTaskID == nil {
+		t.Fatalf("open episode %+v %v", opened, err)
+	}
+	past := time.Now().UTC().Add(-time.Minute)
+	if err := s.ForceLeaseExpired(ctx, *opened.ActiveTaskID, past); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	s.Now = func() time.Time { return now }
+	if err := s.RecoverOnce(ctx); err != nil {
+		t.Fatal(err)
+	}
+	var status string
+	if err := s.DB.QueryRow(`SELECT status FROM system.agent_tasks WHERE task_id=$1`, *opened.ActiveTaskID).Scan(&status); err != nil {
+		t.Fatal(err)
+	}
+	if status != TaskRetryWait {
+		t.Fatalf("expired task status=%s", status)
+	}
 }
 
 func TestPublishPendingMarksSent(t *testing.T) {

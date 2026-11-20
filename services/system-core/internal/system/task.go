@@ -25,8 +25,13 @@ type taskRow struct {
 	To           sql.NullInt64
 	Final        sql.NullInt64
 	Generation   int64
+	LeaseUntil   sql.NullTime
 	AttemptCount int
 	MaxAttempts  int
+}
+
+func taskLeaseActive(task taskRow, now time.Time) bool {
+	return task.LeaseUntil.Valid && task.LeaseUntil.Time.After(now)
 }
 
 func (s *Store) ensureDiagnosisTask(ctx context.Context, tx *sql.Tx, ep *episodeRow, now time.Time) error {
@@ -173,24 +178,37 @@ func (s *Store) touchTask(ctx context.Context, taskID, episodeID uuid.UUID, gene
 			return nil
 		}
 		now := s.now()
-		lease := now.Add(s.Lease)
-		if start {
-			if task.Status != TaskPending && task.Status != TaskDispatched && task.Status != TaskRunning {
-				ack.Message = "task is not startable"
-				return nil
-			}
+		if start && task.Status == TaskPending && !task.LeaseUntil.Valid {
+			lease := now.Add(s.Lease)
 			_, err = tx.ExecContext(ctx, `
 				UPDATE system.agent_tasks
 				SET status='RUNNING', started_at=COALESCE(started_at,$2), lease_until=$3, updated_at=$2
 				WHERE task_id=$1`, taskID, now, lease)
 			ack.Message = "started"
-		} else if task.Status != TaskRunning {
-			ack.Message = "task is not running"
-			return nil
 		} else {
-			_, err = tx.ExecContext(ctx, `
-				UPDATE system.agent_tasks SET lease_until=$2, updated_at=$3 WHERE task_id=$1`, taskID, lease, now)
-			ack.Message = "heartbeat"
+			if !taskLeaseActive(task, now) {
+				ack.Message = "execution lease expired"
+				return nil
+			}
+			lease := now.Add(s.Lease)
+			if start {
+				if task.Status != TaskDispatched && task.Status != TaskRunning {
+					ack.Message = "task is not startable"
+					return nil
+				}
+				_, err = tx.ExecContext(ctx, `
+					UPDATE system.agent_tasks
+					SET status='RUNNING', started_at=COALESCE(started_at,$2), lease_until=$3, updated_at=$2
+					WHERE task_id=$1`, taskID, now, lease)
+				ack.Message = "started"
+			} else if task.Status != TaskRunning {
+				ack.Message = "task is not running"
+				return nil
+			} else {
+				_, err = tx.ExecContext(ctx, `
+					UPDATE system.agent_tasks SET lease_until=$2, updated_at=$3 WHERE task_id=$1`, taskID, lease, now)
+				ack.Message = "heartbeat"
+			}
 		}
 		if err != nil {
 			return err
@@ -235,11 +253,15 @@ func (s *Store) CompleteTask(ctx context.Context, in CompleteInput) (TaskAck, er
 			ack.Message = "duplicate completion"
 			return nil
 		}
-		if task.Status == TaskFailed || task.Status == TaskSucceeded {
-			ack.Message = "task already finished"
+		now := s.now()
+		if task.Status != TaskRunning {
+			ack.Message = "task is not running"
 			return nil
 		}
-		now := s.now()
+		if !taskLeaseActive(task, now) {
+			ack.Message = "execution lease expired"
+			return nil
+		}
 		switch in.Outcome {
 		case "SUCCEEDED":
 			if task.Type == TaskDiagnosis {
@@ -368,11 +390,11 @@ func archiveReady(ctx context.Context, tx *sql.Tx, episodeID, taskID uuid.UUID, 
 
 // RegisterFaultDocumentInput 是 Python 在 FD 就绪后交给 Go 的回执。
 type RegisterFaultDocumentInput struct {
-	TaskID       uuid.UUID
-	EpisodeID    uuid.UUID
-	Generation   int64
-	FDID         string
-	ContentHash  string
+	TaskID      uuid.UUID
+	EpisodeID   uuid.UUID
+	Generation  int64
+	FDID        string
+	ContentHash string
 }
 
 // RegisterFaultDocument 把归档回执写入 system 表。相同内容重复登记是幂等的。
@@ -416,6 +438,14 @@ func (s *Store) RegisterFaultDocument(ctx context.Context, in RegisterFaultDocum
 		if err != sql.ErrNoRows {
 			return err
 		}
+		if task.Status != TaskRunning {
+			message = "task is not running"
+			return nil
+		}
+		if !taskLeaseActive(task, s.now()) {
+			message = "execution lease expired"
+			return nil
+		}
 		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO system.episode_fault_document_refs
 			(episode_id, fd_id, task_id, execution_generation, content_hash, registered_at)
@@ -449,10 +479,10 @@ func (s *Store) lockTask(ctx context.Context, tx *sql.Tx, taskID, episodeID uuid
 	var task taskRow
 	err = tx.QueryRowContext(ctx, `
 		SELECT task_id, episode_id, task_type, status, input_version_from, input_version_to,
-		       final_input_version, execution_generation, attempt_count, max_attempts
+		       final_input_version, execution_generation, lease_until, attempt_count, max_attempts
 		FROM system.agent_tasks WHERE task_id=$1 FOR UPDATE`, taskID).Scan(
 		&task.ID, &task.EpisodeID, &task.Type, &task.Status, &task.From, &task.To, &task.Final,
-		&task.Generation, &task.AttemptCount, &task.MaxAttempts)
+		&task.Generation, &task.LeaseUntil, &task.AttemptCount, &task.MaxAttempts)
 	if err == sql.ErrNoRows {
 		return nil, taskRow{}, errCode("TASK_NOT_FOUND", "task not found", 404)
 	}
@@ -488,6 +518,9 @@ func (s *Store) RegisterArtifact(ctx context.Context, in RegisterArtifactInput) 
 		if task.Generation != in.Generation {
 			return errCode("STALE_GENERATION", "stale execution generation", 409)
 		}
+		if task.Type != TaskDiagnosis {
+			return errCode("TASK_TYPE", "not a diagnosis task", 409)
+		}
 		var cur sql.NullInt64
 		var hash sql.NullString
 		err = tx.QueryRowContext(ctx, `
@@ -495,6 +528,14 @@ func (s *Store) RegisterArtifact(ctx context.Context, in RegisterArtifactInput) 
 			WHERE episode_id=$1 AND artifact_type=$2`, in.EpisodeID, in.ArtifactType).Scan(&cur, &hash)
 		if err != nil && err != sql.ErrNoRows {
 			return err
+		}
+		if err == nil && cur.Int64 == in.Version && hash.String == in.ContentHash {
+			registered = true
+			version = cur.Int64
+			return nil
+		}
+		if task.Status != TaskRunning || !taskLeaseActive(task, s.now()) {
+			return errCode("EXECUTION_LEASE_LOST", "task is not running with a live lease", 409)
 		}
 		now := s.now()
 		if err == sql.ErrNoRows {
@@ -608,13 +649,7 @@ func (s *Store) expireTask(ctx context.Context, taskID, episodeID uuid.UUID) err
 		if !task.From.Valid && task.Type == TaskDiagnosis {
 			return nil
 		}
-		leaseExpired := true
-		var lease sql.NullTime
-		_ = tx.QueryRowContext(ctx, `SELECT lease_until FROM system.agent_tasks WHERE task_id=$1`, taskID).Scan(&lease)
-		if lease.Valid && lease.Time.After(now) {
-			leaseExpired = false
-		}
-		if !leaseExpired {
+		if taskLeaseActive(task, now) {
 			return nil
 		}
 		in := CompleteInput{
