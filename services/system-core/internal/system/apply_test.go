@@ -532,6 +532,48 @@ func TestExpiredLeaseIsRecovered(t *testing.T) {
 	}
 }
 
+func TestFailedTaskIsNotAutomaticallyBackfilled(t *testing.T) {
+	s := testStore(t)
+	s.MaxAttempts = 1
+	svc, target := newSvc(t, s, 1, 1)
+	ctx := context.Background()
+	opened, err := s.ApplyMonitorSample(ctx, sample(svc, target, false, "5xx", time.Now().UTC()))
+	if err != nil || opened.ActiveTaskID == nil {
+		t.Fatalf("open episode %+v %v", opened, err)
+	}
+	ep, err := s.GetEpisode(ctx, opened.EpisodeID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	startTask(t, s, *ep.ActiveTaskID, ep.EpisodeID, 1)
+	failed, err := s.CompleteTask(ctx, CompleteInput{
+		TaskID: *ep.ActiveTaskID, EpisodeID: ep.EpisodeID, TaskType: TaskDiagnosis, Generation: 1,
+		Outcome: "RETRYABLE_FAILURE", ErrorCode: "MODEL", ErrorMessage: "model failed",
+	})
+	if err != nil || !failed.Accepted {
+		t.Fatalf("failure %+v %v", failed, err)
+	}
+	for i := 0; i < 2; i++ {
+		if err := s.RecoverOnce(ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var tasks int
+	if err := s.DB.QueryRow(`SELECT COUNT(*) FROM system.agent_tasks WHERE episode_id=$1`, ep.EpisodeID).Scan(&tasks); err != nil {
+		t.Fatal(err)
+	}
+	if tasks != 1 {
+		t.Fatalf("failed task was backfilled: tasks=%d", tasks)
+	}
+	var status string
+	if err := s.DB.QueryRow(`SELECT status FROM system.agent_tasks WHERE task_id=$1`, *ep.ActiveTaskID).Scan(&status); err != nil {
+		t.Fatal(err)
+	}
+	if status != TaskFailed {
+		t.Fatalf("status=%s, want FAILED", status)
+	}
+}
+
 func TestPublishPendingMarksSent(t *testing.T) {
 	s := testStore(t)
 	svc, target := newSvc(t, s, 1, 1)

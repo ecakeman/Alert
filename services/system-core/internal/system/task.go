@@ -740,14 +740,6 @@ func (s *Store) requeueTask(ctx context.Context, taskID, episodeID uuid.UUID) er
 }
 
 func (s *Store) backfillTasks(ctx context.Context, now time.Time) error {
-	// 启动自愈：永久失败任务占用的输入版本必须退回 PENDING，否则历史数据会让该 Episode 永远 INPUT_GAP。
-	if _, err := s.DB.ExecContext(ctx, `
-		UPDATE system.episode_input_versions v
-		SET queue_status='PENDING', assigned_task_id=NULL
-		FROM system.agent_tasks t
-		WHERE v.assigned_task_id=t.task_id AND v.queue_status='ASSIGNED' AND t.status='FAILED'`); err != nil {
-		return err
-	}
 	rows, err := s.DB.QueryContext(ctx, `
 		SELECT e.episode_id, e.service_id
 		FROM system.episodes e
@@ -756,8 +748,15 @@ func (s *Store) backfillTasks(ctx context.Context, now time.Time) error {
 		    SELECT 1 FROM system.episode_input_versions v
 		    WHERE v.episode_id=e.episode_id AND v.queue_status='PENDING')
 		  AND NOT EXISTS (
-		    SELECT 1 FROM system.agent_tasks t
-		    WHERE t.episode_id=e.episode_id AND t.status IN ('PENDING','DISPATCHED','RUNNING','RETRY_WAIT'))`)
+		    SELECT 1 FROM system.agent_tasks active
+		    WHERE active.episode_id=e.episode_id AND active.status IN ('PENDING','DISPATCHED','RUNNING','RETRY_WAIT'))
+		  AND NOT EXISTS (
+		    SELECT 1 FROM system.agent_tasks failed
+		    JOIN system.episode_input_versions pending
+		      ON pending.episode_id=failed.episode_id
+		     AND pending.input_version BETWEEN failed.input_version_from AND failed.input_version_to
+		     AND pending.queue_status='PENDING'
+		    WHERE failed.episode_id=e.episode_id AND failed.task_type='DIAGNOSIS' AND failed.status='FAILED')`)
 	if err != nil {
 		return err
 	}
@@ -795,7 +794,7 @@ func (s *Store) backfillArchive(ctx context.Context, now time.Time) error {
 		  AND NOT EXISTS (
 		    SELECT 1 FROM system.agent_tasks t
 		    WHERE t.episode_id=e.episode_id AND t.task_type='ARCHIVE'
-		      AND t.status IN ('PENDING','DISPATCHED','RUNNING','RETRY_WAIT','SUCCEEDED'))`)
+		      AND t.status IN ('PENDING','DISPATCHED','RUNNING','RETRY_WAIT','SUCCEEDED','FAILED'))`)
 	if err != nil {
 		return err
 	}
