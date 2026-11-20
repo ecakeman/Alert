@@ -26,20 +26,27 @@ class ScriptedModel:
         if state.get("knowledge_enabled") and not state.get("knowledge_called"):
             return {"type": "invoke_knowledge_agent"}
         tools = state.get("mcp_tools") or []
-        if tools and not state.get("mcp_called"):
-            tool = tools[0]
-            return {"type": "call_mcp_tool", "name": tool["name"]}
+        safe_tools = [tool for tool in tools if tool.get("read_only") is True]
+        if safe_tools and not state.get("mcp_called"):
+            return {"type": "call_mcp_tool", "name": safe_tools[0]["name"]}
+        return self.finish_action(state)
+
+    def finish_action(self, state: dict) -> dict:
         records = state.get("timeline_records") or []
         observations = []
         for item in records[:8]:
             content = json.dumps(item.get("content") or {}, ensure_ascii=False, default=str)
-            observations.append(f"{item.get('record_type')} {item.get('record_id')} {content}"[:500])
+            observations.append(f"时间轴 {item.get('record_type')} {item.get('record_id')} {content}"[:500])
+        for hit in (state.get("search_hits") or [])[:4]:
+            observations.append(f"历史故障参考（非当前事实）: {str(hit.get('summary') or hit.get('investigation_content') or '')[:400]}")
         if state.get("knowledge_error"):
             observations.append(f"知识检索失败: {state['knowledge_error']}"[:500])
+        if state.get("action_error"):
+            observations.append(f"外部动作未执行: {state['action_error']}"[:500])
         for hit in (state.get("knowledge_results") or [])[:4]:
-            observations.append(str(hit.get("content") or "")[:500])
+            observations.append(f"知识参考: {str(hit.get('content') or '')[:450]}")
         for item in (state.get("mcp_results") or [])[:2]:
-            observations.append(str(item)[:500])
+            observations.append(f"MCP 结果: {str(item)[:450]}")
         if not observations:
             observations = ["本批次时间轴没有返回记录"]
         report = DiagnosisReport(
@@ -61,8 +68,8 @@ class OpenAICompatibleModel:
 
     async def next_action(self, state: dict) -> dict:
         prompt = {
-            "instruction": "只输出 JSON 对象。action.type 取 query_timeline、search_faults、invoke_knowledge_agent、call_mcp_tool 或 finish。call_mcp_tool 必须带 name，且 name 来自 mcp_tools。不能填写 URL。finish 时 report 必须含 summary、observations、hypotheses、unknowns、next_steps。所有面向用户的文字必须使用简体中文。",
-            "state": {k: state.get(k) for k in ("episode_id", "service_name", "input_version_from", "input_version_to", "timeline_called", "search_called", "knowledge_called", "mcp_called", "timeline_records", "search_hits", "knowledge_results", "mcp_tools", "mcp_results")},
+            "instruction": "只输出 JSON 对象。action.type 取 query_timeline、search_faults、invoke_knowledge_agent、call_mcp_tool 或 finish。invoke_knowledge_agent 仅在 knowledge_enabled=true 时可用。call_mcp_tool 必须带 name，且 name 来自 mcp_tools。不能填写 URL。finish 时 report 必须含 summary、observations、hypotheses、unknowns、next_steps。所有面向用户的文字必须使用简体中文。",
+            "state": {k: state.get(k) for k in ("episode_id", "service_name", "input_version_from", "input_version_to", "timeline_called", "search_called", "knowledge_enabled", "knowledge_called", "mcp_called", "timeline_records", "search_hits", "knowledge_results", "mcp_tools", "mcp_results")},
         }
         body = {
             "model": self.model,
@@ -85,9 +92,7 @@ class OpenAICompatibleModel:
         if action.get("type") not in ACTION_TYPES:
             LOGGER.warning("model returned unsupported action: %s", raw[:1000])
             raise ValueError(f"unsupported action type: {action.get('type')!r}")
-        if action.get("type") == "finish":
-            DiagnosisReport.model_validate(action["report"])
-        return action
+        return _validate_action(state, action)
 
 
 def model_from_env(client: httpx.AsyncClient | None = None):
@@ -100,6 +105,22 @@ def model_from_env(client: httpx.AsyncClient | None = None):
         os.environ.get("ALERTFLOW_LLM_MODEL", "gpt-4o-mini"),
         client,
     )
+
+
+def _validate_action(state: dict, action: dict) -> dict:
+    if not isinstance(action, dict) or action.get("type") not in ACTION_TYPES:
+        raise ValueError("unsupported action")
+    kind = action["type"]
+    if kind == "invoke_knowledge_agent" and not state.get("knowledge_enabled"):
+        raise ValueError("knowledge agent is disabled")
+    if kind == "call_mcp_tool":
+        name = action.get("name")
+        allowed = {tool.get("name") for tool in state.get("mcp_tools") or [] if isinstance(tool, dict)}
+        if not isinstance(name, str) or not name or name not in allowed:
+            raise ValueError("mcp tool is not in the task tool list")
+    if kind == "finish":
+        DiagnosisReport.model_validate(action["report"])
+    return action
 
 
 async def _call_action(model, state: dict) -> dict:
@@ -120,9 +141,14 @@ def build_diagnosis_graph(model, gateway, checkpointer=None):
 
     async def decide(state: dict):
         if state.get("tool_rounds", 0) >= 6:
-            action = ScriptedModel().next_action({**state, "timeline_called": True, "search_called": True})
+            action = ScriptedModel().finish_action(state)
         else:
             action = await _call_action(model, state)
+            try:
+                action = _validate_action(state, action)
+            except ValueError as exc:
+                state["action_error"] = str(exc)
+                action = ScriptedModel().finish_action(state)
         state["action"] = action
         state["current_stage"] = action["type"]
         return state
@@ -192,6 +218,8 @@ def build_diagnosis_graph(model, gateway, checkpointer=None):
     graph.set_entry_point("load")
     graph.add_edge("load", "decide")
     async def knowledge_node(state: dict):
+        if not state.get("knowledge_enabled"):
+            raise ValueError("knowledge agent is disabled")
         try:
             result = await gateway.invoke_knowledge(state)
             state["knowledge_results"] = result.get("results") or []
@@ -204,6 +232,7 @@ def build_diagnosis_graph(model, gateway, checkpointer=None):
         return state
 
     async def mcp_node(state: dict):
+        _validate_action(state, state["action"])
         result = await gateway.call_mcp(state, state["action"])
         state.setdefault("mcp_results", []).append(result)
         state["mcp_called"] = True

@@ -63,8 +63,12 @@ class SystemClient:
     async def call_mcp(self, state, action):
         if self.mcp is None:
             raise RuntimeError("mcp gateway is not configured")
-        text = await self.mcp.call_tool(action.get("name") or "", {"episode_id": state.get("episode_id")})
-        return {"name": action.get("name"), "text": text}
+        name = action.get("name") if isinstance(action, dict) else None
+        allowed = {tool.get("name") for tool in state.get("mcp_tools") or [] if isinstance(tool, dict)}
+        if not isinstance(name, str) or not name or name not in allowed:
+            raise ValueError("mcp tool is not in the task tool list")
+        text = await self.mcp.call_tool(name, {"episode_id": state.get("episode_id")})
+        return {"name": name, "text": text}
 
     async def get_input(self, task: dict):
         return await self.stub.GetEpisodeInput(agent_pb2.GetEpisodeInputRequest(

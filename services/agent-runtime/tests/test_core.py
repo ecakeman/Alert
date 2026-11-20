@@ -15,7 +15,7 @@ from alertflow_agent.fd import connect, save_fault_document, search_faults, stab
 from alertflow_agent.receipts import accept_task, advisory_lock, advisory_unlock, mark_finished, mark_running
 from alertflow_agent.schemas import FaultSearchIndex, QueryTimelineInput
 from alertflow_agent.textutil import rrf
-from alertflow_agent.workflow import OpenAICompatibleModel, ScriptedModel, run_archive, run_diagnosis
+from alertflow_agent.workflow import OpenAICompatibleModel, ScriptedModel, build_diagnosis_graph, run_archive, run_diagnosis
 
 
 class FakeGateway:
@@ -183,7 +183,128 @@ async def test_archive_search_roundtrip(db):
     assert "investigation_content" in hits[0]
 
 
+    class Gateway:
+        db = None
+
+        def __init__(self):
+            self.mcp_calls = 0
+            self.knowledge_calls = 0
+            self.registered = []
+
+        async def invoke_knowledge(self, state):
+            self.knowledge_calls += 1
+            return {"results": []}
+
+        async def call_mcp(self, state, action):
+            self.mcp_calls += 1
+            return {"name": action["name"], "text": "ok"}
+
+        async def query_timeline(self, state, parsed):
+            return [{"record_type": "APP_EVENT", "record_id": "r1", "event_time": "t", "received_at": "t", "source": "APP", "content": {}}]
+
+        async def search_faults(self, state, query):
+            return []
+
+        async def register_artifact(self, state, artifact_type, version, content_type, content_hash):
+            self.registered.append(artifact_type)
+
+    class Model:
+        def __init__(self, action):
+            self.action = action
+
+        def next_action(self, state):
+            return self.action
+
+    gateway = Gateway()
+    episode = str(uuid.uuid4())
+    task = {
+        "episode_id": episode, "task_id": str(uuid.uuid4()), "execution_generation": 1,
+        "input_version_from": 1, "input_version_to": 1, "service_name": "orders", "service_id": "svc",
+        "episode_started_at": datetime.now(timezone.utc).isoformat(), "thread_id": f"diagnosis:{episode}",
+        "mcp_tools": [{"name": "safe.read"}], "knowledge_enabled": False,
+    }
+    result = await run_diagnosis(Model({"type": "call_mcp_tool", "name": "fake.write"}), gateway, task)
+    assert result["action"]["type"] == "finish"
+    assert gateway.mcp_calls == 0
+    assert any("外部动作未执行" in item for item in result["action"]["report"]["observations"])
+
+    task["knowledge_enabled"] = False
+    result = await run_diagnosis(Model({"type": "invoke_knowledge_agent"}), gateway, task)
+    assert result["action"]["type"] == "finish"
+    assert gateway.knowledge_calls == 0
+    assert any("外部动作未执行" in item for item in result["action"]["report"]["observations"])
+
+
+async def test_tool_budget_falls_back_without_external_calls():
+    class Gateway:
+        db = None
+
+        def __init__(self):
+            self.mcp_calls = 0
+            self.knowledge_calls = 0
+            self.registered = []
+
+        async def query_timeline(self, state, parsed):
+            return [{"record_type": "APP_EVENT", "record_id": "r1", "event_time": "t", "received_at": "t", "source": "APP", "content": {}}]
+
+        async def search_faults(self, state, query):
+            return [{"fd_id": "fd1", "summary": "historic"}]
+
+        async def invoke_knowledge(self, state):
+            self.knowledge_calls += 1
+            return {"results": []}
+
+        async def call_mcp(self, state, action):
+            self.mcp_calls += 1
+            return {"name": action["name"], "text": "side effect"}
+
+        async def register_artifact(self, state, artifact_type, version, content_type, content_hash):
+            self.registered.append(artifact_type)
+
+    class Model:
+        def next_action(self, state):
+            return {"type": "call_mcp_tool", "name": "untrusted.write"}
+
+    gateway = Gateway()
+    episode = str(uuid.uuid4())
+    task = {
+        "episode_id": episode, "task_id": str(uuid.uuid4()), "execution_generation": 1,
+        "input_version_from": 1, "input_version_to": 1, "service_name": "orders", "service_id": "svc",
+        "episode_started_at": datetime.now(timezone.utc).isoformat(), "thread_id": f"diagnosis:{episode}",
+        "knowledge_enabled": True, "mcp_tools": [{"name": "untrusted.write"}],
+    }
+    from alertflow_agent import workflow as workflow_module
+    original_read = workflow_module.read_artifact
+    original_write = workflow_module.write_artifact
+
+    async def read(_conn, _episode, _kind):
+        return None
+
+    async def write(_conn, episode, kind, content_type, text, data, task_id, generation, expected):
+        digest = "0" * 64
+        await gateway.register_artifact({}, kind, 1, content_type, digest)
+        return {"version": 1, "content_text": text, "content_hash": digest}
+
+    workflow_module.read_artifact = read
+    workflow_module.write_artifact = write
+    try:
+        state = {
+            "episode_id": episode, "task_id": task["task_id"], "execution_generation": 1,
+            "input_version_from": 1, "input_version_to": 1, "service_name": "orders", "service_id": "svc",
+            "episode_started_at": task["episode_started_at"], "monitor_point_ids": [], "app_event_ids": [],
+            "tool_rounds": 6, "current_stage": "decide", "knowledge_enabled": True,
+            "mcp_tools": task["mcp_tools"], "thread_id": task["thread_id"],
+        }
+        result = await build_diagnosis_graph(Model(), gateway).ainvoke(state, config={"configurable": {"thread_id": task["thread_id"]}})
+    finally:
+        workflow_module.read_artifact = original_read
+        workflow_module.write_artifact = original_write
+    assert result["action"]["type"] == "finish"
+    assert gateway.mcp_calls == 0 and gateway.knowledge_calls == 0
+
+
 async def test_scripted_model_and_async_http():
+
     seen = {}
 
     def handler(request: httpx.Request) -> httpx.Response:
