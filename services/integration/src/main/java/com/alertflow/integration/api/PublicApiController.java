@@ -56,7 +56,7 @@ public class PublicApiController {
 
     @GetMapping("/api/v1/services")
     public ResponseEntity<String> listServices(HttpServletRequest request) {
-        return cached("services", ALL, () -> json(bridge.systemApi().listServices(jsonCall(request, null, ""))));
+        return call(() -> json(bridge.systemApi().listServices(jsonCall(request, null, ""))));
     }
 
     @PostMapping("/api/v1/services")
@@ -101,7 +101,7 @@ public class PublicApiController {
 
     @GetMapping("/api/v1/episodes")
     public ResponseEntity<String> listEpisodes(HttpServletRequest request) {
-        return cached("episodes", ALL, () -> json(bridge.systemApi().listEpisodes(jsonCall(request, null, ""))));
+        return call(() -> json(bridge.systemApi().listEpisodes(jsonCall(request, null, ""))));
     }
 
     @GetMapping("/api/v1/services/{serviceId}/timeline")

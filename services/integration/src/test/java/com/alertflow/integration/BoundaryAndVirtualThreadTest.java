@@ -9,7 +9,11 @@ import java.time.Duration;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
+import com.alertflow.gen.system.v1.JsonResult;
+import com.alertflow.gen.system.v1.SystemApiGrpc;
 import com.alertflow.gen.agent.v1.AgentExecutionServiceGrpc;
+import com.alertflow.integration.api.PublicApiController;
+import com.alertflow.integration.cache.RevisionCache;
 import com.alertflow.gen.agent.v1.SubmitTaskRequest;
 import com.alertflow.gen.agent.v1.SubmitTaskResponse;
 import com.alertflow.integration.agent.A2AKnowledgeClient;
@@ -33,8 +37,48 @@ import io.grpc.stub.StreamObserver;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.ResponseEntity;
 
+import jakarta.servlet.http.HttpServletRequest;
+
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
 // A2A/HTTP/gRPC 边界的超时与错误语义测试。
 class BoundaryAndVirtualThreadTest {
+    @Test
+    void querySensitiveListsAlwaysReachGoWithTheirOwnQuery() throws Exception {
+        GrpcBridge bridge = mock(GrpcBridge.class);
+        RevisionCache cache = mock(RevisionCache.class);
+        SystemApiGrpc.SystemApiBlockingStub api = mock(SystemApiGrpc.SystemApiBlockingStub.class);
+        when(bridge.systemApi()).thenReturn(api);
+        when(bridge.callGo(org.mockito.ArgumentMatchers.any())).thenAnswer(invocation ->
+                ((java.util.concurrent.Callable<?>) invocation.getArgument(0)).call());
+        when(api.listServices(org.mockito.ArgumentMatchers.any())).thenAnswer(invocation ->
+                JsonResult.newBuilder().setHttpStatus(200).setBody("services:" + invocation.getArgument(0, com.alertflow.gen.system.v1.JsonCall.class).getQuery()).build());
+        when(api.listEpisodes(org.mockito.ArgumentMatchers.any())).thenAnswer(invocation ->
+                JsonResult.newBuilder().setHttpStatus(200).setBody("episodes:" + invocation.getArgument(0, com.alertflow.gen.system.v1.JsonCall.class).getQuery()).build());
+        PublicApiController controller = new PublicApiController(bridge, cache);
+
+        HttpServletRequest servicesActive = mock(HttpServletRequest.class);
+        when(servicesActive.getQueryString()).thenReturn("status=ACTIVE");
+        HttpServletRequest servicesInvalid = mock(HttpServletRequest.class);
+        when(servicesInvalid.getQueryString()).thenReturn("status=BAD");
+        HttpServletRequest episodesPageOne = mock(HttpServletRequest.class);
+        when(episodesPageOne.getQueryString()).thenReturn("status=ACTIVE&limit=1&offset=0");
+        HttpServletRequest episodesPageTwo = mock(HttpServletRequest.class);
+        when(episodesPageTwo.getQueryString()).thenReturn("status=ACTIVE&limit=50&offset=0");
+
+        assertEquals("services:status=ACTIVE", controller.listServices(servicesActive).getBody());
+        assertEquals("services:status=BAD", controller.listServices(servicesInvalid).getBody());
+        assertEquals("episodes:status=ACTIVE&limit=1&offset=0", controller.listEpisodes(episodesPageOne).getBody());
+        assertEquals("episodes:status=ACTIVE&limit=50&offset=0", controller.listEpisodes(episodesPageTwo).getBody());
+
+        verify(api, times(2)).listServices(org.mockito.ArgumentMatchers.any());
+        verify(api, times(2)).listEpisodes(org.mockito.ArgumentMatchers.any());
+        verify(cache, org.mockito.Mockito.never()).around(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.any());
+    }
+
     @Test
     void mcpControllerMapsAuthBadRequestAndInfrastructure() {
         McpPolicy policy = McpPolicy.memory();
