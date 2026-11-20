@@ -1,10 +1,11 @@
 # AlertFlow 整改验收报告（方案第 12 节：12.1–12.7）
 
-- **版本边界（三者不要混为同一个“被测版本”）**：
+- **版本边界（固定历史节点，不把报告自身提交冒充当前 HEAD）**：
   - 被测代码基线：`460c6ab`（第三轮修复 PostgreSQL TCP readiness race 的代码提交，也是最后一个业务/部署代码变更提交）；
   - 报告首次入库：`7af5573`；
-  - 报告最新修订 / 当前 `main` HEAD：`83727c9`。
-  - 说明：`460c6ab` 是被测代码基线，**不是当前 `main` HEAD**；`7af5573` 与 `83727c9` 是报告修订提交，不含业务/部署代码变更。
+  - 后续报告修订：`83727c9`；
+  - README 与验收报告对齐提交：`5311548`。
+  - 说明：上述节点均为可追溯的历史提交；`460c6ab` 是被测代码基线，`7af5573`、`83727c9` 与 `5311548` 均只涉及文档。当前 `main` HEAD 应以 `git rev-parse origin/main` 或 GitHub 分支页面为准，不在验收报告中硬编码。
 - **三轮口径**：
   - **第一轮（2026-11-15～17 上午）**：被测 `origin/main = d763fd1`，代码修复当时以 **30 项未提交改动**存在（23 modified + 7 untracked）—— §1.1、§1.3、§1.4、§2.1、§3.2、§5.1、§6.1 等「原始树」证据来自此轮；这些改动已于 17 日下午以 4 个提交入库（`c9a5d50`/`1c27947`/`39d8140`/`f2a30b1`）。
   - **第二轮（2026-11-17 晚）**：执行《AlertFlow整改执行指导-2026-11-17》，在 `f2a30b1` 之后完成 E2E 编排、缓存 query 键、Go 失效范围、镜像变量、Python wheel、K8s 文档六项，并**首次真实起栈连续跑通两次 E2E** —— §1.2、§3.1、§4.2、§5.3、§6、§8、§9、§11 已按此轮结果更新。本轮 6 个代码提交：`d55603c`、`3aba030`、`d2853fd`、`f4e5707`、`91f5a51`、`ab2b8dc`。
@@ -32,7 +33,7 @@
 | 12.4 版本缓存 | 部分修（**已接口级验证**） | 第二轮 | query 进值键（SHA-256 前 16 hex）；不同 query 各自成键、revision 推进后旧值不命中、Redis 故障回源；5–6 s 短 TTL 与 Kafka 异步失效窗口仍在 |
 | 12.5 运行与故障 | P0 **已修**（单测证据） | 两轮 | 三处根因已改 + 10 个监控回归用例全绿；**未做 pause 后自愈的栈级复现** |
 | 12.6 镜像与部署 | 部分修（E2E 已重建镜像） | 第二轮 | `images.env.example` 已接入 Makefile/Compose/Dockerfile ARG，E2E 每次真实 `--build` 四个镜像；K8s 仍只做静态校验、未部署 |
-| 12.7 验收 | **完成判定满足**（另有未执行项） | 三轮 | 指导文档第 10 节 8 条完成判定**全部满足**（单一入口、默认清理、两次 E2E 均 exit 0 且都验证到 `ARCHIVED` + 两个非空产物、query 不共用键、revision 后旧值不命中、Go 失效范围有计数测试、K8s 文档一致、报告对应当前真实 commit：被测基线 `460c6ab`、报告首次入库 `7af5573`、最新修订 `83727c9`）；真实 K8s / 真实 LLM / `-race` / pause 自愈复现 / 契约 HTTP 重放等非判定项未执行（§9） |
+| 12.7 验收 | **完成判定满足**（另有未执行项） | 三轮 | 指导文档第 10 节 8 条完成判定**全部满足**（单一入口、默认清理、两次 E2E 均 exit 0 且都验证到 `ARCHIVED` + 两个非空产物、query 不共用键、revision 后旧值不命中、Go 失效范围有计数测试、K8s 文档一致、报告版本边界记录固定历史节点：被测基线 `460c6ab`、报告首次入库 `7af5573`、后续修订 `83727c9`、README 与报告对齐 `5311548`；当前分支头以远端 ref 为准）；真实 K8s / 真实 LLM / `-race` / pause 自愈复现 / 契约 HTTP 重放等非判定项未执行（§9） |
 
 阻塞项优先级一览（详见 §8）：
 
@@ -470,7 +471,7 @@ K8s `terminationGracePeriodSeconds`：system-core/integration/agent 45 s、front
 > - 第一轮提交：`c9a5d50`、`1c27947`、`39d8140`、`f2a30b1`（已提交并推送）；
 > - 第二轮代码提交：`d55603c`、`3aba030`、`d2853fd`、`f4e5707`、`91f5a51`、`ab2b8dc`（已提交并推送）；
 > - 第三轮代码提交：`460c6ab`（已提交并推送）；
-> - 被测代码基线：`460c6ab`；当前 `main` HEAD：`83727c9`（报告最新修订，不含业务/部署代码变更）。
+> - 被测代码基线：`460c6ab`；报告历史节点：首次入库 `7af5573`、后续修订 `83727c9`、README 与报告对齐 `5311548`。当前 `main` HEAD 以 `git rev-parse origin/main` / GitHub 分支页面为准，不在此处硬编码。
 
 ### A. P0 —— 监控调度停摆
 
@@ -512,7 +513,7 @@ K8s `terminationGracePeriodSeconds`：system-core/integration/agent 45 s、front
 | revision 增加后旧 query 结果不再命中 | 满足 | 新建服务 → 指针 v7→v8 → `?limit=10` 响应含新服务，随后写入 `...:v8`（§4.2a） |
 | Go 失效范围按真实数据变化，且有测试验证单次写入数量 | 满足 | `revision_test.go` 8 类场景计数 **1/1/5/4/0/5/3/2**（两个 `5` = 首次异常创建 Episode、恢复采样；§4.2b、`d2853fd`） |
 | K8s README 与 YAML 的端口/探针/资源名/Redis 归属一致 | 满足 | `f4e5707`；6 YAML `safe_load_all` 通过、README `8080` 清零（§6.3） |
-| 验收报告对应当前真实 commit，不混用旧 HEAD 与未提交工作区结果 | 满足 | 被测代码基线 `460c6ab`；报告首次入库 `7af5573`；报告最新修订 / 当前 `main` HEAD `83727c9`；三轮口径与各自 commit 在头部与 §11 分列 |
+| 验收报告版本边界可追溯且不自我引用 | 满足 | 被测代码基线 `460c6ab`；报告首次入库 `7af5573`；后续报告修订 `83727c9`；README 与验收报告对齐 `5311548`。这些是固定历史节点；当前 `main` HEAD 以远端 ref 为准，不在报告中硬编码 |
 
 > 说明：判定之外的项（真实 K8s 集群部署、真实 LLM、`-race`、pause 自愈的栈级复现、契约 HTTP 重放、并发压测）仍未执行，见 §9，**不计为通过**。
 
@@ -560,7 +561,7 @@ K8s `terminationGracePeriodSeconds`：system-core/integration/agent 45 s、front
 
 > - **第一轮**（`d763fd1` → `f2a30b1`）：30 项整改以 4 批提交入库 —— `c9a5d50`（system-core 监控与错误映射）、`1c27947`（integration 统一错误体 + 缓存指针）、`39d8140`（console echarts 按需引入）、`f2a30b1`（deploy/docs 对齐 + 本报告初版）。详见 11.1。
 > - **第二轮**（`f2a30b1` → `ab2b8dc`）：按《AlertFlow整改执行指导-2026-11-17》的 6 个代码提交 —— `d55603c`、`3aba030`、`d2853fd`、`f4e5707`、`91f5a51`、`ab2b8dc`。详见 11.2。
-> - **第三轮**（`ab2b8dc` → `460c6ab` + 文档收尾）：`460c6ab`（postgres TCP 就绪竞态修复）、验收报告收尾（`7af5573`、`83727c9`）、远端 5 个维护分支 fast-forward 同步。详见 11.3。
+> - **第三轮**（`ab2b8dc` → `460c6ab` + 文档收尾）：`460c6ab`（postgres TCP 就绪竞态修复）、验收报告历史修订节点（`7af5573`、`83727c9`）以及 README/报告对齐提交 `5311548`；远端 5 个维护分支 fast-forward 同步。`5311548` 只修改 README 与验收报告，不含业务逻辑或部署代码变更。详见 11.3。
 > 「验证」列只写实际执行过的检查。
 
 ### 11.1 第一轮（`d763fd1` → `f2a30b1`）
@@ -624,3 +625,4 @@ K8s `terminationGracePeriodSeconds`：system-core/integration/agent 45 s、front
 | E-1 | `460c6ab` fix(deploy) | `deploy/compose/compose.yaml`、`deploy/compose/postgres/init-roles.sh` | postgres healthcheck 改 `pg_isready -h 127.0.0.1 -U alertflow`（强制 TCP，避免 initdb 临时实例误报 healthy）；`init-roles.sh` 首次 `psql` 前加 30×1 s 有界重试 | 修复前：`db-init` `Connection refused` 退出 2；修复后：第三轮两次 `make e2e` 均 exit 0（61 s / 56 s）且均默认清理 |
 | E-2 | 本报告 | `docs/operations/acceptance-2026-11-17.md` | 第三轮实测补记、E2E 口径区分（`make e2e` vs `bash deploy/e2e.sh`、默认清理 vs `KEEP_STACK`）、就绪竞态与修复、分支同步结果 | 占位符残留 0；数字与 §0/§3.1/§6.2/§8/§10 一致 |
 | E-3 | 分支整理 | 远端 `backend`/`integration`/`agent`/`frontend`/`acceptance/2026-11-17` | 确认无独有提交后 fast-forward 到 `main`（非强推） | `git ls-remote` 五个分支与 `main` 同点；`git status` 干净 |
+| E-4 | `5311548` docs | `README.md`、`docs/operations/acceptance-2026-11-17.md` | README 更正 Kubernetes 工作负载观察默认关闭且为单 namespace 只读观察，区分截图的真实模型演示与 ScriptedModel 自动 E2E 验收，统一 `make e2e` 入口并说明独立 Compose project、默认只清理本次 project、`ALERTFLOW_E2E_KEEP_STACK=1` 保留现场；验收报告更正版本边界、第三轮全量测试口径、Revision 八场景计数和三轮整改记录。该提交只涉及文档，不是业务逻辑或部署代码变更 | README 与当前 Makefile、`deploy/e2e.sh`、Compose 配置静态一致；版本节点与报告正文一致 |
