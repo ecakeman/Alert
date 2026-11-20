@@ -66,31 +66,53 @@ async def accept_task(conn, task: dict) -> dict:
     return {"accepted": True, "duplicate": False, "status": "ACCEPTED", "thread_id": thread_id}
 
 
-async def mark_running(conn, task_id: str):
+async def assert_execution_owner(conn, task_id: str, generation: int):
+    async with conn.cursor() as cur:
+        await cur.execute(
+            """
+            SELECT status FROM cognitive.agent_task_receipts
+            WHERE task_id=%s AND execution_generation=%s
+            FOR UPDATE
+            """,
+            (task_id, generation),
+        )
+        row = await cur.fetchone()
+    if row is None or row[0] != "RUNNING":
+        await conn.rollback()
+        raise ValueError("stale execution generation")
+
+
+async def mark_running(conn, task_id: str, generation: int):
     now = _now()
     async with conn.cursor() as cur:
         await cur.execute(
             """
             UPDATE cognitive.agent_task_receipts
             SET status='RUNNING', started_at=COALESCE(started_at, %s), updated_at=%s
-            WHERE task_id=%s
+            WHERE task_id=%s AND execution_generation=%s AND status IN ('ACCEPTED','RUNNING')
             """,
-            (now, now, task_id),
+            (now, now, task_id, generation),
         )
+        if cur.rowcount != 1:
+            await conn.rollback()
+            raise ValueError("stale execution generation")
     await conn.commit()
 
 
-async def mark_finished(conn, task_id: str, status: str, result: dict, callback_state: str):
+async def mark_finished(conn, task_id: str, generation: int, status: str, result: dict, callback_state: str):
     now = _now()
     async with conn.cursor() as cur:
         await cur.execute(
             """
             UPDATE cognitive.agent_task_receipts
             SET status=%s, completed_at=%s, result_json=%s::jsonb, callback_state=%s, updated_at=%s
-            WHERE task_id=%s
+            WHERE task_id=%s AND execution_generation=%s AND status='RUNNING'
             """,
-            (status, now, _json(result), callback_state, now, task_id),
+            (status, now, _json(result), callback_state, now, task_id, generation),
         )
+        if cur.rowcount != 1:
+            await conn.rollback()
+            raise ValueError("stale execution generation")
     await conn.commit()
 
 

@@ -14,7 +14,23 @@ from alertflow_agent.fd import connect
 from alertflow_agent.gen.alertflow.agent.v1 import agent_pb2, agent_pb2_grpc
 from alertflow_agent.http_app import create_app
 from alertflow_agent.receipts import accept_task
-from alertflow_agent.runtime import AgentRuntime, SystemClient
+from alertflow_agent.runtime import AgentRuntime, SystemClient, TaskLeaseLost
+
+
+async def test_task_ack_rejection_is_lease_loss():
+    class Stub:
+        async def ReportTaskStarted(self, request, timeout):
+            return agent_pb2.TaskAck(accepted=False, message="stale generation")
+
+        async def HeartbeatTask(self, request, timeout):
+            return agent_pb2.TaskAck(accepted=False, message="lease expired")
+
+    client = SystemClient(Stub(), None)
+    task = _task()
+    with pytest.raises(TaskLeaseLost, match="stale generation"):
+        await client.started(task)
+    with pytest.raises(TaskLeaseLost, match="lease expired"):
+        await client.heartbeat(task)
 
 
 @pytest.fixture
@@ -215,11 +231,14 @@ async def test_health_and_grpc_roundtrip(clean):
         runtime.closing = False
 
         episode = str(uuid.uuid4())
-        await write_artifact(await _conn(), episode, "INVESTIGATION", "MARKDOWN", "body", None, str(uuid.uuid4()), 1, None)
+        task_id = str(uuid.uuid4())
+        seed = _task(episode=episode, task_id=task_id)
+        await accept_task(await _conn(), seed)
+        await write_artifact(await _conn(), episode, "INVESTIGATION", "MARKDOWN", "body", None, task_id, 1, None)
         channel = grpc.aio.insecure_channel(f"127.0.0.1:{runtime.bound_port}")
         stub = agent_pb2_grpc.AgentExecutionServiceStub(channel)
         submitted = await stub.SubmitTask(agent_pb2.SubmitTaskRequest(
-            task_id=str(uuid.uuid4()), episode_id=episode, task_type=agent_pb2.AGENT_TASK_TYPE_DIAGNOSIS,
+            task_id=task_id, episode_id=episode, task_type=agent_pb2.AGENT_TASK_TYPE_DIAGNOSIS,
             execution_generation=1, input_version_from=1, input_version_to=1,
         ))
         assert submitted.accepted

@@ -10,9 +10,9 @@ import pytest
 
 os.environ.setdefault("ALERTFLOW_DATABASE_URL", "postgres://alertflow:alertflow@127.0.0.1:55433/alertflow?sslmode=disable")
 
-from alertflow_agent.artifacts import write_artifact
+from alertflow_agent.artifacts import read_artifact, write_artifact
 from alertflow_agent.fd import connect, save_fault_document, search_faults, stable_fd_id
-from alertflow_agent.receipts import accept_task, advisory_lock, advisory_unlock
+from alertflow_agent.receipts import accept_task, advisory_lock, advisory_unlock, mark_finished, mark_running
 from alertflow_agent.schemas import FaultSearchIndex, QueryTimelineInput
 from alertflow_agent.textutil import rrf
 from alertflow_agent.workflow import OpenAICompatibleModel, ScriptedModel, run_archive, run_diagnosis
@@ -40,7 +40,10 @@ class FakeGateway:
         self.registered.append(artifact_type)
 
     async def save_fault(self, task, investigation, report, index):
-        return await save_fault_document(self.db, task["episode_id"], task["service_id"], investigation, report, index)
+        return await save_fault_document(
+            self.db, task["episode_id"], task["service_id"], task["task_id"], int(task["execution_generation"]),
+            investigation, report, index,
+        )
 
 
 @pytest.fixture
@@ -92,9 +95,35 @@ async def test_advisory_lock_blocks_other_connection(db):
         await again.close()
 
 
+async def test_stale_generation_cannot_update_receipt_or_artifact(db):
+    episode = str(uuid.uuid4())
+    task_id = str(uuid.uuid4())
+    task = {"task_id": task_id, "episode_id": episode, "task_type": "DIAGNOSIS", "execution_generation": 1}
+    await accept_task(db, task)
+    task["execution_generation"] = 2
+    await accept_task(db, task)
+    await mark_running(db, task_id, 2)
+    current = await write_artifact(db, episode, "INVESTIGATION", "MARKDOWN", "generation two", None, task_id, 2, None)
+    with pytest.raises(ValueError, match="stale execution generation"):
+        await mark_finished(db, task_id, 1, "FAILED", {"error": "stale"}, "SENT")
+    with pytest.raises(ValueError, match="stale execution generation"):
+        await write_artifact(db, episode, "INVESTIGATION", "MARKDOWN", "generation one", None, task_id, 1, current["version"])
+    with pytest.raises(ValueError, match="stale execution generation"):
+        await save_fault_document(
+            db, episode, str(uuid.uuid4()), task_id, 1, "stale", {},
+            FaultSearchIndex(summary="stale", symptoms=[], observations=[], diagnosis=[]),
+        )
+    saved = await read_artifact(db, episode, "INVESTIGATION")
+    assert saved["content_text"] == "generation two"
+    assert saved["execution_generation"] == 2
+
+
 async def test_artifact_version_conflict(db):
     episode = str(uuid.uuid4())
     task_id = str(uuid.uuid4())
+    task = {"task_id": task_id, "episode_id": episode, "task_type": "DIAGNOSIS", "execution_generation": 1}
+    await accept_task(db, task)
+    await mark_running(db, task_id, 1)
     first = await write_artifact(db, episode, "INVESTIGATION", "MARKDOWN", "one", None, task_id, 1, None)
     same = await write_artifact(db, episode, "INVESTIGATION", "MARKDOWN", "one", None, task_id, 1, first["version"])
     assert same["version"] == 1
@@ -113,6 +142,8 @@ async def test_diagnosis_writes_artifacts_once_per_task(db):
         "thread_id": f"diagnosis:{episode_id}", "service_name": "orders",
         "episode_started_at": datetime.now(timezone.utc).isoformat(),
     }
+    await accept_task(db, task)
+    await mark_running(db, task["task_id"], 1)
     await run_diagnosis(ScriptedModel(), gateway, task)
     await run_diagnosis(ScriptedModel(), gateway, task)
     async with db.cursor() as cur:
@@ -126,7 +157,10 @@ async def test_archive_search_roundtrip(db):
     gateway = FakeGateway(db)
     episode = str(uuid.uuid4())
     service = str(uuid.uuid4())
-    task = {"episode_id": episode, "service_id": service, "task_id": str(uuid.uuid4()), "execution_generation": 1}
+    task = {"episode_id": episode, "service_id": service, "task_id": str(uuid.uuid4()), "execution_generation": 1,
+            "task_type": "ARCHIVE"}
+    await accept_task(db, task)
+    await mark_running(db, task["task_id"], 1)
     await write_artifact(db, episode, "INVESTIGATION", "MARKDOWN", "# 故障概况\n\npool exhausted\n", None, task["task_id"], 1, None)
     await write_artifact(db, episode, "DIAGNOSIS_REPORT", "JSON", None, {
         "summary": "连接池耗尽", "observations": ["pool exhausted"], "hypotheses": ["数据库连接池耗尽"],
@@ -139,7 +173,10 @@ async def test_archive_search_roundtrip(db):
 
     fd_id = await run_archive(Model(), gateway, task)
     assert fd_id == stable_fd_id(episode)
-    again = await save_fault_document(db, episode, service, "doc", {"summary": "连接池耗尽"}, FaultSearchIndex(summary="连接池耗尽", symptoms=["pool exhausted"], observations=["pool exhausted"], diagnosis=["数据库连接池耗尽"]))
+    again = await save_fault_document(
+        db, episode, service, task["task_id"], 1, "doc", {"summary": "连接池耗尽"},
+        FaultSearchIndex(summary="连接池耗尽", symptoms=["pool exhausted"], observations=["pool exhausted"], diagnosis=["数据库连接池耗尽"]),
+    )
     assert again == fd_id
     hits = await search_faults(db, service, "连接池耗尽")
     assert hits and hits[0]["fd_id"] == fd_id

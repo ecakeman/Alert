@@ -1,6 +1,7 @@
 import hashlib
 from datetime import datetime, timezone
 
+from alertflow_agent.receipts import assert_execution_owner
 from alertflow_agent.textutil import content_hash
 
 
@@ -41,11 +42,13 @@ async def read_artifact(conn, episode_id: str, artifact_type: str) -> dict | Non
 
 async def write_artifact(conn, episode_id: str, artifact_type: str, content_type: str, content_text: str | None,
                          content_json, task_id: str, generation: int, expected_version: int | None) -> dict:
+    await assert_execution_owner(conn, task_id, generation)
     digest_source = content_text if content_text is not None else str(content_json)
     digest = content_hash(digest_source)
     current = await read_artifact(conn, episode_id, artifact_type)
     now = _now()
     if current and current["content_hash"] == digest and current["version"] == (expected_version or current["version"]):
+        await conn.commit()
         return current
     if current is None:
         version = 1
