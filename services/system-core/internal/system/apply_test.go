@@ -1,7 +1,9 @@
 package system
 
 import (
+	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"sync"
@@ -174,6 +176,87 @@ func TestConcurrentSourcesCreateOneEpisode(t *testing.T) {
 	}
 	if active != 1 {
 		t.Fatalf("active = %d", active)
+	}
+}
+
+func TestAppTriggerFreezesMonitorSnapshot(t *testing.T) {
+	s := testStore(t)
+	svc, target := newSvc(t, s, 1, 2)
+	ctx := context.Background()
+	base := time.Date(2026, 11, 2, 8, 0, 0, 0, time.UTC)
+	for i := 0; i < 2; i++ {
+		if _, err := s.ApplyMonitorSample(ctx, sample(svc, target, true, "2xx", base.Add(time.Duration(i)*time.Minute))); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var pointWatermark int64
+	if err := s.DB.QueryRow(`SELECT MAX(point_seq) FROM system.service_monitor_points WHERE service_id=$1`, svc).Scan(&pointWatermark); err != nil {
+		t.Fatal(err)
+	}
+	rev := int64(1)
+	raw, ev := appBody("app-first", "HEALTH_STATUS", StatusAbnormal, &rev)
+	opened, err := s.ApplyAppEvent(ctx, svc, ev, raw)
+	if err != nil || opened.Body["episode_status"] != EpisodeActive {
+		t.Fatalf("open episode %+v %v", opened.Body, err)
+	}
+	episodeID, err := uuid.Parse(opened.Body["episode_id"].(string))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var storedWatermark int64
+	var projection []byte
+	if err := s.DB.QueryRow(`SELECT monitor_point_watermark, monitor_projection FROM system.episode_input_versions WHERE episode_id=$1 AND input_version=1`, episodeID).Scan(&storedWatermark, &projection); err != nil {
+		t.Fatal(err)
+	}
+	if storedWatermark != pointWatermark {
+		t.Fatalf("snapshot watermark=%d, want %d", storedWatermark, pointWatermark)
+	}
+	if !bytes.Contains(projection, []byte(`"status":"NORMAL"`)) {
+		t.Fatalf("initial projection omitted current monitor state: %s", projection)
+	}
+	episode, err := s.GetEpisode(ctx, episodeID)
+	if err != nil || episode.ActiveTaskID == nil {
+		t.Fatalf("diagnosis task %+v %v", episode, err)
+	}
+	var generation int64
+	if err := s.DB.QueryRow(`SELECT execution_generation FROM system.agent_tasks WHERE task_id=$1`, *episode.ActiveTaskID).Scan(&generation); err != nil {
+		t.Fatal(err)
+	}
+	later := base.Add(10 * time.Minute)
+	if _, err := s.ApplyMonitorSample(ctx, sample(svc, target, true, "2xx", later)); err != nil {
+		t.Fatal(err)
+	}
+	records, err := s.QueryTimeline(ctx, *episode.ActiveTaskID, episodeID, 1, generation, base.Add(-time.Minute), later.Add(time.Minute), nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, record := range records {
+		if record.RecordType == "MONITOR_POINT" && record.EventTime.Equal(later) {
+			t.Fatalf("old input version exposed later monitor point: %+v", record)
+		}
+	}
+}
+
+func TestAppTriggerWithoutMonitorPointsHasBoundedWatermark(t *testing.T) {
+	s := testStore(t)
+	svc, _ := newSvc(t, s, 1, 1)
+	ctx := context.Background()
+	rev := int64(1)
+	raw, ev := appBody("app-first-empty", "HEALTH_STATUS", StatusAbnormal, &rev)
+	opened, err := s.ApplyAppEvent(ctx, svc, ev, raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var watermark sql.NullInt64
+	var projection []byte
+	if err := s.DB.QueryRow(`SELECT monitor_point_watermark, monitor_projection FROM system.episode_input_versions WHERE episode_id=$1 AND input_version=1`, opened.Body["episode_id"]).Scan(&watermark, &projection); err != nil {
+		t.Fatal(err)
+	}
+	if !watermark.Valid || watermark.Int64 != 0 {
+		t.Fatalf("empty snapshot watermark=%+v, want bounded zero", watermark)
+	}
+	if string(projection) != "[]" {
+		t.Fatalf("empty monitor projection=%s", projection)
 	}
 }
 

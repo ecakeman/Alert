@@ -505,14 +505,25 @@ func insertEpisode(ctx context.Context, tx *sql.Tx, serviceID uuid.UUID, started
 	if err := tx.QueryRowContext(ctx, `SELECT MAX(point_seq) FROM system.service_monitor_points WHERE service_id=$1`, serviceID).Scan(&maxSeq); err != nil {
 		return nil, err
 	}
+	if !maxSeq.Valid {
+		maxSeq = sql.NullInt64{Int64: 0, Valid: true}
+	}
+	projection, err := loadProjection(ctx, tx, serviceID)
+	if err != nil {
+		return nil, err
+	}
+	projectionJSON, err := json.Marshal(projection)
+	if err != nil {
+		return nil, err
+	}
 	id := uuid.New()
-	_, err := tx.ExecContext(ctx, `
+	_, err = tx.ExecContext(ctx, `
 		INSERT INTO system.episodes
 		(episode_id, service_id, status, resolution_pending, started_by, started_at,
-		 monitor_start_point_seq, current_monitor_projection, input_hash, input_version,
+		 monitor_start_point_seq, monitor_point_watermark, current_monitor_projection, input_hash, input_version,
 		 processed_input_version, created_at, updated_at)
-		VALUES ($1,$2,'ACTIVE',FALSE,$3,$4,$5,'[]','',0,0,$4,$4)`,
-		id, serviceID, startedBy, now, maxSeq)
+		VALUES ($1,$2,'ACTIVE',FALSE,$3,$4,$5,$5,$6,'',0,0,$4,$4)`,
+		id, serviceID, startedBy, now, maxSeq, projectionJSON)
 	if err != nil {
 		return nil, err
 	}
@@ -600,8 +611,10 @@ func (s *Store) syncEpisode(ctx context.Context, tx *sql.Tx, ep *episodeRow, tri
 	if hash != ep.InputHash {
 		ep.InputVersion++
 		ep.InputHash = hash
-		if len(pointIDs) > 0 && pointWM.Valid {
+		if pointWM.Valid {
 			ep.MonitorWatermark = pointWM
+		} else {
+			ep.MonitorWatermark = sql.NullInt64{Int64: 0, Valid: true}
 		}
 		projJSON, _ := json.Marshal(ep.Projection)
 		refs := changedRefs{MonitorPointIDs: pointIDs, AppEventIDs: eventIDs}
