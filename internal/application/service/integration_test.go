@@ -51,6 +51,7 @@ func poolAndUC(t *testing.T) *appservice.Service {
 		Services: postgres.NewServiceRepo(),
 		Targets:  postgres.NewTargetRepo(),
 		Sources:  postgres.NewSourceStateRepo(),
+		Episodes: postgres.NewEpisodeRepo(),
 		Outbox:   postgres.NewOutboxRepo(),
 		Clock:    clock{},
 		IDs:      ids{},

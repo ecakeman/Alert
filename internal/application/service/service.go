@@ -16,6 +16,7 @@ type Deps struct {
 	Services port.ServiceRepo
 	Targets  port.TargetRepo
 	Sources  port.SourceStateRepo
+	Episodes port.EpisodeRepo
 	Outbox   port.OutboxRepo
 	Clock    port.Clock
 	IDs      port.IDGen
