@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	appdashboard "github.com/ecakeman/alert/internal/application/dashboard"
+	appepisode "github.com/ecakeman/alert/internal/application/episode"
 	"github.com/ecakeman/alert/internal/application/health"
 	appservice "github.com/ecakeman/alert/internal/application/service"
 	"github.com/ecakeman/alert/internal/config"
@@ -61,6 +62,12 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 	dashUC := appdashboard.New(appdashboard.Deps{
 		UOW: uow, Repo: postgres.NewDashboardRepo(), Clock: clk,
 	})
+	epUC := appepisode.New(appepisode.Deps{
+		UOW: uow, Episodes: postgres.NewEpisodeRepo(), InputVersions: postgres.NewInputVersionRepo(),
+		AppEvents: postgres.NewAppEventRepo(), MonitorPoints: postgres.NewMonitorPointRepo(),
+		Sources: postgres.NewSourceStateRepo(), Services: postgres.NewServiceRepo(),
+		Tasks: postgres.NewTaskRepo(), Outbox: postgres.NewOutboxRepo(), Clock: clk, IDs: ids,
+	})
 
 	healthH := handler.NewHealth(health.NewService(
 		postgres.NewPGChecker(pool, cfg.ReadyzTimeout),
@@ -68,7 +75,9 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 	))
 	engine := router.New(router.Deps{
 		Health: healthH, Service: handler.NewService(svcUC),
-		Dashboard: handler.NewDashboard(dashUC), Timeout: cfg.HTTPReadTimeout,
+		Dashboard: handler.NewDashboard(dashUC),
+		Episode:   handler.NewEpisode(epUC),
+		Timeout:   cfg.HTTPReadTimeout,
 	})
 
 	srv := &http.Server{

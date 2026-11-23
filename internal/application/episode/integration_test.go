@@ -12,8 +12,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/ecakeman/alert/internal/application/apperr"
-	"github.com/ecakeman/alert/internal/application/port"
 	appepisode "github.com/ecakeman/alert/internal/application/episode"
+	"github.com/ecakeman/alert/internal/application/port"
 	appservice "github.com/ecakeman/alert/internal/application/service"
 	"github.com/ecakeman/alert/internal/infrastructure/persistence/postgres"
 )
@@ -54,13 +54,14 @@ func setup(t *testing.T) (*appepisode.Service, *appservice.Service) {
 	gen := ids{}
 	svcUC := appservice.New(appservice.Deps{
 		UOW: uow, Services: postgres.NewServiceRepo(), Targets: postgres.NewTargetRepo(),
-		Sources: postgres.NewSourceStateRepo(), Outbox: postgres.NewOutboxRepo(), Clock: clk, IDs: gen,
+		Sources: postgres.NewSourceStateRepo(), Episodes: postgres.NewEpisodeRepo(),
+		Outbox: postgres.NewOutboxRepo(), Clock: clk, IDs: gen,
 	})
 	epUC := appepisode.New(appepisode.Deps{
 		UOW: uow, Episodes: postgres.NewEpisodeRepo(), InputVersions: postgres.NewInputVersionRepo(),
 		AppEvents: postgres.NewAppEventRepo(), MonitorPoints: postgres.NewMonitorPointRepo(),
-		Sources: postgres.NewSourceStateRepo(), Tasks: postgres.NewTaskRepo(),
-		Outbox: postgres.NewOutboxRepo(), Clock: clk, IDs: gen,
+		Sources: postgres.NewSourceStateRepo(), Services: postgres.NewServiceRepo(),
+		Tasks: postgres.NewTaskRepo(), Outbox: postgres.NewOutboxRepo(), Clock: clk, IDs: gen,
 	})
 	return epUC, svcUC
 }

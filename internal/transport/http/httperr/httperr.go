@@ -21,7 +21,7 @@ func Status(err error) int {
 			return http.StatusBadRequest
 		case apperr.CodeNotFound, apperr.CodeArtifactNotFound:
 			return http.StatusNotFound
-		case apperr.CodeAlreadyExists:
+		case apperr.CodeAlreadyExists, apperr.CodeEventIDConflict:
 			return http.StatusConflict
 		case apperr.CodeNotImplemented:
 			return http.StatusNotImplemented

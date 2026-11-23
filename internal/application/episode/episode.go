@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 
-
 	"github.com/ecakeman/alert/internal/application/apperr"
 	"github.com/ecakeman/alert/internal/application/port"
 	"github.com/ecakeman/alert/internal/domain"
@@ -20,6 +19,7 @@ type Deps struct {
 	AppEvents     port.AppEventRepo
 	MonitorPoints port.MonitorPointRepo
 	Sources       port.SourceStateRepo
+	Services      port.ServiceRepo
 	Tasks         port.TaskRepo
 	Outbox        port.OutboxRepo
 	Clock         port.Clock
@@ -90,7 +90,11 @@ func (s *Service) Get(ctx context.Context, episodeID string) (EpisodeView, error
 		if err != nil {
 			return err
 		}
-		view = EpisodeView{Episode: ep, Sources: sources}
+		svc, err := s.deps.Services.Get(ctx, tx, ep.ServiceID)
+		if err != nil {
+			return err
+		}
+		view = EpisodeView{Episode: ep, Sources: sources, ServiceName: svc.Name}
 		if len(tasks) > 0 {
 			view.ActiveTask = &tasks[0]
 		}
@@ -127,13 +131,17 @@ func (s *Service) AppendAppEvent(ctx context.Context, serviceID string, in AppEv
 			res = AppendEventResult{Event: existing, Appended: false}
 			return nil
 		case domain.AppEventConflict:
-			return apperr.New(domain.CodeEventIDConflict, "event id conflict")
+			return apperr.New(apperr.CodeEventIDConflict, "event id conflict")
 		}
 
 		if _, err := s.deps.AppEvents.Append(ctx, tx, incoming); err != nil {
 			return err
 		}
-		res = AppendEventResult{Event: incoming, Appended: true}
+		stored, err := s.deps.AppEvents.GetByIdentity(ctx, tx, serviceID, in.ProducerID, in.EventID)
+		if err != nil {
+			return err
+		}
+		res = AppendEventResult{Event: stored, Appended: true}
 		return s.appendEvent(ctx, tx, "episode.input.appended.v1", "service", serviceID,
 			map[string]string{"service_id": serviceID, "event_id": in.EventID})
 	})

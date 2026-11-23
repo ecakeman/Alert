@@ -17,6 +17,7 @@ type Deps struct {
 	Health    *handler.Health
 	Service   *handler.Service
 	Dashboard *handler.Dashboard
+	Episode   *handler.Episode
 	Timeout   time.Duration
 }
 
@@ -27,11 +28,8 @@ type route struct {
 
 // pendingRoutes 是尚未施工的业务路由（B4.2/B4.3/B4.4 及 B7），保持 501。
 var pendingRoutes = []route{
-
 	{"GET", "/episodes"},
 	{"GET", "/services/:service_id/timeline"},
-	{"POST", "/services/:service_id/events"},
-	{"GET", "/episodes/:episode_id"},
 	{"GET", "/episodes/:episode_id/timeline"},
 	{"GET", "/episodes/:episode_id/artifacts"},
 	{"POST", "/episodes/:episode_id/retry-diagnosis"},
@@ -62,6 +60,8 @@ func New(deps Deps) *gin.Engine {
 	v1.POST("/services/:service_id/targets", deps.Service.CreateTarget)
 	v1.PATCH("/targets/:target_id", deps.Service.PatchTarget)
 	v1.DELETE("/targets/:target_id", deps.Service.DeleteTarget)
+	v1.GET("/episodes/:episode_id", deps.Episode.Get)
+	v1.POST("/services/:service_id/events", deps.Episode.AppendEvent)
 
 	for _, rt := range pendingRoutes {
 		v1.Handle(rt.method, rt.path, handler.NotImplemented)

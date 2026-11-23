@@ -16,6 +16,7 @@ const (
 	CodeNotImplemented        = "NOT_IMPLEMENTED"
 	CodeDependencyUnavailable = "DEPENDENCY_UNAVAILABLE"
 	CodeArtifactNotFound      = "ARTIFACT_NOT_FOUND"
+	CodeEventIDConflict       = "EVENT_ID_CONFLICT"
 )
 
 func New(code, message string) *Error { return &Error{Code: code, Message: message} }

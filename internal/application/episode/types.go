@@ -16,9 +16,10 @@ type AppEventInput struct {
 }
 
 type EpisodeView struct {
-	Episode    port.Episode
-	Sources    []port.SourceState
-	ActiveTask *port.AgentTask
+	Episode     port.Episode
+	Sources     []port.SourceState
+	ActiveTask  *port.AgentTask
+	ServiceName string
 }
 
 type AppendEventResult struct {
