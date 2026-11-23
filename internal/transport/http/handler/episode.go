@@ -10,6 +10,7 @@ import (
 
 	appepisode "github.com/ecakeman/alert/internal/application/episode"
 	"github.com/ecakeman/alert/internal/application/port"
+	"github.com/ecakeman/alert/internal/domain"
 	"github.com/ecakeman/alert/internal/transport/http/dto"
 	"github.com/ecakeman/alert/internal/transport/http/response"
 )
@@ -169,4 +170,93 @@ func toEpisodeSummary(d appepisode.EpisodeSummaryData) dto.EpisodeSummary {
 		out.HasDiagnosisReport = &has
 	}
 	return out
+}
+func toMonitorFields(fields []domain.MonitorField) []dto.MonitorField {
+	out := make([]dto.MonitorField, 0, len(fields))
+	for _, f := range fields {
+		out = append(out, dto.MonitorField{
+			TargetKey: f.TargetKey, TargetType: f.TargetType, Status: f.Status,
+			StatusClass: f.StatusClass, ErrorClass: f.ErrorClass, StateFingerprint: f.StateFingerprint,
+		})
+	}
+	return out
+}
+
+func toMonitorPoints(ps []port.MonitorPoint) []dto.MonitorPoint {
+	out := make([]dto.MonitorPoint, 0, len(ps))
+	for _, p := range ps {
+		out = append(out, dto.MonitorPoint{
+			PointSeq: p.PointSeq, TargetID: p.TargetID, TargetKey: p.TargetKey,
+			TargetType: p.TargetType, ObservedAt: p.ObservedAt.UTC().Format(time.RFC3339),
+			CheckStatus: p.CheckStatus, StatusClass: p.StatusClass, ErrorClass: p.ErrorClass,
+		})
+	}
+	return out
+}
+
+func toAppEvents(es []port.AppEvent) []dto.AppEvent {
+	out := make([]dto.AppEvent, 0, len(es))
+	for _, e := range es {
+		out = append(out, dto.AppEvent{
+			EventRecordID: strconv.FormatInt(e.EventRecordID, 10), EventID: e.EventID,
+			EventKind: e.EventKind, HealthStatus: e.HealthStatus,
+			EventTime:  e.EventTime.UTC().Format(time.RFC3339),
+			ReceivedAt: e.ReceivedAt.UTC().Format(time.RFC3339),
+			Payload:    json.RawMessage(e.Payload),
+		})
+	}
+	return out
+}
+
+func toArtifactRefs(as []port.ArtifactRef) []dto.ArtifactRef {
+	out := make([]dto.ArtifactRef, 0, len(as))
+	for _, a := range as {
+		out = append(out, dto.ArtifactRef{
+			ArtifactType: a.ArtifactType, ArtifactVersion: a.ArtifactVersion,
+			StorageKey: a.StorageKey, ContentType: a.ContentType,
+			ContentHash: a.ContentHash, UpdatedAt: a.UpdatedAt.UTC().Format(time.RFC3339),
+		})
+	}
+	return out
+}
+
+// ServiceTimeline：GET /services/:service_id/timeline
+func (h *Episode) ServiceTimeline(c *gin.Context) {
+	limit, ok := parseLimit(c.Query("limit"), 100)
+	if !ok {
+		response.Error(c, http.StatusBadRequest, "VALIDATION", "invalid limit")
+		return
+	}
+	recs, err := h.uc.ServiceTimeline(c.Request.Context(), c.Param("service_id"), limit)
+	if err != nil {
+		writeErr(c, err)
+		return
+	}
+	out := dto.ServiceTimeline{Records: make([]dto.ServiceTimelineRecord, 0, len(recs))}
+	for _, r := range recs {
+		out.Records = append(out.Records, dto.ServiceTimelineRecord{
+			RecordType: r.RecordType, RecordID: r.RecordID,
+			EventTime:  r.EventTime.UTC().Format(time.RFC3339),
+			ReceivedAt: r.ReceivedAt.UTC().Format(time.RFC3339),
+			Source:     r.Source, Content: json.RawMessage(r.Content),
+		})
+	}
+	response.JSON(c, http.StatusOK, out)
+}
+
+// Timeline：GET /episodes/:episode_id/timeline
+func (h *Episode) Timeline(c *gin.Context) {
+	d, err := h.uc.Timeline(c.Request.Context(), c.Param("episode_id"))
+	if err != nil {
+		writeErr(c, err)
+		return
+	}
+	response.JSON(c, http.StatusOK, dto.EpisodeTimeline{
+		Episode:              toEpisodeView(d.Episode),
+		Region1Projection:    toMonitorFields(d.Projection),
+		MonitorStartPointSeq: d.MonitorStartSeq,
+		MonitorPoints:        toMonitorPoints(d.MonitorPoints),
+		Region2Events:        toAppEvents(d.AppEvents),
+		Region3Refs:          toArtifactRefs(d.Artifacts),
+	})
 }
