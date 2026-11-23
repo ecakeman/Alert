@@ -5,15 +5,19 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	appdashboard "github.com/ecakeman/alert/internal/application/dashboard"
 	appepisode "github.com/ecakeman/alert/internal/application/episode"
 	"github.com/ecakeman/alert/internal/application/health"
+	appoutbox "github.com/ecakeman/alert/internal/application/outbox"
+	"github.com/ecakeman/alert/internal/application/port"
 	appservice "github.com/ecakeman/alert/internal/application/service"
 	"github.com/ecakeman/alert/internal/config"
 	"github.com/ecakeman/alert/internal/infrastructure"
+	"github.com/ecakeman/alert/internal/infrastructure/messaging"
 	"github.com/ecakeman/alert/internal/infrastructure/persistence/migrate"
 	"github.com/ecakeman/alert/internal/infrastructure/persistence/postgres"
 	"github.com/ecakeman/alert/internal/transport/http/handler"
@@ -22,9 +26,12 @@ import (
 
 // App 负责装配 HTTP 服务与真实依赖并管理生命周期。
 type App struct {
-	server *http.Server
-	cfg    config.Config
-	pool   *pgxpool.Pool
+	server    *http.Server
+	cfg       config.Config
+	pool      *pgxpool.Pool
+	sender    *messaging.Sender
+	publisher *appoutbox.Publisher
+	consumer  *messaging.Consumer
 }
 
 // New 是唯一的运行时装配入口：配置校验 → pgx 池 → 可选迁移 → 用例 → handler → 路由 → HTTP。
@@ -81,6 +88,21 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 		Timeout:   cfg.HTTPReadTimeout,
 	})
 
+	var sender *messaging.Sender
+	var publisher *appoutbox.Publisher
+	var consumer *messaging.Consumer
+	if cfg.OutboxPublisherEnabled {
+		brokers := splitBrokers(cfg.KafkaBrokers)
+		sender = messaging.NewSender(brokers, cfg.KafkaTopic)
+		publisher = appoutbox.New(appoutbox.Deps{
+			UOW: uow, Outbox: postgres.NewOutboxRepo(), Sender: sender, Clock: clk,
+			Owner: "system-core", Batch: cfg.OutboxBatch,
+			ClaimLease: cfg.OutboxClaimLease, PollInterval: cfg.OutboxPollInterval,
+		})
+		consumer = messaging.NewConsumer(brokers, cfg.KafkaTopic, "system.audit.v1",
+			auditHandler(uow, postgres.NewIdempotencyRepo(), clk))
+	}
+
 	srv := &http.Server{
 		Addr:         cfg.HTTPAddr,
 		Handler:      engine,
@@ -88,7 +110,44 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 		WriteTimeout: cfg.HTTPWriteTimeout,
 		IdleTimeout:  cfg.HTTPIdleTimeout,
 	}
-	return &App{server: srv, cfg: cfg, pool: pool}, nil
+	return &App{server: srv, cfg: cfg, pool: pool, sender: sender, publisher: publisher, consumer: consumer}, nil
+}
+
+func splitBrokers(raw string) []string {
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if t := strings.TrimSpace(p); t != "" {
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
+func auditHandler(uow port.UnitOfWork, idem port.ConsumerIdempotencyRepo, clk port.Clock) messaging.MessageHandler {
+	const consumerName = "system.audit.v1"
+	return func(ctx context.Context, body []byte) error {
+		ev, err := messaging.Decode(body)
+		if err != nil {
+			return err
+		}
+		var reserved bool
+		if err := uow.WithinTx(ctx, func(ctx context.Context, tx port.Tx) error {
+			var err error
+			reserved, err = idem.Reserve(ctx, tx, port.ConsumerIdempotency{
+				Consumer: consumerName, IdempotencyKey: ev.EventID, EventID: &ev.EventID,
+			})
+			return err
+		}); err != nil {
+			return err
+		}
+		if !reserved {
+			return nil
+		}
+		return uow.WithinTx(ctx, func(ctx context.Context, tx port.Tx) error {
+			return idem.MarkDone(ctx, tx, consumerName, ev.EventID, "OK", clk.Now())
+		})
+	}
 }
 
 // RunMigrate 只执行 forward-only 迁移后退出，不启动 HTTP。
@@ -115,6 +174,13 @@ func RunMigrate(ctx context.Context, cfg config.Config) error {
 
 // Run 启动服务并在 ctx 结束时优雅退出；所有路径都关闭连接池。
 func (a *App) Run(ctx context.Context) error {
+	if a.publisher != nil {
+		go func() { _ = a.publisher.Run(ctx) }()
+	}
+	if a.consumer != nil {
+		go func() { _ = a.consumer.Run(ctx) }()
+	}
+
 	errCh := make(chan error, 1)
 	go func() {
 		if err := a.server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -124,13 +190,24 @@ func (a *App) Run(ctx context.Context) error {
 
 	select {
 	case err := <-errCh:
+		a.closeBackground()
 		a.pool.Close()
 		return err
 	case <-ctx.Done():
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), a.cfg.HTTPShutdownTimeout)
 		defer cancel()
 		err := a.server.Shutdown(shutdownCtx)
+		a.closeBackground()
 		a.pool.Close()
 		return err
+	}
+}
+
+func (a *App) closeBackground() {
+	if a.consumer != nil {
+		_ = a.consumer.Close()
+	}
+	if a.sender != nil {
+		_ = a.sender.Close()
 	}
 }

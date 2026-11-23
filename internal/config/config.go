@@ -412,8 +412,8 @@ func (c Config) Validate() error {
 	return nil
 }
 
-// ValidateRuntime 强制运行期必需项；当前仅 DATABASE_URL。
-// Kafka/Agent 的必需性检查留到对应块装配时加入。
+// ValidateRuntime 强制运行期必需项：DATABASE_URL；publisher 启用时 Kafka broker。
+// AGENT_GRPC_TARGET 的必需性留到 B7 装配时加入。
 func (c Config) ValidateRuntime() error {
 	if c.DatabaseURL == "" {
 		return &LoadError{Var: "DATABASE_URL", Reason: "missing"}
@@ -421,6 +421,9 @@ func (c Config) ValidateRuntime() error {
 	u, err := url.Parse(c.DatabaseURL)
 	if err != nil || (u.Scheme != "postgres" && u.Scheme != "postgresql") {
 		return &LoadError{Var: "DATABASE_URL", Reason: "invalid url"}
+	}
+	if c.OutboxPublisherEnabled && c.KafkaBrokers == "" {
+		return &LoadError{Var: "KAFKA_BROKERS", Reason: "missing"}
 	}
 	return nil
 }
