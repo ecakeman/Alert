@@ -201,3 +201,68 @@ func (h *Service) Delete(c *gin.Context) {
 	}
 	c.Status(http.StatusNoContent)
 }
+func toTargetPatch(p dto.TargetPatchPayload) port.TargetPatch {
+	var cfg []byte
+	if p.Config != nil {
+		cfg = []byte(*p.Config)
+	}
+	return port.TargetPatch{
+		TargetName: p.TargetName, Address: p.Address, Config: cfg,
+		IntervalMS: p.IntervalMS, TimeoutMS: p.TimeoutMS,
+		FailureThreshold: p.FailureThreshold, RecoveryThreshold: p.RecoveryThreshold,
+		IsRequired: p.IsRequired, Enabled: p.Enabled,
+	}
+}
+
+// ListTargets：GET /services/:service_id/targets
+func (h *Service) ListTargets(c *gin.Context) {
+	targets, err := h.uc.ListTargets(c.Request.Context(), c.Param("service_id"))
+	if err != nil {
+		writeErr(c, err)
+		return
+	}
+	resp := dto.TargetsResponse{Targets: make([]dto.Target, 0, len(targets))}
+	for _, t := range targets {
+		resp.Targets = append(resp.Targets, toTarget(t))
+	}
+	response.JSON(c, http.StatusOK, resp)
+}
+
+// CreateTarget：POST /services/:service_id/targets
+func (h *Service) CreateTarget(c *gin.Context) {
+	var in dto.TargetInput
+	if err := c.ShouldBindJSON(&in); err != nil {
+		response.Error(c, http.StatusBadRequest, "VALIDATION", "invalid json body")
+		return
+	}
+	t, err := h.uc.CreateTarget(c.Request.Context(), c.Param("service_id"), toTargetInput(in))
+	if err != nil {
+		writeErr(c, err)
+		return
+	}
+	response.JSON(c, http.StatusCreated, toTarget(t))
+}
+
+// PatchTarget：PATCH /targets/:target_id
+func (h *Service) PatchTarget(c *gin.Context) {
+	var p dto.TargetPatchPayload
+	if err := c.ShouldBindJSON(&p); err != nil {
+		response.Error(c, http.StatusBadRequest, "VALIDATION", "invalid json body")
+		return
+	}
+	t, err := h.uc.PatchTarget(c.Request.Context(), c.Param("target_id"), toTargetPatch(p))
+	if err != nil {
+		writeErr(c, err)
+		return
+	}
+	response.JSON(c, http.StatusOK, toTarget(t))
+}
+
+// DeleteTarget：DELETE /targets/:target_id
+func (h *Service) DeleteTarget(c *gin.Context) {
+	if err := h.uc.DeleteTarget(c.Request.Context(), c.Param("target_id")); err != nil {
+		writeErr(c, err)
+		return
+	}
+	c.Status(http.StatusNoContent)
+}

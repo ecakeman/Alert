@@ -27,10 +27,7 @@ type route struct {
 
 // pendingRoutes 是尚未施工的业务路由（B4.2/B4.3/B4.4 及 B7），保持 501。
 var pendingRoutes = []route{
-	{"GET", "/services/:service_id/targets"},
-	{"POST", "/services/:service_id/targets"},
-	{"PATCH", "/targets/:target_id"},
-	{"DELETE", "/targets/:target_id"},
+
 	{"GET", "/episodes"},
 	{"GET", "/services/:service_id/timeline"},
 	{"POST", "/services/:service_id/events"},
@@ -61,6 +58,10 @@ func New(deps Deps) *gin.Engine {
 	v1.GET("/services/:service_id", deps.Service.Get)
 	v1.PATCH("/services/:service_id", deps.Service.Patch)
 	v1.DELETE("/services/:service_id", deps.Service.Delete)
+	v1.GET("/services/:service_id/targets", deps.Service.ListTargets)
+	v1.POST("/services/:service_id/targets", deps.Service.CreateTarget)
+	v1.PATCH("/targets/:target_id", deps.Service.PatchTarget)
+	v1.DELETE("/targets/:target_id", deps.Service.DeleteTarget)
 
 	for _, rt := range pendingRoutes {
 		v1.Handle(rt.method, rt.path, handler.NotImplemented)
