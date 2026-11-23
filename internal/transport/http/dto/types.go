@@ -5,11 +5,11 @@ import "encoding/json"
 // 与 apps/console/src/api/types.ts 一一对齐，JSON 使用 snake_case。
 
 type DashboardSummary struct {
-	GeneratedAt    string         `json:"generated_at"`
-	Services       map[string]int `json:"services"`
-	Targets        map[string]int `json:"targets"`
-	Episodes       map[string]int `json:"episodes"`
-	RecentEpisodes []EpisodeSummary `json:"recent_episodes"`
+	GeneratedAt    string              `json:"generated_at"`
+	Services       map[string]int      `json:"services"`
+	Targets        map[string]int      `json:"targets"`
+	Episodes       map[string]int      `json:"episodes"`
+	RecentEpisodes []EpisodeSummary    `json:"recent_episodes"`
 	MonitorTrend   []MonitorTrendPoint `json:"monitor_trend"`
 }
 
@@ -65,16 +65,16 @@ type TargetPatchPayload struct {
 }
 
 type ServiceSummary struct {
-	ServiceID        string  `json:"service_id"`
-	ServiceKey       string  `json:"service_key"`
-	Name             string  `json:"name"`
-	Description      string  `json:"description"`
-	Enabled          bool    `json:"enabled"`
-	MonitorStatus    string  `json:"monitor_status"`
-	AppStatus        string  `json:"app_status"`
-	TargetCount      int     `json:"target_count"`
-	LastCheckAt      *string `json:"last_check_at"`
-	ActiveEpisodeID  *string `json:"active_episode_id"`
+	ServiceID       string  `json:"service_id"`
+	ServiceKey      string  `json:"service_key"`
+	Name            string  `json:"name"`
+	Description     string  `json:"description"`
+	Enabled         bool    `json:"enabled"`
+	MonitorStatus   string  `json:"monitor_status"`
+	AppStatus       string  `json:"app_status"`
+	TargetCount     int     `json:"target_count"`
+	LastCheckAt     *string `json:"last_check_at"`
+	ActiveEpisodeID *string `json:"active_episode_id"`
 }
 
 type ServiceView struct {
@@ -171,14 +171,14 @@ type MonitorField struct {
 }
 
 type MonitorPoint struct {
-	PointSeq     int64  `json:"point_seq"`
-	TargetID     string `json:"target_id"`
-	TargetKey    string `json:"target_key"`
-	TargetType   string `json:"target_type"`
-	ObservedAt   string `json:"observed_at"`
-	CheckStatus  string `json:"check_status"`
-	StatusClass  string `json:"status_class"`
-	ErrorClass   string `json:"error_class"`
+	PointSeq    int64  `json:"point_seq"`
+	TargetID    string `json:"target_id"`
+	TargetKey   string `json:"target_key"`
+	TargetType  string `json:"target_type"`
+	ObservedAt  string `json:"observed_at"`
+	CheckStatus string `json:"check_status"`
+	StatusClass string `json:"status_class"`
+	ErrorClass  string `json:"error_class"`
 }
 
 type AppEvent struct {
@@ -201,12 +201,12 @@ type ArtifactRef struct {
 }
 
 type EpisodeTimeline struct {
-	Episode             EpisodeView     `json:"episode"`
-	Region1Projection   []MonitorField  `json:"region1_projection"`
+	Episode              EpisodeView    `json:"episode"`
+	Region1Projection    []MonitorField `json:"region1_projection"`
 	MonitorStartPointSeq int64          `json:"monitor_start_point_seq"`
-	MonitorPoints       []MonitorPoint  `json:"monitor_points"`
-	Region2Events       []AppEvent      `json:"region2_events"`
-	Region3Refs         []ArtifactRef   `json:"region3_refs"`
+	MonitorPoints        []MonitorPoint `json:"monitor_points"`
+	Region2Events        []AppEvent     `json:"region2_events"`
+	Region3Refs          []ArtifactRef  `json:"region3_refs"`
 }
 
 type ServiceTimelineRecord struct {
@@ -223,10 +223,10 @@ type ServiceTimeline struct {
 }
 
 type EpisodeArtifact struct {
-	ArtifactType string                 `json:"artifact_type"`
-	Version      any                    `json:"version"`
-	ContentType  string                 `json:"content_type"`
-	ContentText  string                 `json:"content_text"`
-	ContentJSON  map[string]any         `json:"content_json"`
-	ContentHash  string                 `json:"content_hash"`
+	ArtifactType string         `json:"artifact_type"`
+	Version      any            `json:"version"`
+	ContentType  string         `json:"content_type"`
+	ContentText  string         `json:"content_text"`
+	ContentJSON  map[string]any `json:"content_json"`
+	ContentHash  string         `json:"content_hash"`
 }
