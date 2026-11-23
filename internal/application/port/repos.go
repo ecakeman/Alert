@@ -20,7 +20,9 @@ type TargetRepo interface {
 	Create(ctx context.Context, tx Tx, t MonitorTarget) error
 	Get(ctx context.Context, tx Tx, targetID string) (MonitorTarget, error)
 	ListByService(ctx context.Context, tx Tx, serviceID string, includeDeleted bool) ([]MonitorTarget, error)
+	ListEnabled(ctx context.Context, tx Tx) ([]MonitorTarget, error)
 	Patch(ctx context.Context, tx Tx, targetID string, p TargetPatch) error
+	UpdateProbeResult(ctx context.Context, tx Tx, targetID, status string, failures, successes int, lastCheckAt time.Time) error
 	SoftDelete(ctx context.Context, tx Tx, targetID string, at time.Time) error
 }
 
