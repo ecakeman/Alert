@@ -21,6 +21,7 @@ type Deps struct {
 	Sources       port.SourceStateRepo
 	Services      port.ServiceRepo
 	Tasks         port.TaskRepo
+	Artifacts     port.ArtifactRepo
 	Outbox        port.OutboxRepo
 	Clock         port.Clock
 	IDs           port.IDGen

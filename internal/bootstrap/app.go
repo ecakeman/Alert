@@ -66,7 +66,8 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 		UOW: uow, Episodes: postgres.NewEpisodeRepo(), InputVersions: postgres.NewInputVersionRepo(),
 		AppEvents: postgres.NewAppEventRepo(), MonitorPoints: postgres.NewMonitorPointRepo(),
 		Sources: postgres.NewSourceStateRepo(), Services: postgres.NewServiceRepo(),
-		Tasks: postgres.NewTaskRepo(), Outbox: postgres.NewOutboxRepo(), Clock: clk, IDs: ids,
+		Tasks: postgres.NewTaskRepo(), Artifacts: postgres.NewArtifactRepo(),
+		Outbox: postgres.NewOutboxRepo(), Clock: clk, IDs: ids,
 	})
 
 	healthH := handler.NewHealth(health.NewService(

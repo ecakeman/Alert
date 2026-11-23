@@ -41,7 +41,7 @@ func TestPendingRoutes501(t *testing.T) {
 func TestNotImplementedAndRequestID(t *testing.T) {
 	r := newTestEngine()
 	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/episodes", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/services/s/timeline", nil)
 	r.ServeHTTP(w, req)
 
 	if w.Code != http.StatusNotImplemented {

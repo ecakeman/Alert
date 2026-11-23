@@ -26,3 +26,10 @@ type AppendEventResult struct {
 	Event    port.AppEvent
 	Appended bool
 }
+type EpisodeSummaryData struct {
+	Episode            port.Episode
+	ServiceName        string
+	ActiveTaskStatus   string
+	ActiveTaskType     string
+	HasDiagnosisReport bool
+}
