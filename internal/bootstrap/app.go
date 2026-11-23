@@ -6,12 +6,14 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	appdashboard "github.com/ecakeman/alert/internal/application/dashboard"
 	appepisode "github.com/ecakeman/alert/internal/application/episode"
 	"github.com/ecakeman/alert/internal/application/health"
+	appmonitor "github.com/ecakeman/alert/internal/application/monitor"
 	appoutbox "github.com/ecakeman/alert/internal/application/outbox"
 	"github.com/ecakeman/alert/internal/application/port"
 	appservice "github.com/ecakeman/alert/internal/application/service"
@@ -20,18 +22,20 @@ import (
 	"github.com/ecakeman/alert/internal/infrastructure/messaging"
 	"github.com/ecakeman/alert/internal/infrastructure/persistence/migrate"
 	"github.com/ecakeman/alert/internal/infrastructure/persistence/postgres"
+	"github.com/ecakeman/alert/internal/infrastructure/probe"
 	"github.com/ecakeman/alert/internal/transport/http/handler"
 	"github.com/ecakeman/alert/internal/transport/http/router"
 )
 
 // App 负责装配 HTTP 服务与真实依赖并管理生命周期。
 type App struct {
-	server    *http.Server
-	cfg       config.Config
-	pool      *pgxpool.Pool
-	sender    *messaging.Sender
-	publisher *appoutbox.Publisher
-	consumer  *messaging.Consumer
+	server      *http.Server
+	cfg         config.Config
+	pool        *pgxpool.Pool
+	sender      *messaging.Sender
+	publisher   *appoutbox.Publisher
+	consumer    *messaging.Consumer
+	probeEngine *probe.Engine
 }
 
 // New 是唯一的运行时装配入口：配置校验 → pgx 池 → 可选迁移 → 用例 → handler → 路由 → HTTP。
@@ -77,6 +81,24 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 		Outbox: postgres.NewOutboxRepo(), Clock: clk, IDs: ids,
 	})
 
+	monitorUC := appmonitor.New(appmonitor.Deps{
+		UOW: uow, Targets: postgres.NewTargetRepo(), MonitorPoints: postgres.NewMonitorPointRepo(),
+		Sources: postgres.NewSourceStateRepo(), Episodes: postgres.NewEpisodeRepo(),
+		EpisodesUC: epUC, Clock: clk,
+	})
+	probeEngine := probe.NewEngine(probe.EngineDeps{
+		UOW: uow, Targets: postgres.NewTargetRepo(),
+		HTTP: probe.NewHTTPProber(), TCP: probe.NewTCPProber(),
+		Handler: func(ctx context.Context, target port.MonitorTarget, smp probe.Sample) error {
+			_, err := monitorUC.ApplySample(ctx, target.ServiceID, target.TargetID, target.ConfigGeneration, appmonitor.Sample{
+				CheckStatus: smp.CheckStatus, StatusClass: smp.StatusClass, ErrorClass: smp.ErrorClass,
+				LatencyMS: smp.LatencyMS, StateFingerprint: smp.StateFingerprint,
+			})
+			return err
+		},
+		Workers: cfg.ProbeWorkers, Capacity: cfg.ProbeQueueCapacity, Clock: clk, ScanEvery: time.Second,
+	})
+
 	healthH := handler.NewHealth(health.NewService(
 		postgres.NewPGChecker(pool, cfg.ReadyzTimeout),
 		postgres.NewMigrationChecker(pool, cfg.ReadyzTimeout),
@@ -110,7 +132,7 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 		WriteTimeout: cfg.HTTPWriteTimeout,
 		IdleTimeout:  cfg.HTTPIdleTimeout,
 	}
-	return &App{server: srv, cfg: cfg, pool: pool, sender: sender, publisher: publisher, consumer: consumer}, nil
+	return &App{server: srv, cfg: cfg, pool: pool, sender: sender, publisher: publisher, consumer: consumer, probeEngine: probeEngine}, nil
 }
 
 func splitBrokers(raw string) []string {
@@ -179,6 +201,9 @@ func (a *App) Run(ctx context.Context) error {
 	}
 	if a.consumer != nil {
 		go func() { _ = a.consumer.Run(ctx) }()
+	}
+	if a.probeEngine != nil {
+		go func() { _ = a.probeEngine.Run(ctx) }()
 	}
 
 	errCh := make(chan error, 1)
