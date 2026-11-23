@@ -111,27 +111,27 @@ type AppEvent struct {
 }
 
 type AgentTask struct {
-	TaskID             string
-	EpisodeID          string
-	ServiceID          string
-	TaskType           string
-	Status             string
-	Generation         int64
-	Attempt            int
-	MaxAttempts        int
-	LeaseUntil         *time.Time
-	NextRetryAt        *time.Time
-	InputVersionFrom   int64
-	InputVersionTo     int64
-	MonitorWatermark   int64
-	AppEventWatermark  int64
-	DeadlineAt         time.Time
-	ErrorCode          string
-	ErrorMessage       string
-	CreatedAt          time.Time
-	UpdatedAt          time.Time
-	StartedAt          *time.Time
-	FinishedAt         *time.Time
+	TaskID            string
+	EpisodeID         string
+	ServiceID         string
+	TaskType          string
+	Status            string
+	Generation        int64
+	Attempt           int
+	MaxAttempts       int
+	LeaseUntil        *time.Time
+	NextRetryAt       *time.Time
+	InputVersionFrom  int64
+	InputVersionTo    int64
+	MonitorWatermark  int64
+	AppEventWatermark int64
+	DeadlineAt        time.Time
+	ErrorCode         string
+	ErrorMessage      string
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
+	StartedAt         *time.Time
+	FinishedAt        *time.Time
 }
 
 type Ownership struct {
@@ -225,14 +225,14 @@ type EpisodeFilter struct {
 }
 
 type TaskPatch struct {
-	Status         *string
-	LeaseUntil     *time.Time
-	NextRetryAt    *time.Time
-	Attempt        *int
-	ErrorCode      *string
-	ErrorMessage   *string
-	StartedAt      *time.Time
-	FinishedAt     *time.Time
+	Status       *string
+	LeaseUntil   *time.Time
+	NextRetryAt  *time.Time
+	Attempt      *int
+	ErrorCode    *string
+	ErrorMessage *string
+	StartedAt    *time.Time
+	FinishedAt   *time.Time
 }
 
 type DashboardSummary struct {
