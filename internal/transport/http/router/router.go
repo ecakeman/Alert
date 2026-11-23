@@ -14,39 +14,34 @@ import (
 
 // Deps 是路由装配依赖。
 type Deps struct {
-	Health  *handler.Health
-	Timeout time.Duration
+	Health    *handler.Health
+	Service   *handler.Service
+	Dashboard *handler.Dashboard
+	Timeout   time.Duration
 }
 
 type route struct {
-	method  string
-	path    string
-	handler gin.HandlerFunc
+	method string
+	path   string
 }
 
-// apiV1Routes 是 /api/v1 下的 18 条业务路由；B4/B7 逐条替换 handler。
-var apiV1Routes = []route{
-	{"GET", "/dashboard/summary", handler.NotImplemented},
-	{"GET", "/services", handler.NotImplemented},
-	{"POST", "/services", handler.NotImplemented},
-	{"GET", "/services/:service_id", handler.NotImplemented},
-	{"PATCH", "/services/:service_id", handler.NotImplemented},
-	{"DELETE", "/services/:service_id", handler.NotImplemented},
-	{"GET", "/services/:service_id/targets", handler.NotImplemented},
-	{"POST", "/services/:service_id/targets", handler.NotImplemented},
-	{"PATCH", "/targets/:target_id", handler.NotImplemented},
-	{"DELETE", "/targets/:target_id", handler.NotImplemented},
-	{"GET", "/episodes", handler.NotImplemented},
-	{"GET", "/services/:service_id/timeline", handler.NotImplemented},
-	{"POST", "/services/:service_id/events", handler.NotImplemented},
-	{"GET", "/episodes/:episode_id", handler.NotImplemented},
-	{"GET", "/episodes/:episode_id/timeline", handler.NotImplemented},
-	{"GET", "/episodes/:episode_id/artifacts", handler.NotImplemented},
-	{"POST", "/episodes/:episode_id/retry-diagnosis", handler.NotImplemented},
-	{"POST", "/episodes/:episode_id/retry-archive", handler.NotImplemented},
+// pendingRoutes 是尚未施工的业务路由（B4.2/B4.3/B4.4 及 B7），保持 501。
+var pendingRoutes = []route{
+	{"GET", "/services/:service_id/targets"},
+	{"POST", "/services/:service_id/targets"},
+	{"PATCH", "/targets/:target_id"},
+	{"DELETE", "/targets/:target_id"},
+	{"GET", "/episodes"},
+	{"GET", "/services/:service_id/timeline"},
+	{"POST", "/services/:service_id/events"},
+	{"GET", "/episodes/:episode_id"},
+	{"GET", "/episodes/:episode_id/timeline"},
+	{"GET", "/episodes/:episode_id/artifacts"},
+	{"POST", "/episodes/:episode_id/retry-diagnosis"},
+	{"POST", "/episodes/:episode_id/retry-archive"},
 }
 
-// New 是唯一公开路由注册处：中间件链 → 探针 → /api/v1 壳表 → 统一 404。
+// New 是唯一公开路由注册处：中间件链 → 探针 → 已实现路由 → 未施工 501 → 统一 404。
 func New(deps Deps) *gin.Engine {
 	r := gin.New()
 	r.Use(
@@ -60,8 +55,15 @@ func New(deps Deps) *gin.Engine {
 	r.GET("/readyz", deps.Health.Ready)
 
 	v1 := r.Group("/api/v1")
-	for _, rt := range apiV1Routes {
-		v1.Handle(rt.method, rt.path, rt.handler)
+	v1.GET("/dashboard/summary", deps.Dashboard.Summary)
+	v1.GET("/services", deps.Service.List)
+	v1.POST("/services", deps.Service.Create)
+	v1.GET("/services/:service_id", deps.Service.Get)
+	v1.PATCH("/services/:service_id", deps.Service.Patch)
+	v1.DELETE("/services/:service_id", deps.Service.Delete)
+
+	for _, rt := range pendingRoutes {
+		v1.Handle(rt.method, rt.path, handler.NotImplemented)
 	}
 
 	r.NoRoute(func(c *gin.Context) {
