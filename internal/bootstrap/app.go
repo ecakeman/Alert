@@ -84,8 +84,9 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 	monitorUC := appmonitor.New(appmonitor.Deps{
 		UOW: uow, Targets: postgres.NewTargetRepo(), MonitorPoints: postgres.NewMonitorPointRepo(),
 		Sources: postgres.NewSourceStateRepo(), Episodes: postgres.NewEpisodeRepo(),
-		Driver: episodeDriverAdapter{uc: epUC},
-		Clock:  clk,
+		Services: postgres.NewServiceRepo(),
+		Driver:   episodeDriverAdapter{uc: epUC},
+		Clock:    clk,
 	})
 	probeEngine := probe.NewEngine(probe.EngineDeps{
 		UOW: uow, Targets: postgres.NewTargetRepo(),
