@@ -33,12 +33,26 @@ func main() {
 		return
 	}
 
-	app, err := bootstrap.New(ctx, cfg)
+	sh, err := bootstrap.NewShared(ctx, cfg)
 	if err != nil {
 		log.Printf("startup: %v", err)
 		os.Exit(1)
 	}
-	if err := app.Run(ctx); err != nil {
+	repos := bootstrap.NewRepos(sh)
+	ucs := bootstrap.NewUseCases(sh, repos)
+
+	api, err := bootstrap.NewAPI(sh, repos, ucs)
+	if err != nil {
+		log.Printf("startup: %v", err)
+		os.Exit(1)
+	}
+	worker, err := bootstrap.NewWorker(sh, repos, ucs)
+	if err != nil {
+		log.Printf("startup: %v", err)
+		os.Exit(1)
+	}
+
+	if err := bootstrap.RunCombined(ctx, api, worker, sh); err != nil {
 		log.Printf("server: %v", err)
 		os.Exit(1)
 	}
