@@ -3,25 +3,26 @@ package postgres
 import (
 	"context"
 
-	"github.com/ecakeman/alert/internal/application/port"
+	portService "github.com/ecakeman/alert/internal/application/port/service"
+	portshared "github.com/ecakeman/alert/internal/application/port/shared"
 	"github.com/ecakeman/alert/internal/infrastructure/persistence/postgres/model"
 )
 
 type sourceStateRepo struct{}
 
-func NewSourceStateRepo() port.SourceStateRepo { return sourceStateRepo{} }
+func NewSourceStateRepo() portService.SourceStateRepo { return sourceStateRepo{} }
 
-func (sourceStateRepo) Get(ctx context.Context, tx port.Tx, serviceID, sourceType string) (port.SourceState, error) {
+func (sourceStateRepo) Get(ctx context.Context, tx portshared.Tx, serviceID, sourceType string) (portService.SourceState, error) {
 	row, err := model.SourceStateRow{}.Scan(txFrom(tx).QueryRow(ctx,
 		`SELECT `+model.SourceStateColumns+` FROM system.service_source_states WHERE service_id=$1 AND source_type=$2`,
 		serviceID, sourceType))
 	if err != nil {
-		return port.SourceState{}, Translate(err)
+		return portService.SourceState{}, Translate(err)
 	}
 	return row.ToApp(), nil
 }
 
-func (sourceStateRepo) ListByService(ctx context.Context, tx port.Tx, serviceID string) ([]port.SourceState, error) {
+func (sourceStateRepo) ListByService(ctx context.Context, tx portshared.Tx, serviceID string) ([]portService.SourceState, error) {
 	rows, err := txFrom(tx).Query(ctx,
 		`SELECT `+model.SourceStateColumns+` FROM system.service_source_states WHERE service_id=$1 ORDER BY source_type`,
 		serviceID)
@@ -29,7 +30,7 @@ func (sourceStateRepo) ListByService(ctx context.Context, tx port.Tx, serviceID 
 		return nil, Translate(err)
 	}
 	defer rows.Close()
-	var out []port.SourceState
+	var out []portService.SourceState
 	for rows.Next() {
 		row, err := model.SourceStateRow{}.Scan(rows)
 		if err != nil {
@@ -40,7 +41,7 @@ func (sourceStateRepo) ListByService(ctx context.Context, tx port.Tx, serviceID 
 	return out, Translate(rows.Err())
 }
 
-func (sourceStateRepo) Upsert(ctx context.Context, tx port.Tx, s port.SourceState) error {
+func (sourceStateRepo) Upsert(ctx context.Context, tx portshared.Tx, s portService.SourceState) error {
 	row := model.SourceStateRowFromApp(s)
 	_, err := txFrom(tx).Exec(ctx, `
 INSERT INTO system.service_source_states(service_id,source_type,status,reason,updated_at,last_change_at)

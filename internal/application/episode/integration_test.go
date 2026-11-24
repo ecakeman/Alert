@@ -13,7 +13,7 @@ import (
 
 	"github.com/ecakeman/alert/internal/application/apperr"
 	appepisode "github.com/ecakeman/alert/internal/application/episode"
-	"github.com/ecakeman/alert/internal/application/port"
+	portService "github.com/ecakeman/alert/internal/application/port/service"
 	appservice "github.com/ecakeman/alert/internal/application/service"
 	"github.com/ecakeman/alert/internal/infrastructure/persistence/postgres"
 )
@@ -157,5 +157,5 @@ func TestTryResolveBlocked(t *testing.T) {
 	if resolved || len(missing) == 0 {
 		t.Fatalf("initial should not resolve and list missing: resolved=%v missing=%v", resolved, missing)
 	}
-	_ = port.SourceState{}
+	_ = portService.SourceState{}
 }

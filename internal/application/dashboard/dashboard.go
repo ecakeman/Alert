@@ -4,22 +4,23 @@ import (
 	"context"
 	"time"
 
-	"github.com/ecakeman/alert/internal/application/port"
+	portdashboard "github.com/ecakeman/alert/internal/application/port/dashboard"
+	portshared "github.com/ecakeman/alert/internal/application/port/shared"
 )
 
 type Deps struct {
-	UOW   port.UnitOfWork
-	Repo  port.DashboardRepo
-	Clock port.Clock
+	UOW   portshared.UnitOfWork
+	Repo  portdashboard.DashboardRepo
+	Clock portshared.Clock
 }
 
 type Service struct{ deps Deps }
 
 func New(deps Deps) *Service { return &Service{deps: deps} }
 
-func (s *Service) Summary(ctx context.Context) (port.DashboardSummary, error) {
-	var out port.DashboardSummary
-	err := s.deps.UOW.WithinTx(ctx, func(ctx context.Context, tx port.Tx) error {
+func (s *Service) Summary(ctx context.Context) (portdashboard.DashboardSummary, error) {
+	var out portdashboard.DashboardSummary
+	err := s.deps.UOW.WithinTx(ctx, func(ctx context.Context, tx portshared.Tx) error {
 		var err error
 		out, err = s.deps.Repo.Summary(ctx, tx, s.deps.Clock.Now().UTC(), 24*time.Hour)
 		return err

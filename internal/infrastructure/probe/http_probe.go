@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/ecakeman/alert/internal/application/port"
+	portService "github.com/ecakeman/alert/internal/application/port/service"
 )
 
 // HTTPProber 用真实 http.Client 探测目标地址。
@@ -16,7 +16,7 @@ type HTTPProber struct {
 
 func NewHTTPProber() *HTTPProber { return &HTTPProber{client: &http.Client{}} }
 
-func (p *HTTPProber) Probe(ctx context.Context, target port.MonitorTarget) Sample {
+func (p *HTTPProber) Probe(ctx context.Context, target portService.MonitorTarget) Sample {
 	timeout := time.Duration(target.TimeoutMS) * time.Millisecond
 	if timeout <= 0 {
 		timeout = 5 * time.Second

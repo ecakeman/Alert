@@ -9,7 +9,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/ecakeman/alert/internal/application/apperr"
-	"github.com/ecakeman/alert/internal/application/port"
+	portService "github.com/ecakeman/alert/internal/application/port/service"
 	appservice "github.com/ecakeman/alert/internal/application/service"
 	"github.com/ecakeman/alert/internal/transport/http/dto"
 	"github.com/ecakeman/alert/internal/transport/http/httperr"
@@ -56,7 +56,7 @@ func fmtTime(t *time.Time) *string {
 	return &s
 }
 
-func toTarget(t port.MonitorTarget) dto.Target {
+func toTarget(t portService.MonitorTarget) dto.Target {
 	cfg := json.RawMessage("null")
 	if len(t.Config) > 0 {
 		cfg = json.RawMessage(t.Config)
@@ -129,7 +129,7 @@ func (h *Service) List(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, "VALIDATION", "invalid status")
 		return
 	}
-	page, err := h.uc.ListSummaries(c.Request.Context(), port.ServiceFilter{
+	page, err := h.uc.ListSummaries(c.Request.Context(), portService.ServiceFilter{
 		Query: c.Query("q"), Status: status, Limit: limit, Offset: offset,
 	})
 	if err != nil {
@@ -187,7 +187,7 @@ func (h *Service) Patch(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, "VALIDATION", "invalid json body")
 		return
 	}
-	if _, err := h.uc.Patch(c.Request.Context(), c.Param("service_id"), port.ServicePatch{
+	if _, err := h.uc.Patch(c.Request.Context(), c.Param("service_id"), portService.ServicePatch{
 		Name: p.Name, Description: p.Description, Enabled: p.Enabled,
 	}); err != nil {
 		writeErr(c, err)
@@ -209,12 +209,12 @@ func (h *Service) Delete(c *gin.Context) {
 	}
 	c.Status(http.StatusNoContent)
 }
-func toTargetPatch(p dto.TargetPatchPayload) port.TargetPatch {
+func toTargetPatch(p dto.TargetPatchPayload) portService.TargetPatch {
 	var cfg []byte
 	if p.Config != nil {
 		cfg = []byte(*p.Config)
 	}
-	return port.TargetPatch{
+	return portService.TargetPatch{
 		TargetName: p.TargetName, Address: p.Address, Config: cfg,
 		IntervalMS: p.IntervalMS, TimeoutMS: p.TimeoutMS,
 		FailureThreshold: p.FailureThreshold, RecoveryThreshold: p.RecoveryThreshold,

@@ -4,16 +4,17 @@ import (
 	"context"
 	"time"
 
-	"github.com/ecakeman/alert/internal/application/port"
+	portService "github.com/ecakeman/alert/internal/application/port/service"
+	portshared "github.com/ecakeman/alert/internal/application/port/shared"
 	"github.com/ecakeman/alert/internal/infrastructure/persistence/postgres/model"
 )
 
 type targetRepo struct{}
 
-func NewTargetRepo() port.TargetRepo { return targetRepo{} }
+func NewTargetRepo() portService.TargetRepo { return targetRepo{} }
 
 // Create：created_at/updated_at 由 DB DEFAULT now() 接管。
-func (targetRepo) Create(ctx context.Context, tx port.Tx, t port.MonitorTarget) error {
+func (targetRepo) Create(ctx context.Context, tx portshared.Tx, t portService.MonitorTarget) error {
 	row := model.TargetRowFromApp(t)
 	_, err := txFrom(tx).Exec(ctx, `
 INSERT INTO system.service_monitor_targets(target_id,service_id,target_key,target_name,address,target_type,config,interval_ms,timeout_ms,failure_threshold,recovery_threshold,is_required,enabled,status,consecutive_failures,consecutive_successes,config_generation)
@@ -25,16 +26,16 @@ VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
 	return Translate(err)
 }
 
-func (targetRepo) Get(ctx context.Context, tx port.Tx, targetID string) (port.MonitorTarget, error) {
+func (targetRepo) Get(ctx context.Context, tx portshared.Tx, targetID string) (portService.MonitorTarget, error) {
 	row, err := model.TargetRow{}.Scan(txFrom(tx).QueryRow(ctx,
 		`SELECT `+model.TargetColumns+` FROM system.service_monitor_targets WHERE target_id=$1`, targetID))
 	if err != nil {
-		return port.MonitorTarget{}, Translate(err)
+		return portService.MonitorTarget{}, Translate(err)
 	}
 	return row.ToApp(), nil
 }
 
-func (targetRepo) ListByService(ctx context.Context, tx port.Tx, serviceID string, includeDeleted bool) ([]port.MonitorTarget, error) {
+func (targetRepo) ListByService(ctx context.Context, tx portshared.Tx, serviceID string, includeDeleted bool) ([]portService.MonitorTarget, error) {
 	rows, err := txFrom(tx).Query(ctx, `
 SELECT `+model.TargetColumns+` FROM system.service_monitor_targets
 WHERE service_id=$1 AND ($2 OR deleted_at IS NULL)
@@ -43,7 +44,7 @@ ORDER BY created_at`, serviceID, includeDeleted)
 		return nil, Translate(err)
 	}
 	defer rows.Close()
-	var out []port.MonitorTarget
+	var out []portService.MonitorTarget
 	for rows.Next() {
 		row, err := model.TargetRow{}.Scan(rows)
 		if err != nil {
@@ -54,7 +55,7 @@ ORDER BY created_at`, serviceID, includeDeleted)
 	return out, Translate(rows.Err())
 }
 
-func (targetRepo) Patch(ctx context.Context, tx port.Tx, targetID string, p port.TargetPatch) error {
+func (targetRepo) Patch(ctx context.Context, tx portshared.Tx, targetID string, p portService.TargetPatch) error {
 	_, err := txFrom(tx).Exec(ctx, `
 UPDATE system.service_monitor_targets SET
   target_name = COALESCE($2, target_name),
@@ -76,7 +77,7 @@ WHERE target_id=$1 AND deleted_at IS NULL`,
 
 // UpdateProbeResult 更新目标聚合计数与状态（探测结果落地）。
 
-func (targetRepo) SoftDelete(ctx context.Context, tx port.Tx, targetID string, at time.Time) error {
+func (targetRepo) SoftDelete(ctx context.Context, tx portshared.Tx, targetID string, at time.Time) error {
 	_, err := txFrom(tx).Exec(ctx, `
 UPDATE system.service_monitor_targets SET deleted_at=$2, enabled=false, updated_at=now()
 WHERE target_id=$1 AND deleted_at IS NULL`, targetID, utc(at))

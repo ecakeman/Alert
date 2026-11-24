@@ -3,7 +3,7 @@ package model
 import (
 	"time"
 
-	"github.com/ecakeman/alert/internal/application/port"
+	portepisode "github.com/ecakeman/alert/internal/application/port/episode"
 )
 
 // EpisodeColumns 是 system.episodes 的完整列清单（唯一来源）。
@@ -41,8 +41,8 @@ func (r EpisodeRow) Scan(row Scannable) (EpisodeRow, error) {
 }
 
 // ToApp 转换为 application 值类型。
-func (r EpisodeRow) ToApp() port.Episode {
-	return port.Episode{
+func (r EpisodeRow) ToApp() portepisode.Episode {
+	return portepisode.Episode{
 		EpisodeID: r.EpisodeID, ServiceID: r.ServiceID, Status: r.Status,
 		StartedBy: r.StartedBy, ResolutionPending: r.ResolutionPending,
 		InputHash: r.InputHash, InputVersion: r.InputVersion,
@@ -53,7 +53,7 @@ func (r EpisodeRow) ToApp() port.Episode {
 }
 
 // EpisodeRowFromApp 从 application 值类型构造行模型。
-func EpisodeRowFromApp(e port.Episode) EpisodeRow {
+func EpisodeRowFromApp(e portepisode.Episode) EpisodeRow {
 	return EpisodeRow{
 		EpisodeID: e.EpisodeID, ServiceID: e.ServiceID, Status: e.Status,
 		StartedBy: e.StartedBy, ResolutionPending: e.ResolutionPending,

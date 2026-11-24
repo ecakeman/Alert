@@ -4,20 +4,23 @@ import (
 	"context"
 	"time"
 
-	"github.com/ecakeman/alert/internal/application/port"
+	portepisode "github.com/ecakeman/alert/internal/application/port/episode"
+	portmonitor "github.com/ecakeman/alert/internal/application/port/monitor"
+	portService "github.com/ecakeman/alert/internal/application/port/service"
+	portshared "github.com/ecakeman/alert/internal/application/port/shared"
 	"github.com/ecakeman/alert/internal/domain"
 )
 
 // Deps 是探测采样落库与故障驱动的依赖。
 type Deps struct {
-	UOW           port.UnitOfWork
-	Targets       port.TargetRepo
-	MonitorPoints port.MonitorPointRepo
-	Sources       port.SourceStateRepo
-	Episodes      port.EpisodeRepo
-	Services      port.ServiceRepo
+	UOW           portshared.UnitOfWork
+	Targets       portService.TargetRepo
+	MonitorPoints portmonitor.MonitorPointRepo
+	Sources       portService.SourceStateRepo
+	Episodes      portepisode.EpisodeRepo
+	Services      portService.ServiceRepo
 	Driver        EpisodeDriver
-	Clock         port.Clock
+	Clock         portshared.Clock
 }
 
 type Service struct{ deps Deps }
@@ -38,7 +41,7 @@ type Sample struct {
 // ApplySample：写监控点 → 聚合计数/状态 → 重算 MONITOR 来源 → 驱动故障/恢复。
 func (s *Service) ApplySample(ctx context.Context, serviceID, targetID string, probeGeneration int64, smp Sample) (string, error) {
 	var sourceStatus string
-	err := s.deps.UOW.WithinTx(ctx, func(ctx context.Context, tx port.Tx) error {
+	err := s.deps.UOW.WithinTx(ctx, func(ctx context.Context, tx portshared.Tx) error {
 		t, err := s.deps.Targets.Get(ctx, tx, targetID)
 		if err != nil {
 			return err
@@ -52,7 +55,7 @@ func (s *Service) ApplySample(ctx context.Context, serviceID, targetID string, p
 		if observed.IsZero() {
 			observed = s.deps.Clock.Now().UTC()
 		}
-		if _, err := s.deps.MonitorPoints.Append(ctx, tx, port.MonitorPoint{
+		if _, err := s.deps.MonitorPoints.Append(ctx, tx, portmonitor.MonitorPoint{
 			ServiceID: serviceID, TargetID: targetID, TargetKey: t.TargetKey, TargetType: t.TargetType,
 			ObservedAt: observed, ReceivedAt: s.deps.Clock.Now().UTC(),
 			CheckStatus: smp.CheckStatus, StatusClass: smp.StatusClass, ErrorClass: smp.ErrorClass,
@@ -81,7 +84,7 @@ func (s *Service) ApplySample(ctx context.Context, serviceID, targetID string, p
 	}
 	if sourceStatus == "NORMAL" {
 		var episodeID string
-		_ = s.deps.UOW.WithinTx(ctx, func(ctx context.Context, tx port.Tx) error {
+		_ = s.deps.UOW.WithinTx(ctx, func(ctx context.Context, tx portshared.Tx) error {
 			e, err := s.deps.Episodes.GetActiveByService(ctx, tx, serviceID)
 			if err == nil {
 				episodeID = e.EpisodeID
@@ -96,7 +99,7 @@ func (s *Service) ApplySample(ctx context.Context, serviceID, targetID string, p
 	return sourceStatus, nil
 }
 
-func (s *Service) recomputeSource(ctx context.Context, tx port.Tx, serviceID string) (string, error) {
+func (s *Service) recomputeSource(ctx context.Context, tx portshared.Tx, serviceID string) (string, error) {
 	targets, err := s.deps.Targets.ListByService(ctx, tx, serviceID, false)
 	if err != nil {
 		return "", err
@@ -109,7 +112,7 @@ func (s *Service) recomputeSource(ctx context.Context, tx port.Tx, serviceID str
 	if err != nil {
 		return "", err
 	}
-	if err := s.deps.Sources.Upsert(ctx, tx, port.SourceState{
+	if err := s.deps.Sources.Upsert(ctx, tx, portService.SourceState{
 		ServiceID: serviceID, SourceType: "MONITOR", Status: status,
 	}); err != nil {
 		return "", err
@@ -117,7 +120,7 @@ func (s *Service) recomputeSource(ctx context.Context, tx port.Tx, serviceID str
 	return status, nil
 }
 
-func monitorTargetHealths(targets []port.MonitorTarget) []domain.TargetHealth {
+func monitorTargetHealths(targets []portService.MonitorTarget) []domain.TargetHealth {
 	out := make([]domain.TargetHealth, 0, len(targets))
 	for _, t := range targets {
 		out = append(out, domain.TargetHealth{

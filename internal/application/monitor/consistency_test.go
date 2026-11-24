@@ -3,7 +3,7 @@ package monitor
 import (
 	"testing"
 
-	"github.com/ecakeman/alert/internal/application/port"
+	portService "github.com/ecakeman/alert/internal/application/port/service"
 	"github.com/ecakeman/alert/internal/domain"
 )
 
@@ -11,7 +11,7 @@ import (
 // 均经由 monitorTargetHealths + domain.AggregateMonitor，同输入同输出；
 // 防止任一路径再次内联计数形成第二份算法（B3/B6 曾各自实现且语义漂移）。
 func TestMonitorAggregationConsistency(t *testing.T) {
-	targets := []port.MonitorTarget{
+	targets := []portService.MonitorTarget{
 		{TargetKey: "ok", IsRequired: true, Enabled: true, Status: "NORMAL"},
 		{TargetKey: "ok2", IsRequired: true, Enabled: true, Status: "NORMAL"},
 		{TargetKey: "bad", IsRequired: true, Enabled: true, Status: "ABNORMAL"},

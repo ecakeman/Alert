@@ -9,7 +9,9 @@ import (
 	"github.com/gin-gonic/gin"
 
 	appepisode "github.com/ecakeman/alert/internal/application/episode"
-	"github.com/ecakeman/alert/internal/application/port"
+	portepisode "github.com/ecakeman/alert/internal/application/port/episode"
+	portmonitor "github.com/ecakeman/alert/internal/application/port/monitor"
+	porttask "github.com/ecakeman/alert/internal/application/port/task"
 	"github.com/ecakeman/alert/internal/transport/http/dto"
 	"github.com/ecakeman/alert/internal/transport/http/response"
 )
@@ -136,7 +138,7 @@ func (h *Episode) List(c *gin.Context) {
 		}
 		to = &t
 	}
-	items, err := h.uc.ListSummaries(c.Request.Context(), port.EpisodeFilter{
+	items, err := h.uc.ListSummaries(c.Request.Context(), portepisode.EpisodeFilter{
 		Status: status, From: from, To: to, Limit: limit, Offset: offset,
 	})
 	if err != nil {
@@ -181,7 +183,7 @@ func toMonitorFields(fields []appepisode.MonitorFieldView) []dto.MonitorField {
 	return out
 }
 
-func toMonitorPoints(ps []port.MonitorPoint) []dto.MonitorPoint {
+func toMonitorPoints(ps []portmonitor.MonitorPoint) []dto.MonitorPoint {
 	out := make([]dto.MonitorPoint, 0, len(ps))
 	for _, p := range ps {
 		out = append(out, dto.MonitorPoint{
@@ -193,7 +195,7 @@ func toMonitorPoints(ps []port.MonitorPoint) []dto.MonitorPoint {
 	return out
 }
 
-func toAppEvents(es []port.AppEvent) []dto.AppEvent {
+func toAppEvents(es []portepisode.AppEvent) []dto.AppEvent {
 	out := make([]dto.AppEvent, 0, len(es))
 	for _, e := range es {
 		out = append(out, dto.AppEvent{
@@ -207,7 +209,7 @@ func toAppEvents(es []port.AppEvent) []dto.AppEvent {
 	return out
 }
 
-func toArtifactRefs(as []port.ArtifactRef) []dto.ArtifactRef {
+func toArtifactRefs(as []porttask.ArtifactRef) []dto.ArtifactRef {
 	out := make([]dto.ArtifactRef, 0, len(as))
 	for _, a := range as {
 		out = append(out, dto.ArtifactRef{

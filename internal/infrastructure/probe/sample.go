@@ -5,7 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 
-	"github.com/ecakeman/alert/internal/application/port"
+	portService "github.com/ecakeman/alert/internal/application/port/service"
 )
 
 // Sample 是单次探测结果（不含目标身份，由引擎补齐）。
@@ -19,7 +19,7 @@ type Sample struct {
 
 // Prober 执行一次真实探测。
 type Prober interface {
-	Probe(ctx context.Context, target port.MonitorTarget) Sample
+	Probe(ctx context.Context, target portService.MonitorTarget) Sample
 }
 
 func fingerprint(parts ...string) string {

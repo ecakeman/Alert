@@ -3,26 +3,27 @@ package postgres
 import (
 	"context"
 
-	"github.com/ecakeman/alert/internal/application/port"
+	portepisode "github.com/ecakeman/alert/internal/application/port/episode"
+	portshared "github.com/ecakeman/alert/internal/application/port/shared"
 	"github.com/ecakeman/alert/internal/infrastructure/persistence/postgres/model"
 )
 
 type appEventRepo struct{}
 
-func NewAppEventRepo() port.AppEventRepo { return appEventRepo{} }
+func NewAppEventRepo() portepisode.AppEventRepo { return appEventRepo{} }
 
-func (appEventRepo) GetByIdentity(ctx context.Context, tx port.Tx, serviceID, producerID, eventID string) (port.AppEvent, error) {
+func (appEventRepo) GetByIdentity(ctx context.Context, tx portshared.Tx, serviceID, producerID, eventID string) (portepisode.AppEvent, error) {
 	row, err := model.AppEventRow{}.Scan(txFrom(tx).QueryRow(ctx,
 		`SELECT `+model.AppEventColumns+` FROM system.episode_app_events WHERE service_id=$1 AND producer_id=$2 AND event_id=$3`,
 		serviceID, producerID, eventID))
 	if err != nil {
-		return port.AppEvent{}, Translate(err)
+		return portepisode.AppEvent{}, Translate(err)
 	}
 	return row.ToApp(), nil
 }
 
 // Append：在服务行锁下分配 app_event_seq（同服务事件串行），返回 event_record_id。
-func (appEventRepo) Append(ctx context.Context, tx port.Tx, e port.AppEvent) (int64, error) {
+func (appEventRepo) Append(ctx context.Context, tx portshared.Tx, e portepisode.AppEvent) (int64, error) {
 	conn := txFrom(tx)
 	if _, err := conn.Exec(ctx, `SELECT 1 FROM system.services WHERE service_id=$1 FOR UPDATE`, e.ServiceID); err != nil {
 		return 0, Translate(err)
@@ -39,7 +40,7 @@ VALUES((SELECT coalesce(max(app_event_seq),0)+1 FROM system.episode_app_events W
 	return recordID, nil
 }
 
-func (appEventRepo) ListByBound(ctx context.Context, tx port.Tx, serviceID string, fromSeq, toSeq int64, limit int) ([]port.AppEvent, error) {
+func (appEventRepo) ListByBound(ctx context.Context, tx portshared.Tx, serviceID string, fromSeq, toSeq int64, limit int) ([]portepisode.AppEvent, error) {
 	if limit <= 0 {
 		limit = 100
 	}
@@ -52,7 +53,7 @@ LIMIT $4`, serviceID, fromSeq, toSeq, limit)
 		return nil, Translate(err)
 	}
 	defer rows.Close()
-	var out []port.AppEvent
+	var out []portepisode.AppEvent
 	for rows.Next() {
 		row, err := model.AppEventRow{}.Scan(rows)
 		if err != nil {

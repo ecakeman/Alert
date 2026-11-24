@@ -3,7 +3,7 @@ package model
 import (
 	"time"
 
-	"github.com/ecakeman/alert/internal/application/port"
+	porttask "github.com/ecakeman/alert/internal/application/port/task"
 )
 
 // OwnershipColumns 是 system.service_execution_ownership 的完整列清单（唯一来源）。
@@ -31,8 +31,8 @@ func (r OwnershipRow) Scan(row Scannable) (OwnershipRow, error) {
 }
 
 // ToApp 转换为 application 值类型。
-func (r OwnershipRow) ToApp() port.Ownership {
-	return port.Ownership{
+func (r OwnershipRow) ToApp() porttask.Ownership {
+	return porttask.Ownership{
 		ServiceID: r.ServiceID, TaskID: r.TaskID, EpisodeID: r.EpisodeID,
 		TaskType: r.TaskType, Generation: r.Generation,
 		LeaseUntil: r.LeaseUntil, AcquiredAt: r.AcquiredAt, UpdatedAt: r.UpdatedAt,

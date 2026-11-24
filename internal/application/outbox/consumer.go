@@ -3,7 +3,8 @@ package outbox
 import (
 	"context"
 
-	"github.com/ecakeman/alert/internal/application/port"
+	portoutbox "github.com/ecakeman/alert/internal/application/port/outbox"
+	portshared "github.com/ecakeman/alert/internal/application/port/shared"
 	"github.com/ecakeman/alert/internal/contracts"
 )
 
@@ -11,9 +12,9 @@ const auditConsumer = "system.audit.v1"
 
 // Deps 是幂等消费用例依赖。
 type ConsumerDeps struct {
-	UOW   port.UnitOfWork
-	Idem  port.ConsumerIdempotencyRepo
-	Clock port.Clock
+	UOW   portshared.UnitOfWork
+	Idem  portoutbox.ConsumerIdempotencyRepo
+	Clock portshared.Clock
 }
 
 // Consumer 承担“解码后校验 → 幂等预留 → 业务处理 → 完成标记”；
@@ -33,10 +34,10 @@ func (c *Consumer) Handle(ctx context.Context, ev contracts.Event) error {
 	}
 
 	var reserved bool
-	if err := c.deps.UOW.WithinTx(ctx, func(ctx context.Context, tx port.Tx) error {
+	if err := c.deps.UOW.WithinTx(ctx, func(ctx context.Context, tx portshared.Tx) error {
 		var err error
 		eventID := ev.EventID
-		reserved, err = c.deps.Idem.Reserve(ctx, tx, port.ConsumerIdempotency{
+		reserved, err = c.deps.Idem.Reserve(ctx, tx, portoutbox.ConsumerIdempotency{
 			Consumer:       auditConsumer,
 			IdempotencyKey: eventID,
 			EventID:        &eventID,
@@ -49,7 +50,7 @@ func (c *Consumer) Handle(ctx context.Context, ev contracts.Event) error {
 		return nil
 	}
 
-	return c.deps.UOW.WithinTx(ctx, func(ctx context.Context, tx port.Tx) error {
+	return c.deps.UOW.WithinTx(ctx, func(ctx context.Context, tx portshared.Tx) error {
 		return c.deps.Idem.MarkDone(ctx, tx, auditConsumer, ev.EventID, "OK", c.deps.Clock.Now())
 	})
 }

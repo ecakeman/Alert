@@ -3,7 +3,7 @@ package model
 import (
 	"time"
 
-	"github.com/ecakeman/alert/internal/application/port"
+	portoutbox "github.com/ecakeman/alert/internal/application/port/outbox"
 	"github.com/ecakeman/alert/internal/contracts"
 )
 
@@ -35,8 +35,8 @@ func (r OutboxRow) Scan(row Scannable) (OutboxRow, error) {
 }
 
 // ToApp 转换为 application 值类型。
-func (r OutboxRow) ToApp() port.OutboxRecord {
-	return port.OutboxRecord{
+func (r OutboxRow) ToApp() portoutbox.OutboxRecord {
+	return portoutbox.OutboxRecord{
 		Event:           r.Event,
 		DedupeKey:       r.DedupeKey,
 		PublishedAt:     r.PublishedAt,

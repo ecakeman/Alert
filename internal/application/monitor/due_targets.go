@@ -4,12 +4,14 @@ import (
 	"context"
 	"time"
 
-	"github.com/ecakeman/alert/internal/application/port"
+	portmonitor "github.com/ecakeman/alert/internal/application/port/monitor"
+	portService "github.com/ecakeman/alert/internal/application/port/service"
+	portshared "github.com/ecakeman/alert/internal/application/port/shared"
 )
 
 // snapshotFromTarget 把启用目标映射为调度快照。
-func snapshotFromTarget(t port.MonitorTarget) port.TargetSnapshot {
-	return port.TargetSnapshot{
+func snapshotFromTarget(t portService.MonitorTarget) portmonitor.TargetSnapshot {
+	return portmonitor.TargetSnapshot{
 		TargetID:             t.TargetID,
 		ServiceID:            t.ServiceID,
 		TargetKey:            t.TargetKey,
@@ -30,7 +32,7 @@ func snapshotFromTarget(t port.MonitorTarget) port.TargetSnapshot {
 }
 
 // due 判断目标是否到期：LastCheckAt 为空视为到期；否则 LastCheckAt+IntervalMS <= now。
-func due(t port.MonitorTarget, now time.Time) bool {
+func due(t portService.MonitorTarget, now time.Time) bool {
 	interval := time.Duration(t.IntervalMS) * time.Millisecond
 	if interval <= 0 {
 		interval = 30 * time.Second
@@ -43,9 +45,9 @@ func due(t port.MonitorTarget, now time.Time) bool {
 
 // DueTargets 读取启用目标并返回到期待探测的快照。
 // 调度编排属应用侧；infrastructure 只保留执行机制（worker/prober）。
-func (s *Service) DueTargets(ctx context.Context, now time.Time) ([]port.TargetSnapshot, error) {
-	var out []port.TargetSnapshot
-	err := s.deps.UOW.WithinTx(ctx, func(ctx context.Context, tx port.Tx) error {
+func (s *Service) DueTargets(ctx context.Context, now time.Time) ([]portmonitor.TargetSnapshot, error) {
+	var out []portmonitor.TargetSnapshot
+	err := s.deps.UOW.WithinTx(ctx, func(ctx context.Context, tx portshared.Tx) error {
 		targets, err := s.deps.Targets.ListEnabled(ctx, tx)
 		if err != nil {
 			return err

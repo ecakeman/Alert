@@ -15,7 +15,7 @@ import (
 	"github.com/ecakeman/alert/internal/application/health"
 	appmonitor "github.com/ecakeman/alert/internal/application/monitor"
 	appoutbox "github.com/ecakeman/alert/internal/application/outbox"
-	"github.com/ecakeman/alert/internal/application/port"
+	portmonitor "github.com/ecakeman/alert/internal/application/port/monitor"
 	appservice "github.com/ecakeman/alert/internal/application/service"
 	"github.com/ecakeman/alert/internal/config"
 	"github.com/ecakeman/alert/internal/infrastructure"
@@ -91,7 +91,7 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 	probeEngine := probe.NewEngine(probe.EngineDeps{
 		Source: monitorUC,
 		HTTP:   probe.NewHTTPProber(), TCP: probe.NewTCPProber(),
-		Handler: func(ctx context.Context, target port.TargetSnapshot, smp probe.Sample) error {
+		Handler: func(ctx context.Context, target portmonitor.TargetSnapshot, smp probe.Sample) error {
 			_, err := monitorUC.ApplySample(ctx, target.ServiceID, target.TargetID, target.ConfigGeneration, appmonitor.Sample{
 				CheckStatus: smp.CheckStatus, StatusClass: smp.StatusClass, ErrorClass: smp.ErrorClass,
 				LatencyMS: smp.LatencyMS, StateFingerprint: smp.StateFingerprint,

@@ -3,7 +3,7 @@ package model
 import (
 	"time"
 
-	"github.com/ecakeman/alert/internal/application/port"
+	porttask "github.com/ecakeman/alert/internal/application/port/task"
 )
 
 // TaskColumns 是 system.agent_tasks 的完整列清单（唯一来源）。
@@ -46,8 +46,8 @@ func (r TaskRow) Scan(row Scannable) (TaskRow, error) {
 }
 
 // ToApp 转换为 application 值类型。
-func (r TaskRow) ToApp() port.AgentTask {
-	return port.AgentTask{
+func (r TaskRow) ToApp() porttask.AgentTask {
+	return porttask.AgentTask{
 		TaskID: r.TaskID, EpisodeID: r.EpisodeID, ServiceID: r.ServiceID,
 		TaskType: r.TaskType, Status: r.Status, Generation: r.Generation,
 		Attempt: r.Attempt, MaxAttempts: r.MaxAttempts,
@@ -61,7 +61,7 @@ func (r TaskRow) ToApp() port.AgentTask {
 }
 
 // TaskRowFromApp 从 application 值类型构造行模型。
-func TaskRowFromApp(t port.AgentTask) TaskRow {
+func TaskRowFromApp(t porttask.AgentTask) TaskRow {
 	return TaskRow{
 		TaskID: t.TaskID, EpisodeID: t.EpisodeID, ServiceID: t.ServiceID,
 		TaskType: t.TaskType, Status: t.Status, Generation: t.Generation,

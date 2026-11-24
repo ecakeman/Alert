@@ -5,7 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ecakeman/alert/internal/application/port"
+	portoutbox "github.com/ecakeman/alert/internal/application/port/outbox"
+	portshared "github.com/ecakeman/alert/internal/application/port/shared"
 	"github.com/ecakeman/alert/internal/contracts"
 )
 
@@ -14,7 +15,7 @@ type fakeIdem struct {
 	marked   map[string]string
 }
 
-func (f *fakeIdem) Reserve(ctx context.Context, tx port.Tx, idem port.ConsumerIdempotency) (bool, error) {
+func (f *fakeIdem) Reserve(ctx context.Context, tx portshared.Tx, idem portoutbox.ConsumerIdempotency) (bool, error) {
 	if f.reserved[idem.IdempotencyKey] {
 		return false, nil
 	}
@@ -22,14 +23,14 @@ func (f *fakeIdem) Reserve(ctx context.Context, tx port.Tx, idem port.ConsumerId
 	return true, nil
 }
 
-func (f *fakeIdem) MarkDone(ctx context.Context, tx port.Tx, consumer, key, resultCode string, at time.Time) error {
+func (f *fakeIdem) MarkDone(ctx context.Context, tx portshared.Tx, consumer, key, resultCode string, at time.Time) error {
 	f.marked[key] = resultCode
 	return nil
 }
 
 type fakeUOW struct{}
 
-func (fakeUOW) WithinTx(ctx context.Context, fn func(context.Context, port.Tx) error) error {
+func (fakeUOW) WithinTx(ctx context.Context, fn func(context.Context, portshared.Tx) error) error {
 	return fn(ctx, nil)
 }
 

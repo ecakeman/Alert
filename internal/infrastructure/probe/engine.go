@@ -5,21 +5,23 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ecakeman/alert/internal/application/port"
+	portmonitor "github.com/ecakeman/alert/internal/application/port/monitor"
+	portService "github.com/ecakeman/alert/internal/application/port/service"
+	portshared "github.com/ecakeman/alert/internal/application/port/shared"
 )
 
 // SampleHandler 由 application 注入，负责把探测结果落库并驱动故障。
 // 入参为调度快照（含 ConfigGeneration），infrastructure 不持有仓储。
-type SampleHandler func(ctx context.Context, target port.TargetSnapshot, sample Sample) error
+type SampleHandler func(ctx context.Context, target portmonitor.TargetSnapshot, sample Sample) error
 
 type EngineDeps struct {
-	Source    port.TargetScheduleSource
+	Source    portmonitor.TargetScheduleSource
 	HTTP      Prober
 	TCP       Prober
 	Handler   SampleHandler
 	Workers   int
 	Capacity  int
-	Clock     port.Clock
+	Clock     portshared.Clock
 	ScanEvery time.Duration
 }
 
@@ -42,7 +44,7 @@ func NewEngine(deps EngineDeps) *Engine {
 }
 
 type job struct {
-	target port.TargetSnapshot
+	target portmonitor.TargetSnapshot
 }
 
 // Run 调度 + worker 池，直到 ctx 取消；取消时关闭队列并等待在途探测结束。
@@ -113,8 +115,8 @@ func (e *Engine) probeOne(ctx context.Context, j job) {
 }
 
 // toMonitorTarget 把调度快照适配为 prober 入参（prober 只读地址/类型/超时）。
-func toMonitorTarget(snap port.TargetSnapshot) port.MonitorTarget {
-	return port.MonitorTarget{
+func toMonitorTarget(snap portmonitor.TargetSnapshot) portService.MonitorTarget {
+	return portService.MonitorTarget{
 		TargetID:             snap.TargetID,
 		ServiceID:            snap.ServiceID,
 		TargetKey:            snap.TargetKey,

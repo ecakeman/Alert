@@ -12,7 +12,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/ecakeman/alert/internal/application/apperr"
-	"github.com/ecakeman/alert/internal/application/port"
+	portService "github.com/ecakeman/alert/internal/application/port/service"
+	portshared "github.com/ecakeman/alert/internal/application/port/shared"
 	appservice "github.com/ecakeman/alert/internal/application/service"
 	"github.com/ecakeman/alert/internal/infrastructure/persistence/postgres"
 )
@@ -106,7 +107,7 @@ func TestListSummariesStatus(t *testing.T) {
 		t.Fatalf("create: %v", err)
 	}
 
-	pageUnknown, err := uc.ListSummaries(ctx, port.ServiceFilter{Status: "UNKNOWN", Limit: 200})
+	pageUnknown, err := uc.ListSummaries(ctx, portService.ServiceFilter{Status: "UNKNOWN", Limit: 200})
 	if err != nil {
 		t.Fatalf("list unknown: %v", err)
 	}
@@ -120,15 +121,15 @@ func TestListSummariesStatus(t *testing.T) {
 		t.Fatalf("UNKNOWN filter should match new service: total=%d found=%v", pageUnknown.Total, foundUnknown)
 	}
 
-	if err := postgres.NewUnitOfWork(pool).WithinTx(ctx, func(ctx context.Context, tx port.Tx) error {
-		return postgres.NewSourceStateRepo().Upsert(ctx, tx, port.SourceState{
+	if err := postgres.NewUnitOfWork(pool).WithinTx(ctx, func(ctx context.Context, tx portshared.Tx) error {
+		return postgres.NewSourceStateRepo().Upsert(ctx, tx, portService.SourceState{
 			ServiceID: view.Service.ServiceID, SourceType: "MONITOR", Status: "NORMAL",
 		})
 	}); err != nil {
 		t.Fatalf("upsert source: %v", err)
 	}
 
-	pageNormal, err := uc.ListSummaries(ctx, port.ServiceFilter{Status: "NORMAL", Limit: 200})
+	pageNormal, err := uc.ListSummaries(ctx, portService.ServiceFilter{Status: "NORMAL", Limit: 200})
 	if err != nil {
 		t.Fatalf("list normal: %v", err)
 	}
@@ -142,7 +143,7 @@ func TestListSummariesStatus(t *testing.T) {
 		t.Fatal("NORMAL filter should match after upsert")
 	}
 
-	pageAbnormal, err := uc.ListSummaries(ctx, port.ServiceFilter{Status: "ABNORMAL", Limit: 200})
+	pageAbnormal, err := uc.ListSummaries(ctx, portService.ServiceFilter{Status: "ABNORMAL", Limit: 200})
 	if err != nil {
 		t.Fatalf("list abnormal: %v", err)
 	}

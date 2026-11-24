@@ -4,14 +4,15 @@ import (
 	"context"
 	"time"
 
-	"github.com/ecakeman/alert/internal/application/port"
+	portoutbox "github.com/ecakeman/alert/internal/application/port/outbox"
+	portshared "github.com/ecakeman/alert/internal/application/port/shared"
 )
 
 type Deps struct {
-	UOW          port.UnitOfWork
-	Outbox       port.OutboxRepo
-	Sender       port.EventSender
-	Clock        port.Clock
+	UOW          portshared.UnitOfWork
+	Outbox       portoutbox.OutboxRepo
+	Sender       portoutbox.EventSender
+	Clock        portshared.Clock
 	Owner        string
 	Batch        int
 	ClaimLease   time.Duration
@@ -31,8 +32,8 @@ func (p *Publisher) RunOnce(ctx context.Context) (int, error) {
 		p.deps.Batch = 16
 	}
 
-	var batch []port.OutboxRecord
-	err := p.deps.UOW.WithinTx(ctx, func(ctx context.Context, tx port.Tx) error {
+	var batch []portoutbox.OutboxRecord
+	err := p.deps.UOW.WithinTx(ctx, func(ctx context.Context, tx portshared.Tx) error {
 		var err error
 		batch, err = p.deps.Outbox.Claim(ctx, tx, p.deps.Owner, p.deps.Clock.Now().Add(p.deps.ClaimLease), p.deps.Batch)
 		return err
@@ -56,13 +57,13 @@ func (p *Publisher) RunOnce(ctx context.Context) (int, error) {
 			if nextRetry.Before(p.deps.Clock.Now()) {
 				nextRetry = p.deps.Clock.Now().Add(time.Second)
 			}
-			_ = p.deps.UOW.WithinTx(ctx, func(ctx context.Context, tx port.Tx) error {
+			_ = p.deps.UOW.WithinTx(ctx, func(ctx context.Context, tx portshared.Tx) error {
 				return p.deps.Outbox.MarkFailed(ctx, tx, e.EventID, nextRetry, sendErr.Error())
 			})
 			continue
 		}
 
-		if ackErr := p.deps.UOW.WithinTx(ctx, func(ctx context.Context, tx port.Tx) error {
+		if ackErr := p.deps.UOW.WithinTx(ctx, func(ctx context.Context, tx portshared.Tx) error {
 			return p.deps.Outbox.MarkPublished(ctx, tx, e.EventID, p.deps.Clock.Now())
 		}); ackErr == nil {
 			sent++

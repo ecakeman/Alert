@@ -7,7 +7,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	appdashboard "github.com/ecakeman/alert/internal/application/dashboard"
-	"github.com/ecakeman/alert/internal/application/port"
+	portdashboard "github.com/ecakeman/alert/internal/application/port/dashboard"
 	"github.com/ecakeman/alert/internal/transport/http/dto"
 	"github.com/ecakeman/alert/internal/transport/http/response"
 )
@@ -17,7 +17,7 @@ type Dashboard struct{ uc *appdashboard.Service }
 
 func NewDashboard(uc *appdashboard.Service) *Dashboard { return &Dashboard{uc: uc} }
 
-func toRecentEpisodeSummary(r port.RecentEpisode) dto.EpisodeSummary {
+func toRecentEpisodeSummary(r portdashboard.RecentEpisode) dto.EpisodeSummary {
 	out := dto.EpisodeSummary{
 		EpisodeID: r.EpisodeID, ServiceID: r.ServiceID, ServiceName: r.ServiceName,
 		Status: r.Status, ResolutionPending: r.ResolutionPending, StartedBy: r.StartedBy,

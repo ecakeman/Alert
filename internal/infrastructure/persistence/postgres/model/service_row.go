@@ -3,7 +3,7 @@ package model
 import (
 	"time"
 
-	"github.com/ecakeman/alert/internal/application/port"
+	portService "github.com/ecakeman/alert/internal/application/port/service"
 )
 
 // ServiceColumns 是 system.services 的完整列清单（唯一来源）。
@@ -33,8 +33,8 @@ func (r ServiceRow) Scan(row Scannable) (ServiceRow, error) {
 }
 
 // ToApp 转换为 application 值类型。
-func (r ServiceRow) ToApp() port.Service {
-	return port.Service{
+func (r ServiceRow) ToApp() portService.Service {
+	return portService.Service{
 		ServiceID: r.ServiceID, ServiceKey: r.ServiceKey, Name: r.Name,
 		Description: r.Description, Enabled: r.Enabled,
 		MonitorAggregationMode: r.MonitorAggregationMode,
@@ -43,7 +43,7 @@ func (r ServiceRow) ToApp() port.Service {
 }
 
 // ServiceRowFromApp 从 application 值类型构造行模型。
-func ServiceRowFromApp(s port.Service) ServiceRow {
+func ServiceRowFromApp(s portService.Service) ServiceRow {
 	return ServiceRow{
 		ServiceID: s.ServiceID, ServiceKey: s.ServiceKey, Name: s.Name,
 		Description: s.Description, Enabled: s.Enabled,

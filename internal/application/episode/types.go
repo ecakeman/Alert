@@ -3,7 +3,9 @@ package episode
 import (
 	"time"
 
-	"github.com/ecakeman/alert/internal/application/port"
+	portepisode "github.com/ecakeman/alert/internal/application/port/episode"
+	portService "github.com/ecakeman/alert/internal/application/port/service"
+	porttask "github.com/ecakeman/alert/internal/application/port/task"
 )
 
 type AppEventInput struct {
@@ -16,18 +18,18 @@ type AppEventInput struct {
 }
 
 type EpisodeView struct {
-	Episode     port.Episode
-	Sources     []port.SourceState
-	ActiveTask  *port.AgentTask
+	Episode     portepisode.Episode
+	Sources     []portService.SourceState
+	ActiveTask  *porttask.AgentTask
 	ServiceName string
 }
 
 type AppendEventResult struct {
-	Event    port.AppEvent
+	Event    portepisode.AppEvent
 	Appended bool
 }
 type EpisodeSummaryData struct {
-	Episode            port.Episode
+	Episode            portepisode.Episode
 	ServiceName        string
 	ActiveTaskStatus   string
 	ActiveTaskType     string

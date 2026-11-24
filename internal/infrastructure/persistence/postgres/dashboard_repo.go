@@ -4,22 +4,23 @@ import (
 	"context"
 	"time"
 
-	"github.com/ecakeman/alert/internal/application/port"
+	portdashboard "github.com/ecakeman/alert/internal/application/port/dashboard"
+	portshared "github.com/ecakeman/alert/internal/application/port/shared"
 )
 
 type dashboardRepo struct{}
 
-func NewDashboardRepo() port.DashboardRepo { return dashboardRepo{} }
+func NewDashboardRepo() portdashboard.DashboardRepo { return dashboardRepo{} }
 
 // Summary 单事务内 3 组查询：13 项计数、最近 5 条故障、window 窗口小时趋势。
-func (dashboardRepo) Summary(ctx context.Context, tx port.Tx, now time.Time, window time.Duration) (port.DashboardSummary, error) {
-	s := port.DashboardSummary{
+func (dashboardRepo) Summary(ctx context.Context, tx portshared.Tx, now time.Time, window time.Duration) (portdashboard.DashboardSummary, error) {
+	s := portdashboard.DashboardSummary{
 		GeneratedAt: now,
 		Services:    map[string]int{},
 		Targets:     map[string]int{},
 		Episodes:    map[string]int{},
-		Recent:      []port.RecentEpisode{},
-		Trend:       []port.TrendPoint{},
+		Recent:      []portdashboard.RecentEpisode{},
+		Trend:       []portdashboard.TrendPoint{},
 	}
 
 	var svcTotal, svcEnabled, svcDisabled, svcNormal, svcAbnormal, svcUnknown int
@@ -85,7 +86,7 @@ LIMIT 5`)
 	}
 	defer recentRows.Close()
 	for recentRows.Next() {
-		var r port.RecentEpisode
+		var r portdashboard.RecentEpisode
 		if err := recentRows.Scan(&r.EpisodeID, &r.ServiceID, &r.ServiceName, &r.Status,
 			&r.ResolutionPending, &r.StartedBy, &r.StartedAt, &r.ResolvedAt, &r.ArchivedAt,
 			&r.InputVersion, &r.ProcessedInputVersion, &r.UpdatedAt,
@@ -110,7 +111,7 @@ GROUP BY 1 ORDER BY 1`, int(window.Seconds()))
 	}
 	defer trendRows.Close()
 	for trendRows.Next() {
-		var p port.TrendPoint
+		var p portdashboard.TrendPoint
 		if err := trendRows.Scan(&p.Bucket, &p.Success, &p.Failure); err != nil {
 			return s, Translate(err)
 		}

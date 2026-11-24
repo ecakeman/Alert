@@ -4,12 +4,13 @@ import (
 	"context"
 	"time"
 
-	"github.com/ecakeman/alert/internal/application/port"
+	portService "github.com/ecakeman/alert/internal/application/port/service"
+	portshared "github.com/ecakeman/alert/internal/application/port/shared"
 	"github.com/ecakeman/alert/internal/infrastructure/persistence/postgres/model"
 )
 
 // ListEnabled 返回所有启用且未删除的目标（调度器输入）。
-func (targetRepo) ListEnabled(ctx context.Context, tx port.Tx) ([]port.MonitorTarget, error) {
+func (targetRepo) ListEnabled(ctx context.Context, tx portshared.Tx) ([]portService.MonitorTarget, error) {
 	rows, err := txFrom(tx).Query(ctx, `
 SELECT `+model.TargetColumns+` FROM system.service_monitor_targets
 WHERE enabled AND deleted_at IS NULL
@@ -18,7 +19,7 @@ ORDER BY service_id, target_key`)
 		return nil, Translate(err)
 	}
 	defer rows.Close()
-	var out []port.MonitorTarget
+	var out []portService.MonitorTarget
 	for rows.Next() {
 		row, err := model.TargetRow{}.Scan(rows)
 		if err != nil {
@@ -30,7 +31,7 @@ ORDER BY service_id, target_key`)
 }
 
 // UpdateProbeResult 更新目标聚合计数与状态（探测结果落地）。
-func (targetRepo) UpdateProbeResult(ctx context.Context, tx port.Tx, targetID, status string, failures, successes int, lastCheckAt time.Time) error {
+func (targetRepo) UpdateProbeResult(ctx context.Context, tx portshared.Tx, targetID, status string, failures, successes int, lastCheckAt time.Time) error {
 	_, err := txFrom(tx).Exec(ctx, `
 UPDATE system.service_monitor_targets SET
   status=$2, consecutive_failures=$3, consecutive_successes=$4, last_check_at=$5, updated_at=now()

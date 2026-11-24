@@ -3,7 +3,7 @@ package model
 import (
 	"time"
 
-	"github.com/ecakeman/alert/internal/application/port"
+	porttask "github.com/ecakeman/alert/internal/application/port/task"
 )
 
 // ArtifactColumns 是 system.episode_artifact_refs 的完整列清单（唯一来源）。
@@ -36,8 +36,8 @@ func (r ArtifactRow) Scan(row Scannable) (ArtifactRow, error) {
 }
 
 // ToApp 转换为 application 值类型。
-func (r ArtifactRow) ToApp() port.ArtifactRef {
-	return port.ArtifactRef{
+func (r ArtifactRow) ToApp() porttask.ArtifactRef {
+	return porttask.ArtifactRef{
 		ArtifactRefID: r.ArtifactRefID, EpisodeID: r.EpisodeID, TaskID: r.TaskID,
 		Generation: r.Generation, ArtifactType: r.ArtifactType, ArtifactVersion: r.ArtifactVersion,
 		ContentHash: r.ContentHash, ContentType: r.ContentType, StorageKey: r.StorageKey,
@@ -46,7 +46,7 @@ func (r ArtifactRow) ToApp() port.ArtifactRef {
 }
 
 // ArtifactRowFromApp 从 application 值类型构造行模型。
-func ArtifactRowFromApp(a port.ArtifactRef) ArtifactRow {
+func ArtifactRowFromApp(a porttask.ArtifactRef) ArtifactRow {
 	return ArtifactRow{
 		ArtifactRefID: a.ArtifactRefID, EpisodeID: a.EpisodeID, TaskID: a.TaskID,
 		Generation: a.Generation, ArtifactType: a.ArtifactType, ArtifactVersion: a.ArtifactVersion,

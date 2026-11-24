@@ -3,7 +3,7 @@ package model
 import (
 	"time"
 
-	"github.com/ecakeman/alert/internal/application/port"
+	portService "github.com/ecakeman/alert/internal/application/port/service"
 )
 
 // TargetColumns 是 system.service_monitor_targets 的完整列清单（唯一来源）。
@@ -46,8 +46,8 @@ func (r TargetRow) Scan(row Scannable) (TargetRow, error) {
 }
 
 // ToApp 转换为 application 值类型。
-func (r TargetRow) ToApp() port.MonitorTarget {
-	return port.MonitorTarget{
+func (r TargetRow) ToApp() portService.MonitorTarget {
+	return portService.MonitorTarget{
 		TargetID: r.TargetID, ServiceID: r.ServiceID, TargetKey: r.TargetKey,
 		TargetName: r.TargetName, Address: r.Address, TargetType: r.TargetType,
 		Config: r.Config, IntervalMS: r.IntervalMS, TimeoutMS: r.TimeoutMS,
@@ -59,7 +59,7 @@ func (r TargetRow) ToApp() port.MonitorTarget {
 }
 
 // TargetRowFromApp 从 application 值类型构造行模型。
-func TargetRowFromApp(t port.MonitorTarget) TargetRow {
+func TargetRowFromApp(t portService.MonitorTarget) TargetRow {
 	return TargetRow{
 		TargetID: t.TargetID, ServiceID: t.ServiceID, TargetKey: t.TargetKey,
 		TargetName: t.TargetName, Address: t.Address, TargetType: t.TargetType,

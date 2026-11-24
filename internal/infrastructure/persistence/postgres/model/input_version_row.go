@@ -3,7 +3,7 @@ package model
 import (
 	"time"
 
-	"github.com/ecakeman/alert/internal/application/port"
+	portepisode "github.com/ecakeman/alert/internal/application/port/episode"
 )
 
 // InputVersionColumns 是 system.episode_input_versions 的完整列清单（唯一来源）。
@@ -30,8 +30,8 @@ func (r InputVersionRow) Scan(row Scannable) (InputVersionRow, error) {
 }
 
 // ToApp 转换为 application 值类型。
-func (r InputVersionRow) ToApp() port.InputVersion {
-	return port.InputVersion{
+func (r InputVersionRow) ToApp() portepisode.InputVersion {
+	return portepisode.InputVersion{
 		EpisodeID: r.EpisodeID, InputVersion: r.InputVersion, InputHash: r.InputHash,
 		MonitorProjection: r.MonitorProjection, MonitorWatermark: r.MonitorWatermark,
 		AppEventWatermark: r.AppEventWatermark,
@@ -39,7 +39,7 @@ func (r InputVersionRow) ToApp() port.InputVersion {
 }
 
 // InputVersionRowFromApp 从 application 值类型构造行模型。
-func InputVersionRowFromApp(v port.InputVersion) InputVersionRow {
+func InputVersionRowFromApp(v portepisode.InputVersion) InputVersionRow {
 	return InputVersionRow{
 		EpisodeID: v.EpisodeID, InputVersion: v.InputVersion, InputHash: v.InputHash,
 		MonitorProjection: v.MonitorProjection, MonitorWatermark: v.MonitorWatermark,

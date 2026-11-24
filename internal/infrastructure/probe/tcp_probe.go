@@ -5,7 +5,7 @@ import (
 	"net"
 	"time"
 
-	"github.com/ecakeman/alert/internal/application/port"
+	portService "github.com/ecakeman/alert/internal/application/port/service"
 )
 
 // TCPProber 用真实 net.Dialer 探测 TCP 连通性。
@@ -13,7 +13,7 @@ type TCPProber struct{}
 
 func NewTCPProber() *TCPProber { return &TCPProber{} }
 
-func (p *TCPProber) Probe(ctx context.Context, target port.MonitorTarget) Sample {
+func (p *TCPProber) Probe(ctx context.Context, target portService.MonitorTarget) Sample {
 	timeout := time.Duration(target.TimeoutMS) * time.Millisecond
 	if timeout <= 0 {
 		timeout = 5 * time.Second

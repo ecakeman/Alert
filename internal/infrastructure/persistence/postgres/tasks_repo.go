@@ -4,15 +4,16 @@ import (
 	"context"
 	"time"
 
-	"github.com/ecakeman/alert/internal/application/port"
+	portshared "github.com/ecakeman/alert/internal/application/port/shared"
+	porttask "github.com/ecakeman/alert/internal/application/port/task"
 	"github.com/ecakeman/alert/internal/infrastructure/persistence/postgres/model"
 )
 
 type taskRepo struct{}
 
-func NewTaskRepo() port.TaskRepo { return taskRepo{} }
+func NewTaskRepo() porttask.TaskRepo { return taskRepo{} }
 
-func (taskRepo) Create(ctx context.Context, tx port.Tx, t port.AgentTask) error {
+func (taskRepo) Create(ctx context.Context, tx portshared.Tx, t porttask.AgentTask) error {
 	row := model.TaskRowFromApp(t)
 	_, err := txFrom(tx).Exec(ctx, `
 INSERT INTO system.agent_tasks(task_id,episode_id,service_id,task_type,status,generation,attempt,max_attempts,lease_until,next_retry_at,input_version_from,input_version_to,monitor_watermark,app_event_watermark,deadline_at,error_code,error_message,created_at,updated_at)
@@ -24,16 +25,16 @@ VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)`,
 	return Translate(err)
 }
 
-func (taskRepo) Get(ctx context.Context, tx port.Tx, taskID string) (port.AgentTask, error) {
+func (taskRepo) Get(ctx context.Context, tx portshared.Tx, taskID string) (porttask.AgentTask, error) {
 	row, err := model.TaskRow{}.Scan(txFrom(tx).QueryRow(ctx,
 		`SELECT `+model.TaskColumns+` FROM system.agent_tasks WHERE task_id=$1`, taskID))
 	if err != nil {
-		return port.AgentTask{}, Translate(err)
+		return porttask.AgentTask{}, Translate(err)
 	}
 	return row.ToApp(), nil
 }
 
-func (taskRepo) ListActiveByEpisode(ctx context.Context, tx port.Tx, episodeID string) ([]port.AgentTask, error) {
+func (taskRepo) ListActiveByEpisode(ctx context.Context, tx portshared.Tx, episodeID string) ([]porttask.AgentTask, error) {
 	rows, err := txFrom(tx).Query(ctx, `
 SELECT `+model.TaskColumns+` FROM system.agent_tasks
 WHERE episode_id=$1 AND status IN ('PENDING','DISPATCHED','RUNNING','RETRY_WAIT')
@@ -42,7 +43,7 @@ ORDER BY created_at DESC`, episodeID)
 		return nil, Translate(err)
 	}
 	defer rows.Close()
-	var out []port.AgentTask
+	var out []porttask.AgentTask
 	for rows.Next() {
 		row, err := model.TaskRow{}.Scan(rows)
 		if err != nil {
@@ -54,7 +55,7 @@ ORDER BY created_at DESC`, episodeID)
 }
 
 // UpdateCAS：以 task_id + generation + 允许状态 + 有效租约为条件，返回受影响行数。
-func (taskRepo) UpdateCAS(ctx context.Context, tx port.Tx, taskID string, generation int64, expectedStatuses []string, patch port.TaskPatch) (int64, error) {
+func (taskRepo) UpdateCAS(ctx context.Context, tx portshared.Tx, taskID string, generation int64, expectedStatuses []string, patch porttask.TaskPatch) (int64, error) {
 	tag, err := txFrom(tx).Exec(ctx, `
 UPDATE system.agent_tasks SET
   status = COALESCE($4, status),
@@ -76,7 +77,7 @@ WHERE task_id=$1 AND generation=$2 AND status = ANY($3)
 	return tag.RowsAffected(), nil
 }
 
-func (taskRepo) ListDueRetry(ctx context.Context, tx port.Tx, now time.Time, limit int) ([]port.AgentTask, error) {
+func (taskRepo) ListDueRetry(ctx context.Context, tx portshared.Tx, now time.Time, limit int) ([]porttask.AgentTask, error) {
 	if limit <= 0 {
 		limit = 32
 	}
@@ -88,7 +89,7 @@ ORDER BY next_retry_at LIMIT $2`, utc(now), limit)
 		return nil, Translate(err)
 	}
 	defer rows.Close()
-	var out []port.AgentTask
+	var out []porttask.AgentTask
 	for rows.Next() {
 		row, err := model.TaskRow{}.Scan(rows)
 		if err != nil {
@@ -99,7 +100,7 @@ ORDER BY next_retry_at LIMIT $2`, utc(now), limit)
 	return out, Translate(rows.Err())
 }
 
-func (taskRepo) ListDispatchPending(ctx context.Context, tx port.Tx, limit int) ([]port.AgentTask, error) {
+func (taskRepo) ListDispatchPending(ctx context.Context, tx portshared.Tx, limit int) ([]porttask.AgentTask, error) {
 	if limit <= 0 {
 		limit = 32
 	}
@@ -110,7 +111,7 @@ WHERE status='PENDING' ORDER BY created_at LIMIT $1`, limit)
 		return nil, Translate(err)
 	}
 	defer rows.Close()
-	var out []port.AgentTask
+	var out []porttask.AgentTask
 	for rows.Next() {
 		row, err := model.TaskRow{}.Scan(rows)
 		if err != nil {

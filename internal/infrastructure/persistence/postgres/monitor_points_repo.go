@@ -3,15 +3,16 @@ package postgres
 import (
 	"context"
 
-	"github.com/ecakeman/alert/internal/application/port"
+	portmonitor "github.com/ecakeman/alert/internal/application/port/monitor"
+	portshared "github.com/ecakeman/alert/internal/application/port/shared"
 	"github.com/ecakeman/alert/internal/infrastructure/persistence/postgres/model"
 )
 
 type monitorPointRepo struct{}
 
-func NewMonitorPointRepo() port.MonitorPointRepo { return monitorPointRepo{} }
+func NewMonitorPointRepo() portmonitor.MonitorPointRepo { return monitorPointRepo{} }
 
-func (monitorPointRepo) Append(ctx context.Context, tx port.Tx, p port.MonitorPoint) (int64, error) {
+func (monitorPointRepo) Append(ctx context.Context, tx portshared.Tx, p portmonitor.MonitorPoint) (int64, error) {
 	row := model.MonitorPointRowFromApp(p)
 	var seq int64
 	err := txFrom(tx).QueryRow(ctx, `
@@ -25,7 +26,7 @@ VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING point_seq`,
 	return seq, nil
 }
 
-func (monitorPointRepo) ListByBound(ctx context.Context, tx port.Tx, serviceID string, fromSeq, toSeq int64, limit int) ([]port.MonitorPoint, error) {
+func (monitorPointRepo) ListByBound(ctx context.Context, tx portshared.Tx, serviceID string, fromSeq, toSeq int64, limit int) ([]portmonitor.MonitorPoint, error) {
 	if limit <= 0 {
 		limit = 100
 	}
@@ -38,7 +39,7 @@ LIMIT $4`, serviceID, fromSeq, toSeq, limit)
 		return nil, Translate(err)
 	}
 	defer rows.Close()
-	var out []port.MonitorPoint
+	var out []portmonitor.MonitorPoint
 	for rows.Next() {
 		row, err := model.MonitorPointRow{}.Scan(rows)
 		if err != nil {
@@ -49,7 +50,7 @@ LIMIT $4`, serviceID, fromSeq, toSeq, limit)
 	return out, Translate(rows.Err())
 }
 
-func (monitorPointRepo) LatestSeqByService(ctx context.Context, tx port.Tx, serviceID string) (int64, error) {
+func (monitorPointRepo) LatestSeqByService(ctx context.Context, tx portshared.Tx, serviceID string) (int64, error) {
 	var seq int64
 	err := txFrom(tx).QueryRow(ctx,
 		`SELECT coalesce(max(point_seq),0) FROM system.service_monitor_points WHERE service_id=$1`, serviceID).Scan(&seq)

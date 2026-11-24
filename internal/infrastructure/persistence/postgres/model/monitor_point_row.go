@@ -3,7 +3,7 @@ package model
 import (
 	"time"
 
-	"github.com/ecakeman/alert/internal/application/port"
+	portmonitor "github.com/ecakeman/alert/internal/application/port/monitor"
 )
 
 // MonitorPointColumns 是 system.service_monitor_points 的完整列清单（唯一来源）。
@@ -37,8 +37,8 @@ func (r MonitorPointRow) Scan(row Scannable) (MonitorPointRow, error) {
 }
 
 // ToApp 转换为 application 值类型。
-func (r MonitorPointRow) ToApp() port.MonitorPoint {
-	return port.MonitorPoint{
+func (r MonitorPointRow) ToApp() portmonitor.MonitorPoint {
+	return portmonitor.MonitorPoint{
 		PointSeq: r.PointSeq, ServiceID: r.ServiceID, TargetID: r.TargetID,
 		TargetKey: r.TargetKey, TargetType: r.TargetType,
 		ObservedAt: r.ObservedAt, ReceivedAt: r.ReceivedAt,
@@ -48,7 +48,7 @@ func (r MonitorPointRow) ToApp() port.MonitorPoint {
 }
 
 // MonitorPointRowFromApp 从 application 值类型构造行模型（不含自增 point_seq）。
-func MonitorPointRowFromApp(p port.MonitorPoint) MonitorPointRow {
+func MonitorPointRowFromApp(p portmonitor.MonitorPoint) MonitorPointRow {
 	return MonitorPointRow{
 		ServiceID: p.ServiceID, TargetID: p.TargetID, TargetKey: p.TargetKey,
 		TargetType: p.TargetType, ObservedAt: p.ObservedAt, ReceivedAt: p.ReceivedAt,

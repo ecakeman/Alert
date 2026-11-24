@@ -1,6 +1,9 @@
 package service
 
-import "github.com/ecakeman/alert/internal/application/port"
+import (
+	portService "github.com/ecakeman/alert/internal/application/port/service"
+	portshared "github.com/ecakeman/alert/internal/application/port/shared"
+)
 
 type TargetInput struct {
 	TargetKey         string
@@ -25,12 +28,12 @@ type CreateServiceInput struct {
 }
 
 type ServiceView struct {
-	Service port.Service
-	Targets []port.MonitorTarget
+	Service portService.Service
+	Targets []portService.MonitorTarget
 }
 
 // ServiceSummaryPage 是列表读模型：分页元信息 + 过滤后的条目（total 与过滤口径一致）。
 type ServiceSummaryPage struct {
-	port.Page
+	portshared.Page
 	Items []ServiceSummaryData
 }

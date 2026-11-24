@@ -5,13 +5,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ecakeman/alert/internal/application/port"
+	portService "github.com/ecakeman/alert/internal/application/port/service"
+	portshared "github.com/ecakeman/alert/internal/application/port/shared"
 )
 
-type fakeTargetRepo struct{ all []port.MonitorTarget }
+type fakeTargetRepo struct{ all []portService.MonitorTarget }
 
-func (f fakeTargetRepo) ListEnabled(ctx context.Context, tx port.Tx) ([]port.MonitorTarget, error) {
-	var out []port.MonitorTarget
+func (f fakeTargetRepo) ListEnabled(ctx context.Context, tx portshared.Tx) ([]portService.MonitorTarget, error) {
+	var out []portService.MonitorTarget
 	for _, t := range f.all {
 		if t.Enabled { // 模拟 ListEnabled SQL：已排除禁用/删除
 			out = append(out, t)
@@ -20,22 +21,26 @@ func (f fakeTargetRepo) ListEnabled(ctx context.Context, tx port.Tx) ([]port.Mon
 	return out, nil
 }
 
-func (fakeTargetRepo) Create(context.Context, port.Tx, port.MonitorTarget) error { return nil }
-func (fakeTargetRepo) Get(context.Context, port.Tx, string) (port.MonitorTarget, error) {
-	return port.MonitorTarget{}, nil
-}
-func (fakeTargetRepo) ListByService(context.Context, port.Tx, string, bool) ([]port.MonitorTarget, error) {
-	return nil, nil
-}
-func (fakeTargetRepo) Patch(context.Context, port.Tx, string, port.TargetPatch) error { return nil }
-func (fakeTargetRepo) UpdateProbeResult(context.Context, port.Tx, string, string, int, int, time.Time) error {
+func (fakeTargetRepo) Create(context.Context, portshared.Tx, portService.MonitorTarget) error {
 	return nil
 }
-func (fakeTargetRepo) SoftDelete(context.Context, port.Tx, string, time.Time) error { return nil }
+func (fakeTargetRepo) Get(context.Context, portshared.Tx, string) (portService.MonitorTarget, error) {
+	return portService.MonitorTarget{}, nil
+}
+func (fakeTargetRepo) ListByService(context.Context, portshared.Tx, string, bool) ([]portService.MonitorTarget, error) {
+	return nil, nil
+}
+func (fakeTargetRepo) Patch(context.Context, portshared.Tx, string, portService.TargetPatch) error {
+	return nil
+}
+func (fakeTargetRepo) UpdateProbeResult(context.Context, portshared.Tx, string, string, int, int, time.Time) error {
+	return nil
+}
+func (fakeTargetRepo) SoftDelete(context.Context, portshared.Tx, string, time.Time) error { return nil }
 
 type fakeUOW struct{}
 
-func (fakeUOW) WithinTx(ctx context.Context, fn func(context.Context, port.Tx) error) error {
+func (fakeUOW) WithinTx(ctx context.Context, fn func(context.Context, portshared.Tx) error) error {
 	return fn(ctx, nil)
 }
 
@@ -45,7 +50,7 @@ func ptrTime(t time.Time) *time.Time { return &t }
 func TestDueTargets(t *testing.T) {
 	now := time.Now().UTC()
 
-	due := port.MonitorTarget{
+	due := portService.MonitorTarget{
 		TargetID: "t1", ServiceID: "s1", TargetKey: "ok", TargetType: "HTTP",
 		Address: "http://x", IntervalMS: 1000, TimeoutMS: 500,
 		FailureThreshold: 3, RecoveryThreshold: 2, IsRequired: true,
@@ -66,7 +71,7 @@ func TestDueTargets(t *testing.T) {
 	neverChecked.TargetKey = "new"
 	neverChecked.LastCheckAt = nil // 从未探测，视为到期
 
-	uc := New(Deps{UOW: fakeUOW{}, Targets: fakeTargetRepo{all: []port.MonitorTarget{due, notDue, disabled, neverChecked}}})
+	uc := New(Deps{UOW: fakeUOW{}, Targets: fakeTargetRepo{all: []portService.MonitorTarget{due, notDue, disabled, neverChecked}}})
 
 	snaps, err := uc.DueTargets(context.Background(), now)
 	if err != nil {

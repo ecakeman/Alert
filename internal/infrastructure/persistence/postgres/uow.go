@@ -8,10 +8,10 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/ecakeman/alert/internal/application/port"
+	portshared "github.com/ecakeman/alert/internal/application/port/shared"
 )
 
-// UnitOfWork 实现 port.UnitOfWork：一次用例一个事务（默认 READ COMMITTED），
+// UnitOfWork 实现 portshared.UnitOfWork：一次用例一个事务（默认 READ COMMITTED），
 // 对序列化失败 40001 / 死锁 40P01 做一次重试。
 type UnitOfWork struct {
 	pool *pgxpool.Pool
@@ -21,7 +21,7 @@ func NewUnitOfWork(pool *pgxpool.Pool) *UnitOfWork {
 	return &UnitOfWork{pool: pool}
 }
 
-func (u *UnitOfWork) WithinTx(ctx context.Context, fn func(context.Context, port.Tx) error) error {
+func (u *UnitOfWork) WithinTx(ctx context.Context, fn func(context.Context, portshared.Tx) error) error {
 	var lastErr error
 	for attempt := 0; attempt < 2; attempt++ {
 		lastErr = u.runOnce(ctx, fn)
@@ -35,7 +35,7 @@ func (u *UnitOfWork) WithinTx(ctx context.Context, fn func(context.Context, port
 	return lastErr
 }
 
-func (u *UnitOfWork) runOnce(ctx context.Context, fn func(context.Context, port.Tx) error) error {
+func (u *UnitOfWork) runOnce(ctx context.Context, fn func(context.Context, portshared.Tx) error) error {
 	tx, err := u.pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return Translate(err)

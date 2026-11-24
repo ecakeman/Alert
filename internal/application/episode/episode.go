@@ -8,24 +8,29 @@ import (
 	"errors"
 
 	"github.com/ecakeman/alert/internal/application/apperr"
-	"github.com/ecakeman/alert/internal/application/port"
+	portepisode "github.com/ecakeman/alert/internal/application/port/episode"
+	portmonitor "github.com/ecakeman/alert/internal/application/port/monitor"
+	portoutbox "github.com/ecakeman/alert/internal/application/port/outbox"
+	portService "github.com/ecakeman/alert/internal/application/port/service"
+	portshared "github.com/ecakeman/alert/internal/application/port/shared"
+	porttask "github.com/ecakeman/alert/internal/application/port/task"
 	"github.com/ecakeman/alert/internal/contracts"
 	"github.com/ecakeman/alert/internal/domain"
 )
 
 type Deps struct {
-	UOW           port.UnitOfWork
-	Episodes      port.EpisodeRepo
-	InputVersions port.InputVersionRepo
-	AppEvents     port.AppEventRepo
-	MonitorPoints port.MonitorPointRepo
-	Sources       port.SourceStateRepo
-	Services      port.ServiceRepo
-	Tasks         port.TaskRepo
-	Artifacts     port.ArtifactRepo
-	Outbox        port.OutboxRepo
-	Clock         port.Clock
-	IDs           port.IDGen
+	UOW           portshared.UnitOfWork
+	Episodes      portepisode.EpisodeRepo
+	InputVersions portepisode.InputVersionRepo
+	AppEvents     portepisode.AppEventRepo
+	MonitorPoints portmonitor.MonitorPointRepo
+	Sources       portService.SourceStateRepo
+	Services      portService.ServiceRepo
+	Tasks         porttask.TaskRepo
+	Artifacts     porttask.ArtifactRepo
+	Outbox        portoutbox.OutboxRepo
+	Clock         portshared.Clock
+	IDs           portshared.IDGen
 }
 
 type Service struct{ deps Deps }
@@ -38,10 +43,10 @@ func isAppCode(err error, code string) bool {
 }
 
 // OpenOrReuse：同服务有 ACTIVE 则复用，否则创建（INV-01）。
-func (s *Service) OpenOrReuse(ctx context.Context, serviceID string) (port.Episode, bool, error) {
-	var ep port.Episode
+func (s *Service) OpenOrReuse(ctx context.Context, serviceID string) (portepisode.Episode, bool, error) {
+	var ep portepisode.Episode
 	var created bool
-	err := s.deps.UOW.WithinTx(ctx, func(ctx context.Context, tx port.Tx) error {
+	err := s.deps.UOW.WithinTx(ctx, func(ctx context.Context, tx portshared.Tx) error {
 		active, err := s.deps.Episodes.GetActiveByService(ctx, tx, serviceID)
 		activeExists := err == nil
 		if err != nil && !isAppCode(err, apperr.CodeNotFound) {
@@ -53,7 +58,7 @@ func (s *Service) OpenOrReuse(ctx context.Context, serviceID string) (port.Episo
 			return nil
 		}
 		now := s.deps.Clock.Now().UTC()
-		ep = port.Episode{
+		ep = portepisode.Episode{
 			EpisodeID: s.deps.IDs.NewID(), ServiceID: serviceID, Status: "ACTIVE",
 			StartedBy: "MONITOR", StartedAt: now, UpdatedAt: now,
 		}
@@ -67,9 +72,9 @@ func (s *Service) OpenOrReuse(ctx context.Context, serviceID string) (port.Episo
 	return ep, created, err
 }
 
-func (s *Service) List(ctx context.Context, f port.EpisodeFilter) ([]port.Episode, error) {
-	var out []port.Episode
-	err := s.deps.UOW.WithinTx(ctx, func(ctx context.Context, tx port.Tx) error {
+func (s *Service) List(ctx context.Context, f portepisode.EpisodeFilter) ([]portepisode.Episode, error) {
+	var out []portepisode.Episode
+	err := s.deps.UOW.WithinTx(ctx, func(ctx context.Context, tx portshared.Tx) error {
 		var err error
 		out, err = s.deps.Episodes.List(ctx, tx, f)
 		return err
@@ -79,7 +84,7 @@ func (s *Service) List(ctx context.Context, f port.EpisodeFilter) ([]port.Episod
 
 func (s *Service) Get(ctx context.Context, episodeID string) (EpisodeView, error) {
 	var view EpisodeView
-	err := s.deps.UOW.WithinTx(ctx, func(ctx context.Context, tx port.Tx) error {
+	err := s.deps.UOW.WithinTx(ctx, func(ctx context.Context, tx portshared.Tx) error {
 		ep, err := s.deps.Episodes.Get(ctx, tx, episodeID)
 		if err != nil {
 			return err
@@ -111,16 +116,16 @@ func (s *Service) AppendAppEvent(ctx context.Context, serviceID string, in AppEv
 		return AppendEventResult{}, apperr.Validation("producer_id and event_id are required")
 	}
 	var res AppendEventResult
-	err := s.deps.UOW.WithinTx(ctx, func(ctx context.Context, tx port.Tx) error {
+	err := s.deps.UOW.WithinTx(ctx, func(ctx context.Context, tx portshared.Tx) error {
 		existing, err := s.deps.AppEvents.GetByIdentity(ctx, tx, serviceID, in.ProducerID, in.EventID)
-		var existingPtr *port.AppEvent
+		var existingPtr *portepisode.AppEvent
 		if err == nil {
 			existingPtr = &existing
 		} else if !isAppCode(err, apperr.CodeNotFound) {
 			return err
 		}
 
-		incoming := port.AppEvent{
+		incoming := portepisode.AppEvent{
 			ServiceID: serviceID, ProducerID: in.ProducerID, EventID: in.EventID,
 			EventKind: in.EventKind, HealthStatus: in.HealthStatus, Payload: in.Payload,
 			ContentHash: contentHash(in.EventKind, in.HealthStatus, in.Payload),
@@ -153,7 +158,7 @@ func (s *Service) AppendAppEvent(ctx context.Context, serviceID string, in AppEv
 // AppendInputVersion：仅在指纹变化时新增版本，并推进水位线（INV-04）。
 func (s *Service) AppendInputVersion(ctx context.Context, episodeID string) (bool, error) {
 	var appended bool
-	err := s.deps.UOW.WithinTx(ctx, func(ctx context.Context, tx port.Tx) error {
+	err := s.deps.UOW.WithinTx(ctx, func(ctx context.Context, tx portshared.Tx) error {
 		ep, err := s.deps.Episodes.Get(ctx, tx, episodeID)
 		if err != nil {
 			return err
@@ -187,7 +192,7 @@ func (s *Service) AppendInputVersion(ctx context.Context, episodeID string) (boo
 		if err != nil {
 			return err
 		}
-		if _, err := s.deps.InputVersions.AppendIfChanged(ctx, tx, port.InputVersion{
+		if _, err := s.deps.InputVersions.AppendIfChanged(ctx, tx, portepisode.InputVersion{
 			EpisodeID: episodeID, InputVersion: newVersion, InputHash: hash,
 			MonitorProjection: projectionJSON, MonitorWatermark: latestSeq,
 			AppEventWatermark: int64(1) << 62,
@@ -208,7 +213,7 @@ func (s *Service) AppendInputVersion(ctx context.Context, episodeID string) (boo
 func (s *Service) TryResolve(ctx context.Context, episodeID string) (bool, []string, error) {
 	var resolved bool
 	var missing []string
-	err := s.deps.UOW.WithinTx(ctx, func(ctx context.Context, tx port.Tx) error {
+	err := s.deps.UOW.WithinTx(ctx, func(ctx context.Context, tx portshared.Tx) error {
 		ep, err := s.deps.Episodes.Get(ctx, tx, episodeID)
 		if err != nil {
 			return err
@@ -255,7 +260,7 @@ func (s *Service) TryResolve(ctx context.Context, episodeID string) (bool, []str
 	return resolved, missing, err
 }
 
-func (s *Service) appendEvent(ctx context.Context, tx port.Tx, eventType, aggregateType, aggregateID string, payload any) error {
+func (s *Service) appendEvent(ctx context.Context, tx portshared.Tx, eventType, aggregateType, aggregateID string, payload any) error {
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return err
@@ -268,7 +273,7 @@ func (s *Service) appendEvent(ctx context.Context, tx port.Tx, eventType, aggreg
 	}, &key)
 }
 
-func toDomainEvent(e *port.AppEvent) *domain.AppEvent {
+func toDomainEvent(e *portepisode.AppEvent) *domain.AppEvent {
 	if e == nil {
 		return nil
 	}
@@ -289,8 +294,8 @@ func contentHash(kind, health string, payload []byte) string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
-func buildProjection(points []port.MonitorPoint) []domain.MonitorField {
-	latest := map[string]port.MonitorPoint{}
+func buildProjection(points []portmonitor.MonitorPoint) []domain.MonitorField {
+	latest := map[string]portmonitor.MonitorPoint{}
 	for _, p := range points {
 		latest[p.TargetKey] = p
 	}
@@ -304,7 +309,7 @@ func buildProjection(points []port.MonitorPoint) []domain.MonitorField {
 	return out
 }
 
-func buildCanon(events []port.AppEvent) []domain.AppCanon {
+func buildCanon(events []portepisode.AppEvent) []domain.AppCanon {
 	out := make([]domain.AppCanon, 0, len(events))
 	for _, e := range events {
 		out = append(out, domain.AppCanon{

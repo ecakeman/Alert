@@ -3,7 +3,7 @@ package model
 import (
 	"time"
 
-	"github.com/ecakeman/alert/internal/application/port"
+	portService "github.com/ecakeman/alert/internal/application/port/service"
 )
 
 // SourceStateColumns 是 system.service_source_states 的完整列清单（唯一来源）。
@@ -28,15 +28,15 @@ func (r SourceStateRow) Scan(row Scannable) (SourceStateRow, error) {
 }
 
 // ToApp 转换为 application 值类型。
-func (r SourceStateRow) ToApp() port.SourceState {
-	return port.SourceState{
+func (r SourceStateRow) ToApp() portService.SourceState {
+	return portService.SourceState{
 		ServiceID: r.ServiceID, SourceType: r.SourceType, Status: r.Status,
 		Reason: r.Reason,
 	}
 }
 
 // SourceStateRowFromApp 从 application 值类型构造行模型。
-func SourceStateRowFromApp(s port.SourceState) SourceStateRow {
+func SourceStateRowFromApp(s portService.SourceState) SourceStateRow {
 	return SourceStateRow{
 		ServiceID: s.ServiceID, SourceType: s.SourceType, Status: s.Status,
 		Reason: s.Reason,

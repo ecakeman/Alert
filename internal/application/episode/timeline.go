@@ -8,16 +8,19 @@ import (
 	"time"
 
 	"github.com/ecakeman/alert/internal/application/apperr"
-	"github.com/ecakeman/alert/internal/application/port"
+	portepisode "github.com/ecakeman/alert/internal/application/port/episode"
+	portmonitor "github.com/ecakeman/alert/internal/application/port/monitor"
+	portshared "github.com/ecakeman/alert/internal/application/port/shared"
+	porttask "github.com/ecakeman/alert/internal/application/port/task"
 )
 
 type TimelineData struct {
 	Episode         EpisodeView
 	Projection      []MonitorFieldView
 	MonitorStartSeq int64
-	MonitorPoints   []port.MonitorPoint
-	AppEvents       []port.AppEvent
-	Artifacts       []port.ArtifactRef
+	MonitorPoints   []portmonitor.MonitorPoint
+	AppEvents       []portepisode.AppEvent
+	Artifacts       []porttask.ArtifactRef
 }
 
 type ServiceTimelineRecord struct {
@@ -35,7 +38,7 @@ func (s *Service) ServiceTimeline(ctx context.Context, serviceID string, limit i
 		limit = 100
 	}
 	var records []ServiceTimelineRecord
-	err := s.deps.UOW.WithinTx(ctx, func(ctx context.Context, tx port.Tx) error {
+	err := s.deps.UOW.WithinTx(ctx, func(ctx context.Context, tx portshared.Tx) error {
 		latestSeq, err := s.deps.MonitorPoints.LatestSeqByService(ctx, tx, serviceID)
 		if err != nil {
 			return err
@@ -77,7 +80,7 @@ func (s *Service) ServiceTimeline(ctx context.Context, serviceID string, limit i
 // Timeline 返回故障级时间轴，受任务冻结边界（若存在活动任务）约束。
 func (s *Service) Timeline(ctx context.Context, episodeID string) (TimelineData, error) {
 	var d TimelineData
-	err := s.deps.UOW.WithinTx(ctx, func(ctx context.Context, tx port.Tx) error {
+	err := s.deps.UOW.WithinTx(ctx, func(ctx context.Context, tx portshared.Tx) error {
 		ep, err := s.deps.Episodes.Get(ctx, tx, episodeID)
 		if err != nil {
 			return err

@@ -3,26 +3,27 @@ package postgres
 import (
 	"context"
 
-	"github.com/ecakeman/alert/internal/application/port"
+	portshared "github.com/ecakeman/alert/internal/application/port/shared"
+	porttask "github.com/ecakeman/alert/internal/application/port/task"
 	"github.com/ecakeman/alert/internal/infrastructure/persistence/postgres/model"
 )
 
 type artifactRepo struct{}
 
-func NewArtifactRepo() port.ArtifactRepo { return artifactRepo{} }
+func NewArtifactRepo() porttask.ArtifactRepo { return artifactRepo{} }
 
-func (artifactRepo) GetLatest(ctx context.Context, tx port.Tx, episodeID, artifactType string) (port.ArtifactRef, error) {
+func (artifactRepo) GetLatest(ctx context.Context, tx portshared.Tx, episodeID, artifactType string) (porttask.ArtifactRef, error) {
 	row, err := model.ArtifactRow{}.Scan(txFrom(tx).QueryRow(ctx, `
 SELECT `+model.ArtifactColumns+` FROM system.episode_artifact_refs
 WHERE episode_id=$1 AND artifact_type=$2
 ORDER BY artifact_version DESC LIMIT 1`, episodeID, artifactType))
 	if err != nil {
-		return port.ArtifactRef{}, Translate(err)
+		return porttask.ArtifactRef{}, Translate(err)
 	}
 	return row.ToApp(), nil
 }
 
-func (artifactRepo) ListByEpisode(ctx context.Context, tx port.Tx, episodeID string) ([]port.ArtifactRef, error) {
+func (artifactRepo) ListByEpisode(ctx context.Context, tx portshared.Tx, episodeID string) ([]porttask.ArtifactRef, error) {
 	rows, err := txFrom(tx).Query(ctx, `
 SELECT `+model.ArtifactColumns+` FROM system.episode_artifact_refs
 WHERE episode_id=$1 ORDER BY artifact_type, artifact_version DESC`, episodeID)
@@ -30,7 +31,7 @@ WHERE episode_id=$1 ORDER BY artifact_type, artifact_version DESC`, episodeID)
 		return nil, Translate(err)
 	}
 	defer rows.Close()
-	var out []port.ArtifactRef
+	var out []porttask.ArtifactRef
 	for rows.Next() {
 		row, err := model.ArtifactRow{}.Scan(rows)
 		if err != nil {
@@ -41,7 +42,7 @@ WHERE episode_id=$1 ORDER BY artifact_type, artifact_version DESC`, episodeID)
 	return out, Translate(rows.Err())
 }
 
-func (artifactRepo) Insert(ctx context.Context, tx port.Tx, a port.ArtifactRef) error {
+func (artifactRepo) Insert(ctx context.Context, tx portshared.Tx, a porttask.ArtifactRef) error {
 	row := model.ArtifactRowFromApp(a)
 	_, err := txFrom(tx).Exec(ctx, `
 INSERT INTO system.episode_artifact_refs(artifact_ref_id,episode_id,task_id,generation,artifact_type,artifact_version,content_hash,content_type,storage_key,source_refs,registered_at,updated_at)

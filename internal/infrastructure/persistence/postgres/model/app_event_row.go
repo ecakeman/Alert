@@ -3,7 +3,7 @@ package model
 import (
 	"time"
 
-	"github.com/ecakeman/alert/internal/application/port"
+	portepisode "github.com/ecakeman/alert/internal/application/port/episode"
 )
 
 // AppEventColumns 是 system.episode_app_events 的完整列清单（唯一来源）。
@@ -35,8 +35,8 @@ func (r AppEventRow) Scan(row Scannable) (AppEventRow, error) {
 }
 
 // ToApp 转换为 application 值类型。
-func (r AppEventRow) ToApp() port.AppEvent {
-	return port.AppEvent{
+func (r AppEventRow) ToApp() portepisode.AppEvent {
+	return portepisode.AppEvent{
 		EventRecordID: r.EventRecordID, AppEventSeq: r.AppEventSeq,
 		ServiceID: r.ServiceID, EpisodeID: r.EpisodeID,
 		ProducerID: r.ProducerID, EventID: r.EventID,

@@ -4,10 +4,11 @@ import (
 	"context"
 
 	"github.com/ecakeman/alert/internal/application/apperr"
-	"github.com/ecakeman/alert/internal/application/port"
+	portepisode "github.com/ecakeman/alert/internal/application/port/episode"
+	portshared "github.com/ecakeman/alert/internal/application/port/shared"
 )
 
-func (s *Service) enrichEpisode(ctx context.Context, tx port.Tx, ep port.Episode) (EpisodeSummaryData, error) {
+func (s *Service) enrichEpisode(ctx context.Context, tx portshared.Tx, ep portepisode.Episode) (EpisodeSummaryData, error) {
 	svc, err := s.deps.Services.Get(ctx, tx, ep.ServiceID)
 	if err != nil {
 		return EpisodeSummaryData{}, err
@@ -32,9 +33,9 @@ func (s *Service) enrichEpisode(ctx context.Context, tx port.Tx, ep port.Episode
 }
 
 // ListSummaries 返回故障列表聚合（含服务名、活动任务、诊断报告标记）。
-func (s *Service) ListSummaries(ctx context.Context, f port.EpisodeFilter) ([]EpisodeSummaryData, error) {
+func (s *Service) ListSummaries(ctx context.Context, f portepisode.EpisodeFilter) ([]EpisodeSummaryData, error) {
 	var out []EpisodeSummaryData
-	err := s.deps.UOW.WithinTx(ctx, func(ctx context.Context, tx port.Tx) error {
+	err := s.deps.UOW.WithinTx(ctx, func(ctx context.Context, tx portshared.Tx) error {
 		eps, err := s.deps.Episodes.List(ctx, tx, f)
 		if err != nil {
 			return err

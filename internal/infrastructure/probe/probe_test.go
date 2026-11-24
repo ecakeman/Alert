@@ -7,7 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/ecakeman/alert/internal/application/port"
+	portService "github.com/ecakeman/alert/internal/application/port/service"
 )
 
 func TestHTTPProbe(t *testing.T) {
@@ -17,10 +17,10 @@ func TestHTTPProbe(t *testing.T) {
 	defer badSrv.Close()
 
 	p := NewHTTPProber()
-	if s := p.Probe(context.Background(), port.MonitorTarget{Address: okSrv.URL, TimeoutMS: 2000}); s.CheckStatus != "SUCCESS" || s.StatusClass != "2xx" {
+	if s := p.Probe(context.Background(), portService.MonitorTarget{Address: okSrv.URL, TimeoutMS: 2000}); s.CheckStatus != "SUCCESS" || s.StatusClass != "2xx" {
 		t.Fatalf("expected 2xx success, got %+v", s)
 	}
-	if s := p.Probe(context.Background(), port.MonitorTarget{Address: badSrv.URL, TimeoutMS: 2000}); s.CheckStatus != "FAILURE" || s.StatusClass != "5xx" {
+	if s := p.Probe(context.Background(), portService.MonitorTarget{Address: badSrv.URL, TimeoutMS: 2000}); s.CheckStatus != "FAILURE" || s.StatusClass != "5xx" {
 		t.Fatalf("expected 5xx failure, got %+v", s)
 	}
 }
@@ -33,11 +33,11 @@ func TestTCPProbe(t *testing.T) {
 	addr := ln.Addr().String()
 
 	p := NewTCPProber()
-	if s := p.Probe(context.Background(), port.MonitorTarget{Address: addr, TimeoutMS: 1000}); s.CheckStatus != "SUCCESS" {
+	if s := p.Probe(context.Background(), portService.MonitorTarget{Address: addr, TimeoutMS: 1000}); s.CheckStatus != "SUCCESS" {
 		t.Fatalf("expected tcp success, got %+v", s)
 	}
 	_ = ln.Close()
-	if s := p.Probe(context.Background(), port.MonitorTarget{Address: "127.0.0.1:1", TimeoutMS: 300}); s.CheckStatus == "SUCCESS" {
+	if s := p.Probe(context.Background(), portService.MonitorTarget{Address: "127.0.0.1:1", TimeoutMS: 300}); s.CheckStatus == "SUCCESS" {
 		t.Fatalf("closed port must not succeed, got %+v", s)
 	}
 }
