@@ -25,6 +25,10 @@ type stubTasks struct{ byID map[string]porttask.AgentTask }
 
 func (s *stubTasks) Create(context.Context, portshared.Tx, porttask.AgentTask) error { return nil }
 
+func (s *stubTasks) PromoteRetry(context.Context, portshared.Tx, string, int64) (int64, error) {
+	return 0, nil
+}
+
 func (s *stubTasks) Get(_ context.Context, _ portshared.Tx, taskID string) (porttask.AgentTask, error) {
 	t, ok := s.byID[taskID]
 	if !ok {

@@ -78,6 +78,7 @@ type TaskRepo interface {
 	ListStaleDispatched(ctx context.Context, tx portshared.Tx, updatedBefore time.Time, limit int) ([]AgentTask, error)
 	ListRunningLeaseExpired(ctx context.Context, tx portshared.Tx, now time.Time, limit int) ([]AgentTask, error)
 	ListByEpisode(ctx context.Context, tx portshared.Tx, episodeID string) ([]AgentTask, error)
+	PromoteRetry(ctx context.Context, tx portshared.Tx, taskID string, generation int64) (int64, error)
 }
 
 type OwnershipRepo interface {

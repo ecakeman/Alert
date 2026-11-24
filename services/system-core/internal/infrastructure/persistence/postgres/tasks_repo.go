@@ -199,3 +199,20 @@ WHERE status='PENDING' ORDER BY created_at LIMIT $1`, limit)
 	}
 	return out, Translate(rows.Err())
 }
+
+// PromoteRetry 把到期的 RETRY_WAIT 条件提升为新一代次，交由派发事件消费者重新派发。
+func (taskRepo) PromoteRetry(ctx context.Context, tx portshared.Tx, taskID string, generation int64) (int64, error) {
+	tag, err := txFrom(tx).Exec(ctx, `
+UPDATE system.agent_tasks
+SET generation = generation + 1,
+    status = 'DISPATCHED',
+    attempt = 0,
+    lease_until = NULL,
+    next_retry_at = NULL,
+    updated_at = now()
+WHERE task_id=$1 AND generation=$2 AND status='RETRY_WAIT'`, taskID, generation)
+	if err != nil {
+		return 0, Translate(err)
+	}
+	return tag.RowsAffected(), nil
+}
