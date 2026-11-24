@@ -55,11 +55,15 @@ WHERE episode_id=$1 AND artifact_type=$2 AND artifact_version=$3`, episodeID, ar
 
 func (artifactRepo) Insert(ctx context.Context, tx portshared.Tx, a porttask.ArtifactRef) error {
 	row := model.ArtifactRowFromApp(a)
+	sourceRefsJSON := string(row.SourceRefs)
+	if sourceRefsJSON == "" {
+		sourceRefsJSON = "[]"
+	}
 	_, err := txFrom(tx).Exec(ctx, `
 INSERT INTO system.episode_artifact_refs(artifact_ref_id,episode_id,task_id,generation,artifact_type,artifact_version,content_hash,content_type,storage_key,source_refs,registered_at,updated_at)
 VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
 		row.ArtifactRefID, row.EpisodeID, row.TaskID, row.Generation, row.ArtifactType,
 		row.ArtifactVersion, row.ContentHash, row.ContentType, row.StorageKey,
-		row.SourceRefs, utc(row.RegisteredAt), utc(row.UpdatedAt))
+		sourceRefsJSON, utc(row.RegisteredAt), utc(row.UpdatedAt))
 	return Translate(err)
 }
