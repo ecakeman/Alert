@@ -4,7 +4,6 @@ import (
 	"context"
 	"time"
 
-	"github.com/ecakeman/alert/internal/application/episode"
 	"github.com/ecakeman/alert/internal/application/port"
 )
 
@@ -15,7 +14,7 @@ type Deps struct {
 	MonitorPoints port.MonitorPointRepo
 	Sources       port.SourceStateRepo
 	Episodes      port.EpisodeRepo
-	EpisodesUC    *episode.Service
+	Driver        EpisodeDriver
 	Clock         port.Clock
 }
 
@@ -75,7 +74,7 @@ func (s *Service) ApplySample(ctx context.Context, serviceID, targetID string, p
 
 	// 驱动故障（事务外，复用 episode 用例的独立事务）。
 	if sourceStatus == "ABNORMAL" {
-		_, _, err := s.deps.EpisodesUC.OpenOrReuse(ctx, serviceID)
+		_, err := s.deps.Driver.OpenOrReuse(ctx, serviceID)
 		return sourceStatus, err
 	}
 	if sourceStatus == "NORMAL" {
@@ -88,7 +87,7 @@ func (s *Service) ApplySample(ctx context.Context, serviceID, targetID string, p
 			return nil
 		})
 		if episodeID != "" {
-			_, _, err := s.deps.EpisodesUC.TryResolve(ctx, episodeID)
+			_, _, err := s.deps.Driver.TryResolve(ctx, episodeID)
 			return sourceStatus, err
 		}
 	}

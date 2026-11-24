@@ -84,7 +84,8 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 	monitorUC := appmonitor.New(appmonitor.Deps{
 		UOW: uow, Targets: postgres.NewTargetRepo(), MonitorPoints: postgres.NewMonitorPointRepo(),
 		Sources: postgres.NewSourceStateRepo(), Episodes: postgres.NewEpisodeRepo(),
-		EpisodesUC: epUC, Clock: clk,
+		Driver: episodeDriverAdapter{uc: epUC},
+		Clock:  clk,
 	})
 	probeEngine := probe.NewEngine(probe.EngineDeps{
 		UOW: uow, Targets: postgres.NewTargetRepo(),
@@ -133,6 +134,18 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 		IdleTimeout:  cfg.HTTPIdleTimeout,
 	}
 	return &App{server: srv, cfg: cfg, pool: pool, sender: sender, publisher: publisher, consumer: consumer, probeEngine: probeEngine}, nil
+}
+
+// episodeDriverAdapter 把 episode 用例转调为 monitor.EpisodeDriver。
+type episodeDriverAdapter struct{ uc *appepisode.Service }
+
+func (a episodeDriverAdapter) OpenOrReuse(ctx context.Context, serviceID string) (bool, error) {
+	_, created, err := a.uc.OpenOrReuse(ctx, serviceID)
+	return created, err
+}
+
+func (a episodeDriverAdapter) TryResolve(ctx context.Context, episodeID string) (bool, []string, error) {
+	return a.uc.TryResolve(ctx, episodeID)
 }
 
 func splitBrokers(raw string) []string {
