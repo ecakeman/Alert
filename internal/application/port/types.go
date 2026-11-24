@@ -1,8 +1,12 @@
 package port
 
-import "time"
+import (
+	"time"
 
-// 领域值类型：字段与 system schema 列一一对应，供 application 用例与仓储端口使用。
+	"github.com/ecakeman/alert/internal/contracts"
+)
+
+// 领域值类型：供 application 用例与仓储端口使用；DB 行模型位于 postgres/model（S1.7 下沉）。
 
 type Service struct {
 	ServiceID              string
@@ -145,15 +149,10 @@ type Ownership struct {
 	UpdatedAt  time.Time
 }
 
-type OutboxEvent struct {
-	EventID         string
-	EventType       string
-	SchemaVersion   int
-	AggregateType   string
-	AggregateID     string
-	Payload         []byte
+// OutboxRecord 是 Outbox 存储行：事件信封 + 投递控制字段；不进入线上契约。
+type OutboxRecord struct {
+	Event           contracts.Event
 	DedupeKey       *string
-	CreatedAt       time.Time
 	PublishedAt     *time.Time
 	PublishAttempts int
 	NextRetryAt     *time.Time

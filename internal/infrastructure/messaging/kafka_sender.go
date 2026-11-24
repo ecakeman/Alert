@@ -6,10 +6,10 @@ import (
 
 	"github.com/segmentio/kafka-go"
 
-	"github.com/ecakeman/alert/internal/application/port"
+	"github.com/ecakeman/alert/internal/contracts"
 )
 
-// Sender 实现 port.EventSender，用纯 Go 的 kafka-go Writer 发送事件。
+// Sender 实现 port.EventSender，用纯 Go 的 kafka-go Writer 发送契约事件。
 type Sender struct {
 	writer *kafka.Writer
 }
@@ -25,12 +25,8 @@ func NewSender(brokers []string, topic string) *Sender {
 	}}
 }
 
-func (s *Sender) Send(ctx context.Context, e port.OutboxEvent) error {
-	body, err := Encode(Event{
-		EventID: e.EventID, EventType: e.EventType, SchemaVersion: e.SchemaVersion,
-		AggregateType: e.AggregateType, AggregateID: e.AggregateID,
-		OccurredAt: e.CreatedAt, Payload: e.Payload,
-	})
+func (s *Sender) Send(ctx context.Context, e contracts.Event) error {
+	body, err := Encode(e)
 	if err != nil {
 		return err
 	}

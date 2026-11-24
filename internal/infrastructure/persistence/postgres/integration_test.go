@@ -11,6 +11,7 @@ import (
 
 	"github.com/ecakeman/alert/internal/application/apperr"
 	"github.com/ecakeman/alert/internal/application/port"
+	"github.com/ecakeman/alert/internal/contracts"
 )
 
 func intPool(t *testing.T) *pgxpool.Pool {
@@ -107,10 +108,10 @@ func TestRepoOutboxClaimExclusive(t *testing.T) {
 	now := time.Now().UTC()
 	err := uow.WithinTx(ctx, func(ctx context.Context, tx port.Tx) error {
 		ev := NewOutboxRepo()
-		if err := ev.Append(ctx, tx, port.OutboxEvent{
+		if err := ev.Append(ctx, tx, contracts.Event{
 			EventID: "44444444-4444-4444-4444-444444444444", EventType: "test.v1", SchemaVersion: 1,
-			AggregateType: "service", AggregateID: "x", Payload: []byte(`{}`), CreatedAt: now,
-		}); err != nil {
+			AggregateType: "service", AggregateID: "x", Payload: []byte(`{}`), OccurredAt: now,
+		}, nil); err != nil {
 			return err
 		}
 		first, err := ev.Claim(ctx, tx, "ownerA", now.Add(time.Minute), 1)
@@ -144,10 +145,10 @@ func TestRepoTransactionRollback(t *testing.T) {
 		if err := NewServiceRepo().Create(ctx, tx, sampleService("55555555-5555-5555-5555-555555555555", "rollback-key")); err != nil {
 			return err
 		}
-		if err := NewOutboxRepo().Append(ctx, tx, port.OutboxEvent{
+		if err := NewOutboxRepo().Append(ctx, tx, contracts.Event{
 			EventID: "66666666-6666-6666-6666-666666666666", EventType: "t", SchemaVersion: 1,
-			AggregateType: "a", AggregateID: "b", Payload: []byte(`{}`), CreatedAt: now,
-		}); err != nil {
+			AggregateType: "a", AggregateID: "b", Payload: []byte(`{}`), OccurredAt: now,
+		}, nil); err != nil {
 			return err
 		}
 		return boom

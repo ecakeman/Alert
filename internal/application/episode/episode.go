@@ -9,6 +9,7 @@ import (
 
 	"github.com/ecakeman/alert/internal/application/apperr"
 	"github.com/ecakeman/alert/internal/application/port"
+	"github.com/ecakeman/alert/internal/contracts"
 	"github.com/ecakeman/alert/internal/domain"
 )
 
@@ -261,11 +262,11 @@ func (s *Service) appendEvent(ctx context.Context, tx port.Tx, eventType, aggreg
 		return err
 	}
 	key := eventType + ":" + aggregateID + ":" + s.deps.IDs.NewID()
-	return s.deps.Outbox.Append(ctx, tx, port.OutboxEvent{
+	return s.deps.Outbox.Append(ctx, tx, contracts.Event{
 		EventID: s.deps.IDs.NewID(), EventType: eventType, SchemaVersion: 1,
-		AggregateType: aggregateType, AggregateID: aggregateID, Payload: body,
-		DedupeKey: &key, CreatedAt: s.deps.Clock.Now().UTC(),
-	})
+		AggregateType: aggregateType, AggregateID: aggregateID,
+		OccurredAt: s.deps.Clock.Now().UTC(), Payload: body,
+	}, &key)
 }
 
 func toDomainEvent(e *port.AppEvent) *domain.AppEvent {

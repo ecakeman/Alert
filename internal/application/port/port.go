@@ -3,6 +3,8 @@ package port
 import (
 	"context"
 	"time"
+
+	"github.com/ecakeman/alert/internal/contracts"
 )
 
 // Tx 是事务句柄的抽象；由 infrastructure 传入具体实现，application 不感知 pgx。
@@ -23,9 +25,9 @@ type IDGen interface {
 	NewID() string
 }
 
-// EventSender：Kafka 发送端口，事务外调用（B5 实现）。
+// EventSender：Kafka 发送端口，事务外调用；接收唯一事件信封 contracts.Event。
 type EventSender interface {
-	Send(ctx context.Context, event OutboxEvent) error
+	Send(ctx context.Context, event contracts.Event) error
 }
 
 // TaskDispatcher：任务提交端口，事务外调用（B7 实现）。
@@ -33,7 +35,7 @@ type TaskDispatcher interface {
 	SubmitTask(ctx context.Context, task AgentTask) (accepted bool, err error)
 }
 
-// Prober：真实探测端口（B6 实现），不写库。
+// Prober：真实探测端口（B6 由 infrastructure/probe.Engine 承担编排）。
 type Prober interface {
 	Probe(ctx context.Context, target MonitorTarget) (MonitorPoint, error)
 }

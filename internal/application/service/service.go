@@ -8,6 +8,7 @@ import (
 
 	"github.com/ecakeman/alert/internal/application/apperr"
 	"github.com/ecakeman/alert/internal/application/port"
+	"github.com/ecakeman/alert/internal/contracts"
 )
 
 // Deps 是用例依赖的端口集合。
@@ -309,9 +310,9 @@ func (s *Service) appendServiceStateChanged(ctx context.Context, tx port.Tx, ser
 	if err != nil {
 		return err
 	}
-	return s.deps.Outbox.Append(ctx, tx, port.OutboxEvent{
-		EventID: s.deps.IDs.NewID(), EventType: "service.state.changed.v1", SchemaVersion: 1,
-		AggregateType: "service", AggregateID: serviceID, Payload: payload,
-		CreatedAt: s.deps.Clock.Now().UTC(),
-	})
+	return s.deps.Outbox.Append(ctx, tx, contracts.Event{
+		EventID: s.deps.IDs.NewID(), EventType: contracts.EventServiceStateChanged, SchemaVersion: 1,
+		AggregateType: "service", AggregateID: serviceID,
+		OccurredAt: s.deps.Clock.Now().UTC(), Payload: payload,
+	}, nil)
 }

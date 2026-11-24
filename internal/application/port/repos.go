@@ -3,6 +3,8 @@ package port
 import (
 	"context"
 	"time"
+
+	"github.com/ecakeman/alert/internal/contracts"
 )
 
 // 13 个持久化仓储端口（实现方：infrastructure/persistence/postgres）。
@@ -12,6 +14,7 @@ type ServiceRepo interface {
 	Get(ctx context.Context, tx Tx, serviceID string) (Service, error)
 	GetByKey(ctx context.Context, tx Tx, serviceKey string) (Service, error)
 	List(ctx context.Context, tx Tx, f ServiceFilter) ([]Service, error)
+
 	Patch(ctx context.Context, tx Tx, serviceID string, p ServicePatch) error
 	SoftDelete(ctx context.Context, tx Tx, serviceID string, at time.Time) error
 }
@@ -76,8 +79,8 @@ type OwnershipRepo interface {
 }
 
 type OutboxRepo interface {
-	Append(ctx context.Context, tx Tx, e OutboxEvent) error
-	Claim(ctx context.Context, tx Tx, owner string, until time.Time, limit int) ([]OutboxEvent, error)
+	Append(ctx context.Context, tx Tx, event contracts.Event, dedupeKey *string) error
+	Claim(ctx context.Context, tx Tx, owner string, until time.Time, limit int) ([]OutboxRecord, error)
 	MarkPublished(ctx context.Context, tx Tx, eventID string, at time.Time) error
 	MarkFailed(ctx context.Context, tx Tx, eventID string, nextRetryAt time.Time, errMsg string) error
 }

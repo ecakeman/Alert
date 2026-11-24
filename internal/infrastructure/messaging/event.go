@@ -2,25 +2,18 @@ package messaging
 
 import (
 	"encoding/json"
-	"time"
+
+	"github.com/ecakeman/alert/internal/contracts"
 )
 
-// Event 是发布到 Kafka 的领域事件信封。
-type Event struct {
-	EventID       string          `json:"event_id"`
-	EventType     string          `json:"event_type"`
-	SchemaVersion int             `json:"schema_version"`
-	AggregateType string          `json:"aggregate_type"`
-	AggregateID   string          `json:"aggregate_id"`
-	OccurredAt    time.Time       `json:"occurred_at"`
-	TraceID       string          `json:"trace_id,omitempty"`
-	Payload       json.RawMessage `json:"payload,omitempty"`
-}
+// Encode 把契约事件编码为线上 JSON（唯一信封）。
+func Encode(e contracts.Event) ([]byte, error) { return json.Marshal(e) }
 
-func Encode(e Event) ([]byte, error) { return json.Marshal(e) }
-
-func Decode(body []byte) (Event, error) {
-	var e Event
-	err := json.Unmarshal(body, &e)
-	return e, err
+// Decode 解析线上 JSON 为契约事件（版本校验语义由 S1.3 收口）。
+func Decode(body []byte) (contracts.Event, error) {
+	var e contracts.Event
+	if err := json.Unmarshal(body, &e); err != nil {
+		return contracts.Event{}, err
+	}
+	return e, nil
 }

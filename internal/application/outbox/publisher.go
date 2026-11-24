@@ -31,7 +31,7 @@ func (p *Publisher) RunOnce(ctx context.Context) (int, error) {
 		p.deps.Batch = 16
 	}
 
-	var batch []port.OutboxEvent
+	var batch []port.OutboxRecord
 	err := p.deps.UOW.WithinTx(ctx, func(ctx context.Context, tx port.Tx) error {
 		var err error
 		batch, err = p.deps.Outbox.Claim(ctx, tx, p.deps.Owner, p.deps.Clock.Now().Add(p.deps.ClaimLease), p.deps.Batch)
@@ -45,7 +45,8 @@ func (p *Publisher) RunOnce(ctx context.Context) (int, error) {
 	}
 
 	sent := 0
-	for _, e := range batch {
+	for _, rec := range batch {
+		e := rec.Event
 		sendCtx, cancel := context.WithTimeout(ctx, p.deps.ClaimLease/2)
 		sendErr := p.deps.Sender.Send(sendCtx, e)
 		cancel()
