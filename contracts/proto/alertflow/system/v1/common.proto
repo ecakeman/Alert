@@ -1,0 +1,19 @@
+syntax = "proto3";
+
+package alertflow.system.v1;
+
+option go_package = "github.com/ecakeman/alert/services/system-core/internal/transport/grpc/gen/alertflow/system/v1;systemv1";
+
+// TaskIdentity 是 gRPC 回调与 Agent 提交共享的任务身份。
+message TaskIdentity {
+  string task_id = 1;
+  string episode_id = 2;
+  string task_type = 3;
+  int64 generation = 4;
+  string lease_token = 5;
+}
+
+// TaskAck 表示协议级受理；拒绝通过 gRPC 稳定错误码返回。
+message TaskAck {
+  bool accepted = 1;
+}

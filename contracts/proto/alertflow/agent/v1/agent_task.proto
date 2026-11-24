@@ -1,0 +1,26 @@
+syntax = "proto3";
+
+package alertflow.agent.v1;
+
+import "alertflow/system/v1/common.proto";
+
+option go_package = "github.com/ecakeman/alert/services/system-core/internal/transport/grpc/gen/alertflow/agent/v1;agentv1";
+
+// AgentTaskService 由执行器实现，Go 控制面作为客户端提交任务。
+service AgentTaskService {
+  rpc SubmitTask(SubmitTaskRequest) returns (SubmitTaskResponse);
+}
+
+message SubmitTaskRequest {
+  alertflow.system.v1.TaskIdentity identity = 1;
+  string service_id = 2;
+  int64 input_version_from = 3;
+  int64 input_version_to = 4;
+  int64 monitor_watermark = 5;
+  int64 app_event_watermark = 6;
+  int64 deadline_at = 7;
+}
+
+message SubmitTaskResponse {
+  bool accepted = 1;
+}

@@ -1,0 +1,67 @@
+syntax = "proto3";
+
+package alertflow.system.v1;
+
+import "alertflow/system/v1/common.proto";
+
+option go_package = "github.com/ecakeman/alert/services/system-core/internal/transport/grpc/gen/alertflow/system/v1;systemv1";
+
+// SystemTaskGatewayService 是 Go 控制面暴露给执行器的 7 类回调 RPC。
+service SystemTaskGatewayService {
+  rpc ReportTaskStarted(ReportTaskStartedRequest) returns (TaskAck);
+  rpc ReportTaskHeartbeat(ReportTaskHeartbeatRequest) returns (TaskAck);
+  rpc RegisterTaskArtifact(RegisterTaskArtifactRequest) returns (TaskAck);
+  rpc ReportTaskResult(ReportTaskResultRequest) returns (TaskAck);
+  rpc ReportTaskFailure(ReportTaskFailureRequest) returns (TaskAck);
+  rpc GetTaskContext(GetTaskContextRequest) returns (GetTaskContextResponse);
+  rpc AbandonTask(AbandonTaskRequest) returns (TaskAck);
+}
+
+message ReportTaskStartedRequest {
+  TaskIdentity identity = 1;
+}
+
+message ReportTaskHeartbeatRequest {
+  TaskIdentity identity = 1;
+}
+
+message RegisterTaskArtifactRequest {
+  TaskIdentity identity = 1;
+  string artifact_type = 2;
+  int32 artifact_version = 3;
+  string content_hash = 4;
+  string content_type = 5;
+  string storage_key = 6;
+  bytes source_refs = 7;
+}
+
+message ReportTaskResultRequest {
+  TaskIdentity identity = 1;
+}
+
+message ReportTaskFailureRequest {
+  TaskIdentity identity = 1;
+  bool retryable = 2;
+  string error_code = 3;
+  string error_message = 4;
+}
+
+message GetTaskContextRequest {
+  TaskIdentity identity = 1;
+  int64 from_input_version = 2;
+  int64 to_input_version = 3;
+  int64 watermark = 4;
+}
+
+message GetTaskContextResponse {
+  int64 input_version_from = 1;
+  int64 input_version_to = 2;
+  int64 monitor_watermark = 3;
+  int64 app_event_watermark = 4;
+  int64 deadline_at = 5;
+  string task_type = 6;
+}
+
+message AbandonTaskRequest {
+  TaskIdentity identity = 1;
+}
