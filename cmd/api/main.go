@@ -46,13 +46,8 @@ func main() {
 		log.Printf("startup: %v", err)
 		os.Exit(1)
 	}
-	worker, err := bootstrap.NewWorker(sh, repos, ucs)
-	if err != nil {
-		log.Printf("startup: %v", err)
-		os.Exit(1)
-	}
 
-	if err := bootstrap.RunCombined(ctx, api, worker, sh); err != nil {
+	if err := bootstrap.RunAPI(ctx, api, sh); err != nil {
 		log.Printf("server: %v", err)
 		os.Exit(1)
 	}
