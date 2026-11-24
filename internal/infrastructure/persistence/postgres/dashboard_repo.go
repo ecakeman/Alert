@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/ecakeman/alert/internal/application/port"
+	"github.com/ecakeman/alert/internal/infrastructure/persistence/postgres/model"
 )
 
 type dashboardRepo struct{}
@@ -56,17 +57,17 @@ SELECT
 	s.Episodes["archived"] = epArchived
 
 	rows, err := txFrom(tx).Query(ctx,
-		`SELECT `+episodeColumns+` FROM system.episodes ORDER BY started_at DESC LIMIT 5`)
+		`SELECT `+model.EpisodeColumns+` FROM system.episodes ORDER BY started_at DESC LIMIT 5`)
 	if err != nil {
 		return s, Translate(err)
 	}
 	defer rows.Close()
 	for rows.Next() {
-		e, err := scanEpisode(rows)
+		row, err := model.EpisodeRow{}.Scan(rows)
 		if err != nil {
-			return s, err
+			return s, Translate(err)
 		}
-		s.RecentEpisodes = append(s.RecentEpisodes, e)
+		s.RecentEpisodes = append(s.RecentEpisodes, row.ToApp())
 	}
 	return s, Translate(rows.Err())
 }

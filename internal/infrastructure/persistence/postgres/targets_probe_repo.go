@@ -5,12 +5,13 @@ import (
 	"time"
 
 	"github.com/ecakeman/alert/internal/application/port"
+	"github.com/ecakeman/alert/internal/infrastructure/persistence/postgres/model"
 )
 
 // ListEnabled 返回所有启用且未删除的目标（调度器输入）。
 func (targetRepo) ListEnabled(ctx context.Context, tx port.Tx) ([]port.MonitorTarget, error) {
 	rows, err := txFrom(tx).Query(ctx, `
-SELECT `+targetColumns+` FROM system.service_monitor_targets
+SELECT `+model.TargetColumns+` FROM system.service_monitor_targets
 WHERE enabled AND deleted_at IS NULL
 ORDER BY service_id, target_key`)
 	if err != nil {
@@ -19,11 +20,11 @@ ORDER BY service_id, target_key`)
 	defer rows.Close()
 	var out []port.MonitorTarget
 	for rows.Next() {
-		t, err := scanTarget(rows)
+		row, err := model.TargetRow{}.Scan(rows)
 		if err != nil {
-			return nil, err
+			return nil, Translate(err)
 		}
-		out = append(out, t)
+		out = append(out, row.ToApp())
 	}
 	return out, Translate(rows.Err())
 }

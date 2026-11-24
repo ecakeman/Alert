@@ -4,31 +4,26 @@ import (
 	"context"
 
 	"github.com/ecakeman/alert/internal/application/port"
+	"github.com/ecakeman/alert/internal/infrastructure/persistence/postgres/model"
 )
 
 type sourceStateRepo struct{}
 
 func NewSourceStateRepo() port.SourceStateRepo { return sourceStateRepo{} }
 
-const sourceStateColumns = `service_id,source_type,status,reason,updated_at,last_change_at`
-
-func scanSourceState(row scannable) (port.SourceState, error) {
-	var s port.SourceState
-	if err := row.Scan(&s.ServiceID, &s.SourceType, &s.Status, &s.Reason, &s.UpdatedAt, &s.LastChangeAt); err != nil {
+func (sourceStateRepo) Get(ctx context.Context, tx port.Tx, serviceID, sourceType string) (port.SourceState, error) {
+	row, err := model.SourceStateRow{}.Scan(txFrom(tx).QueryRow(ctx,
+		`SELECT `+model.SourceStateColumns+` FROM system.service_source_states WHERE service_id=$1 AND source_type=$2`,
+		serviceID, sourceType))
+	if err != nil {
 		return port.SourceState{}, Translate(err)
 	}
-	return s, nil
-}
-
-func (sourceStateRepo) Get(ctx context.Context, tx port.Tx, serviceID, sourceType string) (port.SourceState, error) {
-	return scanSourceState(txFrom(tx).QueryRow(ctx,
-		`SELECT `+sourceStateColumns+` FROM system.service_source_states WHERE service_id=$1 AND source_type=$2`,
-		serviceID, sourceType))
+	return row.ToApp(), nil
 }
 
 func (sourceStateRepo) ListByService(ctx context.Context, tx port.Tx, serviceID string) ([]port.SourceState, error) {
 	rows, err := txFrom(tx).Query(ctx,
-		`SELECT `+sourceStateColumns+` FROM system.service_source_states WHERE service_id=$1 ORDER BY source_type`,
+		`SELECT `+model.SourceStateColumns+` FROM system.service_source_states WHERE service_id=$1 ORDER BY source_type`,
 		serviceID)
 	if err != nil {
 		return nil, Translate(err)
@@ -36,16 +31,17 @@ func (sourceStateRepo) ListByService(ctx context.Context, tx port.Tx, serviceID 
 	defer rows.Close()
 	var out []port.SourceState
 	for rows.Next() {
-		s, err := scanSourceState(rows)
+		row, err := model.SourceStateRow{}.Scan(rows)
 		if err != nil {
-			return nil, err
+			return nil, Translate(err)
 		}
-		out = append(out, s)
+		out = append(out, row.ToApp())
 	}
 	return out, Translate(rows.Err())
 }
 
 func (sourceStateRepo) Upsert(ctx context.Context, tx port.Tx, s port.SourceState) error {
+	row := model.SourceStateRowFromApp(s)
 	_, err := txFrom(tx).Exec(ctx, `
 INSERT INTO system.service_source_states(service_id,source_type,status,reason,updated_at,last_change_at)
 VALUES($1,$2,$3,$4,now(),now())
@@ -54,6 +50,6 @@ ON CONFLICT (service_id, source_type) DO UPDATE SET
   reason = EXCLUDED.reason,
   last_change_at = CASE WHEN system.service_source_states.status <> EXCLUDED.status THEN now() ELSE system.service_source_states.last_change_at END,
   updated_at = now()`,
-		s.ServiceID, s.SourceType, s.Status, s.Reason)
+		row.ServiceID, row.SourceType, row.Status, row.Reason)
 	return Translate(err)
 }

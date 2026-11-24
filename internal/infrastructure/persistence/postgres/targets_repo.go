@@ -5,42 +5,37 @@ import (
 	"time"
 
 	"github.com/ecakeman/alert/internal/application/port"
+	"github.com/ecakeman/alert/internal/infrastructure/persistence/postgres/model"
 )
 
 type targetRepo struct{}
 
 func NewTargetRepo() port.TargetRepo { return targetRepo{} }
 
-const targetColumns = `target_id,service_id,target_key,target_name,address,target_type,config,interval_ms,timeout_ms,failure_threshold,recovery_threshold,is_required,enabled,status,consecutive_failures,consecutive_successes,last_check_at,config_generation,deleted_at,created_at,updated_at`
-
-func scanTarget(row scannable) (port.MonitorTarget, error) {
-	var t port.MonitorTarget
-	if err := row.Scan(&t.TargetID, &t.ServiceID, &t.TargetKey, &t.TargetName, &t.Address, &t.TargetType,
-		&t.Config, &t.IntervalMS, &t.TimeoutMS, &t.FailureThreshold, &t.RecoveryThreshold, &t.IsRequired,
-		&t.Enabled, &t.Status, &t.ConsecutiveFailures, &t.ConsecutiveSuccesses, &t.LastCheckAt,
-		&t.ConfigGeneration, &t.DeletedAt, &t.CreatedAt, &t.UpdatedAt); err != nil {
-		return port.MonitorTarget{}, Translate(err)
-	}
-	return t, nil
-}
-
 func (targetRepo) Create(ctx context.Context, tx port.Tx, t port.MonitorTarget) error {
+	row := model.TargetRowFromApp(t)
 	_, err := txFrom(tx).Exec(ctx, `
 INSERT INTO system.service_monitor_targets(target_id,service_id,target_key,target_name,address,target_type,config,interval_ms,timeout_ms,failure_threshold,recovery_threshold,is_required,enabled,status,consecutive_failures,consecutive_successes,config_generation,created_at,updated_at)
 VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)`,
-		t.TargetID, t.ServiceID, t.TargetKey, t.TargetName, t.Address, t.TargetType, t.Config,
-		t.IntervalMS, t.TimeoutMS, t.FailureThreshold, t.RecoveryThreshold, t.IsRequired, t.Enabled,
-		t.Status, t.ConsecutiveFailures, t.ConsecutiveSuccesses, t.ConfigGeneration, utc(t.CreatedAt), utc(t.UpdatedAt))
+		row.TargetID, row.ServiceID, row.TargetKey, row.TargetName, row.Address, row.TargetType,
+		row.Config, row.IntervalMS, row.TimeoutMS, row.FailureThreshold, row.RecoveryThreshold,
+		row.IsRequired, row.Enabled, row.Status, row.ConsecutiveFailures, row.ConsecutiveSuccesses,
+		row.ConfigGeneration, utc(row.CreatedAt), utc(row.UpdatedAt))
 	return Translate(err)
 }
 
 func (targetRepo) Get(ctx context.Context, tx port.Tx, targetID string) (port.MonitorTarget, error) {
-	return scanTarget(txFrom(tx).QueryRow(ctx, `SELECT `+targetColumns+` FROM system.service_monitor_targets WHERE target_id=$1`, targetID))
+	row, err := model.TargetRow{}.Scan(txFrom(tx).QueryRow(ctx,
+		`SELECT `+model.TargetColumns+` FROM system.service_monitor_targets WHERE target_id=$1`, targetID))
+	if err != nil {
+		return port.MonitorTarget{}, Translate(err)
+	}
+	return row.ToApp(), nil
 }
 
 func (targetRepo) ListByService(ctx context.Context, tx port.Tx, serviceID string, includeDeleted bool) ([]port.MonitorTarget, error) {
 	rows, err := txFrom(tx).Query(ctx, `
-SELECT `+targetColumns+` FROM system.service_monitor_targets
+SELECT `+model.TargetColumns+` FROM system.service_monitor_targets
 WHERE service_id=$1 AND ($2 OR deleted_at IS NULL)
 ORDER BY created_at`, serviceID, includeDeleted)
 	if err != nil {
@@ -49,11 +44,11 @@ ORDER BY created_at`, serviceID, includeDeleted)
 	defer rows.Close()
 	var out []port.MonitorTarget
 	for rows.Next() {
-		t, err := scanTarget(rows)
+		row, err := model.TargetRow{}.Scan(rows)
 		if err != nil {
-			return nil, err
+			return nil, Translate(err)
 		}
-		out = append(out, t)
+		out = append(out, row.ToApp())
 	}
 	return out, Translate(rows.Err())
 }

@@ -3,10 +3,12 @@ package postgres
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/ecakeman/alert/internal/application/apperr"
@@ -20,7 +22,12 @@ func intPool(t *testing.T) *pgxpool.Pool {
 	if dsn == "" {
 		t.Skip("未执行（环境：无 TEST_DATABASE_URL）")
 	}
-	pool, err := pgxpool.New(context.Background(), dsn)
+	cfg, cfgErr := pgxpool.ParseConfig(dsn)
+	if cfgErr != nil {
+		t.Fatalf("parse test db config: %v", cfgErr)
+	}
+	cfg.ConnConfig.DefaultQueryExecMode = pgx.QueryExecModeSimpleProtocol
+	pool, err := pgxpool.NewWithConfig(context.Background(), cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -106,10 +113,16 @@ func TestRepoOutboxClaimExclusive(t *testing.T) {
 	uow := NewUnitOfWork(pool)
 	ctx := context.Background()
 	now := time.Now().UTC()
+	eventID := "44444444-4444-4444-4444-444444444444"
+	t.Cleanup(func() {
+		_, _ = pool.Exec(ctx, "DELETE FROM system.outbox_events WHERE event_id=$1", eventID)
+	})
+
+	// 发布者 A：写入事件并领取（独立事务，提交后行处于已领取状态）。
 	err := uow.WithinTx(ctx, func(ctx context.Context, tx port.Tx) error {
 		ev := NewOutboxRepo()
 		if err := ev.Append(ctx, tx, contracts.Event{
-			EventID: "44444444-4444-4444-4444-444444444444", EventType: "test.v1", SchemaVersion: 1,
+			EventID: eventID, EventType: "test.v1", SchemaVersion: 1,
 			AggregateType: "service", AggregateID: "x", Payload: []byte(`{}`), OccurredAt: now,
 		}, nil); err != nil {
 			return err
@@ -119,19 +132,34 @@ func TestRepoOutboxClaimExclusive(t *testing.T) {
 			return err
 		}
 		if len(first) != 1 {
-			t.Fatalf("expected 1 claimed, got %d", len(first))
+			return fmt.Errorf("expected 1 claimed, got %d", len(first))
 		}
-		second, err := ev.Claim(ctx, tx, "ownerB", now.Add(time.Minute), 1)
-		if err != nil {
-			return err
-		}
-		if len(second) != 0 {
-			t.Fatalf("expected 0 on second claim while claimed, got %d", len(second))
-		}
-		return errors.New("rollback")
+		return nil
 	})
-	if err == nil || err.Error() != "rollback" {
-		t.Fatalf("unexpected: %v", err)
+	if err != nil {
+		t.Fatalf("first claim tx: %v", err)
+	}
+
+	// 发布者 B：独立事务竞争；库中可能有其他历史 pending 行，Claim 领到它们是
+	// 正确行为，这里只关心 A 已领取且未过期的行不被抢走。
+	if err := uow.WithinTx(ctx, func(ctx context.Context, tx port.Tx) error {
+		_, err := NewOutboxRepo().Claim(ctx, tx, "ownerB", now.Add(time.Minute), 1)
+		return err
+	}); err != nil {
+		t.Fatalf("second claim tx: %v", err)
+	}
+
+	// 排他断言（事务外执行，避免 fn 内 Goexit 死锁 pool.Close）。
+	var owner *string
+	err = uow.WithinTx(ctx, func(ctx context.Context, tx port.Tx) error {
+		return tx.(pgx.Tx).QueryRow(ctx,
+			"SELECT claim_owner FROM system.outbox_events WHERE event_id=$1", eventID).Scan(&owner)
+	})
+	if err != nil {
+		t.Fatalf("read claim owner: %v", err)
+	}
+	if owner != nil && *owner != "ownerA" {
+		t.Fatalf("claim stolen: owner=%s", *owner)
 	}
 }
 

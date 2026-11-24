@@ -5,38 +5,39 @@ import (
 	"time"
 
 	"github.com/ecakeman/alert/internal/application/port"
+	"github.com/ecakeman/alert/internal/infrastructure/persistence/postgres/model"
 )
 
 type serviceRepo struct{}
 
 func NewServiceRepo() port.ServiceRepo { return serviceRepo{} }
 
-const serviceColumns = `service_id,service_key,name,description,enabled,monitor_aggregation_mode,authority_producer_id,deleted_at,created_at,updated_at`
-
-func scanService(row scannable) (port.Service, error) {
-	var s port.Service
-	if err := row.Scan(&s.ServiceID, &s.ServiceKey, &s.Name, &s.Description, &s.Enabled,
-		&s.MonitorAggregationMode, &s.AuthorityProducerID, &s.DeletedAt, &s.CreatedAt, &s.UpdatedAt); err != nil {
-		return port.Service{}, Translate(err)
-	}
-	return s, nil
-}
-
 func (serviceRepo) Create(ctx context.Context, tx port.Tx, s port.Service) error {
+	row := model.ServiceRowFromApp(s)
 	_, err := txFrom(tx).Exec(ctx, `
 INSERT INTO system.services(service_id,service_key,name,description,enabled,monitor_aggregation_mode,authority_producer_id,created_at,updated_at)
 VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
-		s.ServiceID, s.ServiceKey, s.Name, s.Description, s.Enabled, s.MonitorAggregationMode,
-		s.AuthorityProducerID, utc(s.CreatedAt), utc(s.UpdatedAt))
+		row.ServiceID, row.ServiceKey, row.Name, row.Description, row.Enabled,
+		row.MonitorAggregationMode, row.AuthorityProducerID, utc(row.CreatedAt), utc(row.UpdatedAt))
 	return Translate(err)
 }
 
 func (serviceRepo) Get(ctx context.Context, tx port.Tx, serviceID string) (port.Service, error) {
-	return scanService(txFrom(tx).QueryRow(ctx, `SELECT `+serviceColumns+` FROM system.services WHERE service_id=$1`, serviceID))
+	row, err := model.ServiceRow{}.Scan(txFrom(tx).QueryRow(ctx,
+		`SELECT `+model.ServiceColumns+` FROM system.services WHERE service_id=$1`, serviceID))
+	if err != nil {
+		return port.Service{}, Translate(err)
+	}
+	return row.ToApp(), nil
 }
 
 func (serviceRepo) GetByKey(ctx context.Context, tx port.Tx, serviceKey string) (port.Service, error) {
-	return scanService(txFrom(tx).QueryRow(ctx, `SELECT `+serviceColumns+` FROM system.services WHERE service_key=$1`, serviceKey))
+	row, err := model.ServiceRow{}.Scan(txFrom(tx).QueryRow(ctx,
+		`SELECT `+model.ServiceColumns+` FROM system.services WHERE service_key=$1`, serviceKey))
+	if err != nil {
+		return port.Service{}, Translate(err)
+	}
+	return row.ToApp(), nil
 }
 
 func (serviceRepo) List(ctx context.Context, tx port.Tx, f port.ServiceFilter) ([]port.Service, error) {
@@ -45,7 +46,7 @@ func (serviceRepo) List(ctx context.Context, tx port.Tx, f port.ServiceFilter) (
 		limit = 50
 	}
 	rows, err := txFrom(tx).Query(ctx, `
-SELECT `+serviceColumns+` FROM system.services
+SELECT `+model.ServiceColumns+` FROM system.services
 WHERE deleted_at IS NULL
   AND ($1 = '' OR name ILIKE '%'||$1||'%' OR service_key ILIKE '%'||$1||'%')
 ORDER BY created_at DESC
@@ -56,11 +57,11 @@ LIMIT $2 OFFSET $3`, f.Query, limit, f.Offset)
 	defer rows.Close()
 	var out []port.Service
 	for rows.Next() {
-		s, err := scanService(rows)
+		row, err := model.ServiceRow{}.Scan(rows)
 		if err != nil {
-			return nil, err
+			return nil, Translate(err)
 		}
-		out = append(out, s)
+		out = append(out, row.ToApp())
 	}
 	return out, Translate(rows.Err())
 }
