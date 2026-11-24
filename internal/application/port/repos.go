@@ -30,6 +30,12 @@ type TargetRepo interface {
 	SoftDelete(ctx context.Context, tx Tx, targetID string, at time.Time) error
 }
 
+// TargetScheduleSource 是探测调度读取“启用且到期目标快照”的窄端口；
+// 由 monitor 用例实现，bootstrap 注入 probe（T-S1.13 接线）。
+type TargetScheduleSource interface {
+	DueTargets(ctx context.Context, now time.Time) ([]TargetSnapshot, error)
+}
+
 type SourceStateRepo interface {
 	Get(ctx context.Context, tx Tx, serviceID, sourceType string) (SourceState, error)
 	ListByService(ctx context.Context, tx Tx, serviceID string) ([]SourceState, error)

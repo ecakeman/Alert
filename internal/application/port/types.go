@@ -264,3 +264,23 @@ type Page struct {
 	Limit  int
 	Offset int
 }
+
+// TargetSnapshot 是探测调度所需的目标快照（不含存储时间字段）。
+type TargetSnapshot struct {
+	TargetID             string
+	ServiceID            string
+	TargetKey            string
+	TargetType           string
+	Address              string
+	Config               []byte
+	IntervalMS           int
+	TimeoutMS            int
+	FailureThreshold     int
+	RecoveryThreshold    int
+	IsRequired           bool
+	Status               string
+	ConsecutiveFailures  int
+	ConsecutiveSuccesses int
+	LastCheckAt          *time.Time
+	ConfigGeneration     int64
+}
