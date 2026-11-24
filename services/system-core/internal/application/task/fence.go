@@ -81,7 +81,8 @@ func leaseValid(task porttask.AgentTask, id TaskIdentity, now time.Time) bool {
 	if !ok {
 		return false
 	}
-	return taskID == task.TaskID && generation == task.Generation && until == task.LeaseUntil.Unix()
+	return taskID == task.TaskID && generation == task.Generation &&
+		until > now.Unix() && task.LeaseUntil.After(now)
 }
 
 func encodeLeaseToken(taskID string, generation, leaseUntilUnix int64) string {

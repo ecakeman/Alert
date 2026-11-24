@@ -39,7 +39,7 @@ func TestFenceRejectsFourMismatchesForAllActions(t *testing.T) {
 		{"type", func(_ *porttask.AgentTask, id *TaskIdentity) { id.TaskType = "ARCHIVE" }, domain.CodeTypeMismatch},
 		{"generation", func(_ *porttask.AgentTask, id *TaskIdentity) { id.Generation = 1 }, domain.CodeStaleGeneration},
 		{"lease", func(_ *porttask.AgentTask, id *TaskIdentity) {
-			id.LeaseToken = encodeLeaseToken("t1", 2, leaseUntil.Unix()+3600)
+			id.LeaseToken = encodeLeaseToken("t9", 2, leaseUntil.Unix())
 		}, domain.CodeLeaseLost},
 	}
 
