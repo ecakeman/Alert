@@ -82,7 +82,10 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (TaskView, bool, e
 		if latest.InputVersion > to {
 			to = latest.InputVersion
 		}
-		if from > to {
+		if in.TaskType == TaskTypeArchive {
+			from = to
+		}
+		if in.TaskType == TaskTypeDiagnosis && from > to {
 			return nil
 		}
 
