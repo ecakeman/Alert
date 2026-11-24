@@ -2,6 +2,8 @@ package messaging
 
 import (
 	"context"
+	"encoding/json"
+	"log"
 
 	"github.com/segmentio/kafka-go"
 )
@@ -13,6 +15,7 @@ type MessageHandler func(ctx context.Context, body []byte) error
 type Consumer struct {
 	reader  *kafka.Reader
 	handler MessageHandler
+	onError func(error)
 }
 
 func NewConsumer(brokers []string, topic, groupID string, handler MessageHandler) *Consumer {
@@ -29,6 +32,10 @@ func NewConsumer(brokers []string, topic, groupID string, handler MessageHandler
 	return &Consumer{reader: kafka.NewReader(cfg), handler: handler}
 }
 
+// OnError 注册单条消息处理失败回调；未设置时仅记录日志。
+// 单条失败不终止消费，只有 ctx 取消或 reader 关闭才退出。
+func (c *Consumer) OnError(fn func(error)) { c.onError = fn }
+
 // Run 持续消费直到 ctx 取消。
 func (c *Consumer) Run(ctx context.Context) error {
 	for {
@@ -40,8 +47,19 @@ func (c *Consumer) Run(ctx context.Context) error {
 			return err
 		}
 		if err := c.handler(ctx, m.Value); err != nil {
-			return err
+			c.reportHandlerError(m.Value, err)
 		}
+	}
+}
+
+func (c *Consumer) reportHandlerError(body []byte, err error) {
+	var meta struct {
+		EventID string `json:"event_id"`
+	}
+	_ = json.Unmarshal(body, &meta)
+	log.Printf("ERROR consumer handler failed event_id=%s reason=%v", meta.EventID, err)
+	if c.onError != nil {
+		c.onError(err)
 	}
 }
 
