@@ -53,6 +53,29 @@ WHERE service_id=$1 AND task_id=$2 AND generation=$3`, serviceID, taskID, genera
 	return tag.RowsAffected() == 1, nil
 }
 
+// ListExpired 只读返回过期所有权（含任务信息），回收语义由应用层组合。
+func (ownershipRepo) ListExpired(ctx context.Context, tx portshared.Tx, now time.Time, limit int) ([]porttask.Ownership, error) {
+	if limit <= 0 {
+		limit = 32
+	}
+	rows, err := txFrom(tx).Query(ctx, `
+SELECT `+model.OwnershipColumns+` FROM system.service_execution_ownership
+WHERE lease_until <= $1 ORDER BY lease_until LIMIT $2`, utc(now), limit)
+	if err != nil {
+		return nil, Translate(err)
+	}
+	defer rows.Close()
+	var out []porttask.Ownership
+	for rows.Next() {
+		row, err := model.OwnershipRow{}.Scan(rows)
+		if err != nil {
+			return nil, Translate(err)
+		}
+		out = append(out, row.ToApp())
+	}
+	return out, Translate(rows.Err())
+}
+
 func (ownershipRepo) ReclaimExpired(ctx context.Context, tx portshared.Tx, now time.Time) ([]string, error) {
 	rows, err := txFrom(tx).Query(ctx, `
 SELECT service_id FROM system.service_execution_ownership WHERE lease_until <= $1`, utc(now))

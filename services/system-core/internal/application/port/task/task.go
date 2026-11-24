@@ -74,6 +74,10 @@ type TaskRepo interface {
 	UpdateCAS(ctx context.Context, tx portshared.Tx, taskID string, generation int64, expectedStatuses []string, patch TaskPatch) (int64, error)
 	ListDueRetry(ctx context.Context, tx portshared.Tx, now time.Time, limit int) ([]AgentTask, error)
 	ListDispatchPending(ctx context.Context, tx portshared.Tx, limit int) ([]AgentTask, error)
+	GetForUpdate(ctx context.Context, tx portshared.Tx, taskID string) (AgentTask, error)
+	ListStaleDispatched(ctx context.Context, tx portshared.Tx, updatedBefore time.Time, limit int) ([]AgentTask, error)
+	ListRunningLeaseExpired(ctx context.Context, tx portshared.Tx, now time.Time, limit int) ([]AgentTask, error)
+	ListByEpisode(ctx context.Context, tx portshared.Tx, episodeID string) ([]AgentTask, error)
 }
 
 type OwnershipRepo interface {
@@ -81,12 +85,14 @@ type OwnershipRepo interface {
 	Get(ctx context.Context, tx portshared.Tx, serviceID string) (Ownership, error)
 	Release(ctx context.Context, tx portshared.Tx, serviceID, taskID string, generation int64) (bool, error)
 	ReclaimExpired(ctx context.Context, tx portshared.Tx, now time.Time) ([]string, error)
+	ListExpired(ctx context.Context, tx portshared.Tx, now time.Time, limit int) ([]Ownership, error)
 }
 
 type ArtifactRepo interface {
 	GetLatest(ctx context.Context, tx portshared.Tx, episodeID, artifactType string) (ArtifactRef, error)
 	ListByEpisode(ctx context.Context, tx portshared.Tx, episodeID string) ([]ArtifactRef, error)
 	Insert(ctx context.Context, tx portshared.Tx, a ArtifactRef) error
+	GetByTypeVersion(ctx context.Context, tx portshared.Tx, episodeID, artifactType string, version int) (ArtifactRef, error)
 }
 
 // TaskDispatcher：任务提交端口，事务外调用（B7 实现）。

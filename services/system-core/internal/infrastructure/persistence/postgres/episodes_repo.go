@@ -82,6 +82,18 @@ WHERE episode_id=$1`, episodeID, status, utc(at), utcPtr(resolvedAt), utcPtr(arc
 	return Translate(err)
 }
 
+// AdvanceProcessedVersion 只推进 processed_input_version：目标大于当前且不超过 input_version 才生效。
+// 明确不触碰 episodes.status。
+func (episodeRepo) AdvanceProcessedVersion(ctx context.Context, tx portshared.Tx, episodeID string, target int64) (int64, error) {
+	tag, err := txFrom(tx).Exec(ctx, `
+UPDATE system.episodes SET processed_input_version=$2, updated_at=now()
+WHERE episode_id=$1 AND processed_input_version < $2 AND $2 <= input_version`, episodeID, target)
+	if err != nil {
+		return 0, Translate(err)
+	}
+	return tag.RowsAffected(), nil
+}
+
 func (episodeRepo) TouchInputVersion(ctx context.Context, tx portshared.Tx, episodeID string, inputVersion int64, hash string, monitorWatermark, appWatermark int64) error {
 	_, err := txFrom(tx).Exec(ctx, `
 UPDATE system.episodes SET

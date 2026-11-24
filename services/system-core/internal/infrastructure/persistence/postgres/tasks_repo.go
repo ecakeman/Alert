@@ -100,6 +100,84 @@ ORDER BY next_retry_at LIMIT $2`, utc(now), limit)
 	return out, Translate(rows.Err())
 }
 
+// GetForUpdate 在事务内对任务行加锁读取，供回调 / fence 路径先读后判。
+func (taskRepo) GetForUpdate(ctx context.Context, tx portshared.Tx, taskID string) (porttask.AgentTask, error) {
+	row, err := model.TaskRow{}.Scan(txFrom(tx).QueryRow(ctx,
+		`SELECT `+model.TaskColumns+` FROM system.agent_tasks WHERE task_id=$1 FOR UPDATE`, taskID))
+	if err != nil {
+		return porttask.AgentTask{}, Translate(err)
+	}
+	return row.ToApp(), nil
+}
+
+// ListStaleDispatched 返回 updated_at 早于阈值仍处 DISPATCHED 的任务（派发中断恢复）。
+func (taskRepo) ListStaleDispatched(ctx context.Context, tx portshared.Tx, updatedBefore time.Time, limit int) ([]porttask.AgentTask, error) {
+	if limit <= 0 {
+		limit = 32
+	}
+	rows, err := txFrom(tx).Query(ctx, `
+SELECT `+model.TaskColumns+` FROM system.agent_tasks
+WHERE status='DISPATCHED' AND updated_at < $1
+ORDER BY updated_at LIMIT $2`, utc(updatedBefore), limit)
+	if err != nil {
+		return nil, Translate(err)
+	}
+	defer rows.Close()
+	var out []porttask.AgentTask
+	for rows.Next() {
+		row, err := model.TaskRow{}.Scan(rows)
+		if err != nil {
+			return nil, Translate(err)
+		}
+		out = append(out, row.ToApp())
+	}
+	return out, Translate(rows.Err())
+}
+
+// ListRunningLeaseExpired 返回租约已过期的 RUNNING 任务（失租恢复）。
+func (taskRepo) ListRunningLeaseExpired(ctx context.Context, tx portshared.Tx, now time.Time, limit int) ([]porttask.AgentTask, error) {
+	if limit <= 0 {
+		limit = 32
+	}
+	rows, err := txFrom(tx).Query(ctx, `
+SELECT `+model.TaskColumns+` FROM system.agent_tasks
+WHERE status='RUNNING' AND (lease_until IS NULL OR lease_until <= $1)
+ORDER BY lease_until LIMIT $2`, utc(now), limit)
+	if err != nil {
+		return nil, Translate(err)
+	}
+	defer rows.Close()
+	var out []porttask.AgentTask
+	for rows.Next() {
+		row, err := model.TaskRow{}.Scan(rows)
+		if err != nil {
+			return nil, Translate(err)
+		}
+		out = append(out, row.ToApp())
+	}
+	return out, Translate(rows.Err())
+}
+
+// ListByEpisode 返回故障下最近任务（上限 200），供应用层判终态。
+func (taskRepo) ListByEpisode(ctx context.Context, tx portshared.Tx, episodeID string) ([]porttask.AgentTask, error) {
+	rows, err := txFrom(tx).Query(ctx, `
+SELECT `+model.TaskColumns+` FROM system.agent_tasks
+WHERE episode_id=$1 ORDER BY created_at DESC LIMIT 200`, episodeID)
+	if err != nil {
+		return nil, Translate(err)
+	}
+	defer rows.Close()
+	var out []porttask.AgentTask
+	for rows.Next() {
+		row, err := model.TaskRow{}.Scan(rows)
+		if err != nil {
+			return nil, Translate(err)
+		}
+		out = append(out, row.ToApp())
+	}
+	return out, Translate(rows.Err())
+}
+
 func (taskRepo) ListDispatchPending(ctx context.Context, tx portshared.Tx, limit int) ([]porttask.AgentTask, error) {
 	if limit <= 0 {
 		limit = 32
