@@ -150,3 +150,32 @@ func TestLoadBoundaries(t *testing.T) {
 		}
 	}
 }
+
+// S2.8：表驱动后 B7 保留项（AGENT_GRPC_TARGET 等）覆盖解析生效。
+func TestTableDrivenB7Overrides(t *testing.T) {
+	c, err := Load(lookupFrom(map[string]string{
+		"AGENT_GRPC_TARGET": "agent:50051",
+		"GRPC_ADDR":         ":9091",
+		"OWNERSHIP_TTL":     "90s",
+		"TASK_MAX_ATTEMPTS": "5",
+		"TASK_LEASE":        "45s",
+	}))
+	if err != nil {
+		t.Fatalf("load with B7 overrides: %v", err)
+	}
+	if c.AgentGRPCTarget != "agent:50051" || c.GRPCAddr != ":9091" ||
+		c.OwnershipTTL != 90*time.Second || c.TaskMaxAttempts != 5 || c.TaskLease != 45*time.Second {
+		t.Fatalf("B7 overrides not applied: %+v", c)
+	}
+}
+
+// S2.8：首个 LoadError 顺序冻结——两个非法项同时存在时，报原 Load 书写序靠前的变量。
+func TestTableDrivenErrorOrder(t *testing.T) {
+	_, err := Load(lookupFrom(map[string]string{
+		"TASK_MAX_ATTEMPTS": "abc", // 原序位置 6
+		"OUTBOX_BATCH":      "xyz", // 原序位置 10
+	}))
+	if err == nil || !strings.Contains(err.Error(), "TASK_MAX_ATTEMPTS") {
+		t.Fatalf("expected first error TASK_MAX_ATTEMPTS (earlier in load order), got %v", err)
+	}
+}

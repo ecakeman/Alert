@@ -56,7 +56,138 @@ func (e *LoadError) Error() string { return "config " + e.Var + ": " + e.Reason 
 
 var validLogLevels = map[string]bool{"debug": true, "info": true, "warn": true, "error": true}
 
-// Load 从 lookup 读取配置：先填默认值，再解析，最后校验。
+// envSpec 是描述项：env 为变量名（= LoadError.Var），apply 在 raw 非空时解析并赋值、空串跳过（保持默认值）。
+type envSpec struct {
+	env   string
+	apply func(c *Config, raw string) error
+}
+
+// 四个泛型解析构造器：错误 Reason 文本由 parse 单点产生，天然冻结。
+func strSpec(env string, set func(*Config, string)) envSpec {
+	return envSpec{env: env, apply: func(c *Config, raw string) error {
+		if raw == "" {
+			return nil
+		}
+		set(c, raw)
+		return nil
+	}}
+}
+
+func boolSpec(env string, set func(*Config, bool)) envSpec {
+	return envSpec{env: env, apply: func(c *Config, raw string) error {
+		if raw == "" {
+			return nil
+		}
+		b, err := parseBool(raw, env)
+		if err != nil {
+			return err
+		}
+		set(c, b)
+		return nil
+	}}
+}
+
+func intSpec(env string, set func(*Config, int)) envSpec {
+	return envSpec{env: env, apply: func(c *Config, raw string) error {
+		if raw == "" {
+			return nil
+		}
+		n, err := parseInt(raw, env)
+		if err != nil {
+			return err
+		}
+		set(c, n)
+		return nil
+	}}
+}
+
+func durSpec(env string, set func(*Config, time.Duration)) envSpec {
+	return envSpec{env: env, apply: func(c *Config, raw string) error {
+		if raw == "" {
+			return nil
+		}
+		d, err := parseDuration(raw, env)
+		if err != nil {
+			return err
+		}
+		set(c, d)
+		return nil
+	}}
+}
+
+// 分组描述项表（分组仅为表组织；DBMinConns 亦有 DB_MIN_CONNS 覆盖项，与 Validate 范围校验并存）。
+var (
+	sharedSpecs = []envSpec{
+		strSpec("LOG_LEVEL", func(c *Config, v string) { c.LogLevel = v }),
+		strSpec("APP_ENV", func(c *Config, v string) { c.AppEnv = v }),
+		strSpec("DATABASE_URL", func(c *Config, v string) { c.DatabaseURL = v }),
+		intSpec("DB_MAX_CONNS", func(c *Config, v int) { c.DBMaxConns = v }),
+		intSpec("DB_MIN_CONNS", func(c *Config, v int) { c.DBMinConns = v }),
+		durSpec("DB_CONNECT_TIMEOUT", func(c *Config, v time.Duration) { c.DBConnectTimeout = v }),
+		durSpec("DB_MAX_CONN_LIFETIME", func(c *Config, v time.Duration) { c.DBMaxConnLifetime = v }),
+		durSpec("DB_MAX_CONN_IDLE_TIME", func(c *Config, v time.Duration) { c.DBMaxConnIdleTime = v }),
+		durSpec("DB_HEALTHCHECK_PERIOD", func(c *Config, v time.Duration) { c.DBHealthcheckPeriod = v }),
+		durSpec("READYZ_TIMEOUT", func(c *Config, v time.Duration) { c.ReadyzTimeout = v }),
+		durSpec("HTTP_READ_TIMEOUT", func(c *Config, v time.Duration) { c.HTTPReadTimeout = v }),
+		durSpec("HTTP_WRITE_TIMEOUT", func(c *Config, v time.Duration) { c.HTTPWriteTimeout = v }),
+		durSpec("HTTP_IDLE_TIMEOUT", func(c *Config, v time.Duration) { c.HTTPIdleTimeout = v }),
+		durSpec("HTTP_SHUTDOWN_TIMEOUT", func(c *Config, v time.Duration) { c.HTTPShutdownTimeout = v }),
+	}
+
+	apiSpecs = []envSpec{
+		strSpec("HTTP_ADDR", func(c *Config, v string) { c.HTTPAddr = v }),
+		boolSpec("MIGRATE_ON_START", func(c *Config, v bool) { c.MigrateOnStart = v }),
+	}
+
+	workerSpecs = []envSpec{
+		intSpec("TASK_MAX_ATTEMPTS", func(c *Config, v int) { c.TaskMaxAttempts = v }),
+		durSpec("OWNERSHIP_TTL", func(c *Config, v time.Duration) { c.OwnershipTTL = v }),
+		boolSpec("OUTBOX_PUBLISHER_ENABLED", func(c *Config, v bool) { c.OutboxPublisherEnabled = v }),
+		durSpec("OUTBOX_CLAIM_LEASE", func(c *Config, v time.Duration) { c.OutboxClaimLease = v }),
+		intSpec("OUTBOX_BATCH", func(c *Config, v int) { c.OutboxBatch = v }),
+		strSpec("KAFKA_BROKERS", func(c *Config, v string) { c.KafkaBrokers = v }),
+		strSpec("KAFKA_TOPIC", func(c *Config, v string) { c.KafkaTopic = v }),
+		intSpec("PROBE_WORKERS", func(c *Config, v int) { c.ProbeWorkers = v }),
+		intSpec("PROBE_QUEUE_CAPACITY", func(c *Config, v int) { c.ProbeQueueCapacity = v }),
+		strSpec("AGENT_GRPC_TARGET", func(c *Config, v string) { c.AgentGRPCTarget = v }),
+		strSpec("GRPC_ADDR", func(c *Config, v string) { c.GRPCAddr = v }),
+		durSpec("AGENT_GRPC_TIMEOUT", func(c *Config, v time.Duration) { c.AgentGRPCTimeout = v }),
+		durSpec("OUTBOX_POLL_INTERVAL", func(c *Config, v time.Duration) { c.OutboxPollInterval = v }),
+		durSpec("TASK_RETRY_DELAY", func(c *Config, v time.Duration) { c.TaskRetryDelay = v }),
+		durSpec("TASK_DEADLINE", func(c *Config, v time.Duration) { c.TaskDeadline = v }),
+		durSpec("PROBE_SHUTDOWN_TIMEOUT", func(c *Config, v time.Duration) { c.ProbeShutdownTimeout = v }),
+		durSpec("TASK_LEASE", func(c *Config, v time.Duration) { c.TaskLease = v }),
+	}
+)
+
+// specByName 汇总三组表供 loadOrder 查找（同一变量仅登记一次）。
+var specByName = func() map[string]envSpec {
+	m := make(map[string]envSpec)
+	for _, s := range sharedSpecs {
+		m[s.env] = s
+	}
+	for _, s := range apiSpecs {
+		m[s.env] = s
+	}
+	for _, s := range workerSpecs {
+		m[s.env] = s
+	}
+	return m
+}()
+
+// loadOrder 逐项对齐原 Load 的变量书写顺序：三组表为交错归属，组间拼接无法直接复原原序，
+// 故以有序名称列表驱动遍历，保证任一非法输入的首个 LoadError 与历史行为逐字节一致。
+var loadOrder = []string{
+	"HTTP_ADDR", "LOG_LEVEL", "APP_ENV", "DATABASE_URL", "MIGRATE_ON_START",
+	"TASK_MAX_ATTEMPTS", "OWNERSHIP_TTL", "OUTBOX_PUBLISHER_ENABLED", "OUTBOX_CLAIM_LEASE", "OUTBOX_BATCH",
+	"KAFKA_BROKERS", "KAFKA_TOPIC", "PROBE_WORKERS", "PROBE_QUEUE_CAPACITY", "AGENT_GRPC_TARGET",
+	"DB_MAX_CONNS", "DB_MIN_CONNS", "DB_CONNECT_TIMEOUT", "DB_MAX_CONN_LIFETIME", "DB_MAX_CONN_IDLE_TIME",
+	"DB_HEALTHCHECK_PERIOD", "GRPC_ADDR", "AGENT_GRPC_TIMEOUT", "OUTBOX_POLL_INTERVAL", "TASK_RETRY_DELAY",
+	"TASK_DEADLINE", "PROBE_SHUTDOWN_TIMEOUT", "READYZ_TIMEOUT", "HTTP_READ_TIMEOUT", "HTTP_WRITE_TIMEOUT",
+	"HTTP_IDLE_TIMEOUT", "HTTP_SHUTDOWN_TIMEOUT", "TASK_LEASE",
+}
+
+// Load 从 lookup 读取配置：先填默认值，再按表解析（首个非法项即返回），最后校验。
 // 保持零外部依赖（不读文件、不连库），可独立单测。
 func Load(lookup func(string) string) (Config, error) {
 	c := Config{
@@ -92,189 +223,10 @@ func Load(lookup func(string) string) (Config, error) {
 		ReadyzTimeout:          2 * time.Second,
 	}
 
-	if v := lookup("HTTP_ADDR"); v != "" {
-		c.HTTPAddr = v
-	}
-	if v := lookup("LOG_LEVEL"); v != "" {
-		c.LogLevel = v
-	}
-	if v := lookup("APP_ENV"); v != "" {
-		c.AppEnv = v
-	}
-
-	if v := lookup("DATABASE_URL"); v != "" {
-		c.DatabaseURL = v
-	}
-	if v := lookup("MIGRATE_ON_START"); v != "" {
-		b, err := parseBool(v, "MIGRATE_ON_START")
-		if err != nil {
+	for _, name := range loadOrder {
+		if err := specByName[name].apply(&c, lookup(name)); err != nil {
 			return Config{}, err
 		}
-		c.MigrateOnStart = b
-	}
-
-	if v := lookup("TASK_MAX_ATTEMPTS"); v != "" {
-		n, err := parseInt(v, "TASK_MAX_ATTEMPTS")
-		if err != nil {
-			return Config{}, err
-		}
-		c.TaskMaxAttempts = n
-	}
-	if v := lookup("OWNERSHIP_TTL"); v != "" {
-		d, err := parseDuration(v, "OWNERSHIP_TTL")
-		if err != nil {
-			return Config{}, err
-		}
-		c.OwnershipTTL = d
-	}
-	if v := lookup("OUTBOX_PUBLISHER_ENABLED"); v != "" {
-		b, err := parseBool(v, "OUTBOX_PUBLISHER_ENABLED")
-		if err != nil {
-			return Config{}, err
-		}
-		c.OutboxPublisherEnabled = b
-	}
-	if v := lookup("OUTBOX_CLAIM_LEASE"); v != "" {
-		d, err := parseDuration(v, "OUTBOX_CLAIM_LEASE")
-		if err != nil {
-			return Config{}, err
-		}
-		c.OutboxClaimLease = d
-	}
-	if v := lookup("OUTBOX_BATCH"); v != "" {
-		n, err := parseInt(v, "OUTBOX_BATCH")
-		if err != nil {
-			return Config{}, err
-		}
-		c.OutboxBatch = n
-	}
-	if v := lookup("KAFKA_BROKERS"); v != "" {
-		c.KafkaBrokers = v
-	}
-	if v := lookup("KAFKA_TOPIC"); v != "" {
-		c.KafkaTopic = v
-	}
-	if v := lookup("PROBE_WORKERS"); v != "" {
-		n, err := parseInt(v, "PROBE_WORKERS")
-		if err != nil {
-			return Config{}, err
-		}
-		c.ProbeWorkers = n
-	}
-	if v := lookup("PROBE_QUEUE_CAPACITY"); v != "" {
-		n, err := parseInt(v, "PROBE_QUEUE_CAPACITY")
-		if err != nil {
-			return Config{}, err
-		}
-		c.ProbeQueueCapacity = n
-	}
-	if v := lookup("AGENT_GRPC_TARGET"); v != "" {
-		c.AgentGRPCTarget = v
-	}
-
-	if v := lookup("DB_MAX_CONNS"); v != "" {
-		n, err := parseInt(v, "DB_MAX_CONNS")
-		if err != nil {
-			return Config{}, err
-		}
-		c.DBMaxConns = n
-	}
-	if v := lookup("DB_MIN_CONNS"); v != "" {
-		n, err := parseInt(v, "DB_MIN_CONNS")
-		if err != nil {
-			return Config{}, err
-		}
-		c.DBMinConns = n
-	}
-	if v := lookup("DB_CONNECT_TIMEOUT"); v != "" {
-		d, err := parseDuration(v, "DB_CONNECT_TIMEOUT")
-		if err != nil {
-			return Config{}, err
-		}
-		c.DBConnectTimeout = d
-	}
-	if v := lookup("DB_MAX_CONN_LIFETIME"); v != "" {
-		d, err := parseDuration(v, "DB_MAX_CONN_LIFETIME")
-		if err != nil {
-			return Config{}, err
-		}
-		c.DBMaxConnLifetime = d
-	}
-	if v := lookup("DB_MAX_CONN_IDLE_TIME"); v != "" {
-		d, err := parseDuration(v, "DB_MAX_CONN_IDLE_TIME")
-		if err != nil {
-			return Config{}, err
-		}
-		c.DBMaxConnIdleTime = d
-	}
-	if v := lookup("DB_HEALTHCHECK_PERIOD"); v != "" {
-		d, err := parseDuration(v, "DB_HEALTHCHECK_PERIOD")
-		if err != nil {
-			return Config{}, err
-		}
-		c.DBHealthcheckPeriod = d
-	}
-	if v := lookup("GRPC_ADDR"); v != "" {
-		c.GRPCAddr = v
-	}
-	if v := lookup("AGENT_GRPC_TIMEOUT"); v != "" {
-		d, err := parseDuration(v, "AGENT_GRPC_TIMEOUT")
-		if err != nil {
-			return Config{}, err
-		}
-		c.AgentGRPCTimeout = d
-	}
-	if v := lookup("OUTBOX_POLL_INTERVAL"); v != "" {
-		d, err := parseDuration(v, "OUTBOX_POLL_INTERVAL")
-		if err != nil {
-			return Config{}, err
-		}
-		c.OutboxPollInterval = d
-	}
-	if v := lookup("TASK_RETRY_DELAY"); v != "" {
-		d, err := parseDuration(v, "TASK_RETRY_DELAY")
-		if err != nil {
-			return Config{}, err
-		}
-		c.TaskRetryDelay = d
-	}
-	if v := lookup("TASK_DEADLINE"); v != "" {
-		d, err := parseDuration(v, "TASK_DEADLINE")
-		if err != nil {
-			return Config{}, err
-		}
-		c.TaskDeadline = d
-	}
-	if v := lookup("PROBE_SHUTDOWN_TIMEOUT"); v != "" {
-		d, err := parseDuration(v, "PROBE_SHUTDOWN_TIMEOUT")
-		if err != nil {
-			return Config{}, err
-		}
-		c.ProbeShutdownTimeout = d
-	}
-	if v := lookup("READYZ_TIMEOUT"); v != "" {
-		d, err := parseDuration(v, "READYZ_TIMEOUT")
-		if err != nil {
-			return Config{}, err
-		}
-		c.ReadyzTimeout = d
-	}
-
-	var err error
-	if c.HTTPReadTimeout, err = parseDurOpt(lookup("HTTP_READ_TIMEOUT"), c.HTTPReadTimeout, "HTTP_READ_TIMEOUT"); err != nil {
-		return Config{}, err
-	}
-	if c.HTTPWriteTimeout, err = parseDurOpt(lookup("HTTP_WRITE_TIMEOUT"), c.HTTPWriteTimeout, "HTTP_WRITE_TIMEOUT"); err != nil {
-		return Config{}, err
-	}
-	if c.HTTPIdleTimeout, err = parseDurOpt(lookup("HTTP_IDLE_TIMEOUT"), c.HTTPIdleTimeout, "HTTP_IDLE_TIMEOUT"); err != nil {
-		return Config{}, err
-	}
-	if c.HTTPShutdownTimeout, err = parseDurOpt(lookup("HTTP_SHUTDOWN_TIMEOUT"), c.HTTPShutdownTimeout, "HTTP_SHUTDOWN_TIMEOUT"); err != nil {
-		return Config{}, err
-	}
-	if c.TaskLease, err = parseDurOpt(lookup("TASK_LEASE"), c.TaskLease, "TASK_LEASE"); err != nil {
-		return Config{}, err
 	}
 
 	if err := c.Validate(); err != nil {
@@ -305,13 +257,6 @@ func parseDuration(raw, name string) (time.Duration, error) {
 		return 0, &LoadError{Var: name, Reason: "invalid duration"}
 	}
 	return d, nil
-}
-
-func parseDurOpt(raw string, def time.Duration, name string) (time.Duration, error) {
-	if raw == "" {
-		return def, nil
-	}
-	return parseDuration(raw, name)
 }
 
 // Validate 校验配置合法性；host 可为空（":8080" 合法）。
