@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/ecakeman/alert/internal/application/port"
+	"github.com/ecakeman/alert/internal/domain"
 )
 
 // Deps 是探测采样落库与故障驱动的依赖。
@@ -100,36 +101,31 @@ func (s *Service) recomputeSource(ctx context.Context, tx port.Tx, serviceID str
 	if err != nil {
 		return "", err
 	}
-	var required []port.MonitorTarget
-	for _, t := range targets {
-		if t.IsRequired {
-			required = append(required, t)
-		}
+	svc, err := s.deps.Services.Get(ctx, tx, serviceID)
+	if err != nil {
+		return "", err
 	}
-
-	status := "UNKNOWN"
-	if len(required) > 0 {
-		normal, abnormal := 0, 0
-		for _, t := range required {
-			switch t.Status {
-			case "NORMAL":
-				normal++
-			case "ABNORMAL":
-				abnormal++
-			}
-		}
-		switch {
-		case abnormal > 0:
-			status = "ABNORMAL"
-		case normal == len(required):
-			status = "NORMAL"
-		}
+	status, err := domain.AggregateMonitor(svc.MonitorAggregationMode, monitorTargetHealths(targets))
+	if err != nil {
+		return "", err
 	}
-
 	if err := s.deps.Sources.Upsert(ctx, tx, port.SourceState{
 		ServiceID: serviceID, SourceType: "MONITOR", Status: status,
 	}); err != nil {
 		return "", err
 	}
 	return status, nil
+}
+
+func monitorTargetHealths(targets []port.MonitorTarget) []domain.TargetHealth {
+	out := make([]domain.TargetHealth, 0, len(targets))
+	for _, t := range targets {
+		out = append(out, domain.TargetHealth{
+			Required: t.IsRequired,
+			Enabled:  t.Enabled,
+			Deleted:  t.DeletedAt != nil,
+			Status:   t.Status,
+		})
+	}
+	return out
 }

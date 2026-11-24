@@ -9,6 +9,7 @@ import (
 	"github.com/ecakeman/alert/internal/application/apperr"
 	"github.com/ecakeman/alert/internal/application/port"
 	"github.com/ecakeman/alert/internal/contracts"
+	"github.com/ecakeman/alert/internal/domain"
 )
 
 // Deps 是用例依赖的端口集合。
@@ -40,6 +41,9 @@ func (s *Service) Create(ctx context.Context, in CreateServiceInput) (ServiceVie
 	mode := in.MonitorAggregationMode
 	if mode == "" {
 		mode = "ALL_REQUIRED"
+	}
+	if mode != domain.ModeAllRequired && mode != domain.ModeAnyRequired && mode != domain.ModeMajority {
+		return ServiceView{}, apperr.Validation("invalid monitor_aggregation_mode")
 	}
 
 	var view ServiceView
@@ -119,6 +123,12 @@ func (s *Service) Get(ctx context.Context, serviceID string) (ServiceView, error
 func (s *Service) Patch(ctx context.Context, serviceID string, p port.ServicePatch) (ServiceView, error) {
 	if p.Name == nil && p.Description == nil && p.Enabled == nil && p.MonitorAggregationMode == nil {
 		return ServiceView{}, apperr.Validation("no updatable fields")
+	}
+	if p.MonitorAggregationMode != nil {
+		m := *p.MonitorAggregationMode
+		if m != domain.ModeAllRequired && m != domain.ModeAnyRequired && m != domain.ModeMajority {
+			return ServiceView{}, apperr.Validation("invalid monitor_aggregation_mode")
+		}
 	}
 	var view ServiceView
 	err := s.deps.UOW.WithinTx(ctx, func(ctx context.Context, tx port.Tx) error {
@@ -266,43 +276,26 @@ func (s *Service) recomputeMonitor(ctx context.Context, tx port.Tx, serviceID, m
 	if err != nil {
 		return err
 	}
-	var required []port.MonitorTarget
-	for _, t := range targets {
-		if t.IsRequired {
-			required = append(required, t)
-		}
+	status, err := domain.AggregateMonitor(mode, monitorTargetHealths(targets))
+	if err != nil {
+		return err
 	}
-
-	status := "UNKNOWN"
-	if len(required) > 0 {
-		normal, abnormal := 0, 0
-		for _, t := range required {
-			switch t.Status {
-			case "NORMAL":
-				normal++
-			case "ABNORMAL":
-				abnormal++
-			}
-		}
-		switch mode {
-		case "ANY_REQUIRED":
-			if abnormal > 0 {
-				status = "ABNORMAL"
-			} else if normal > 0 {
-				status = "NORMAL"
-			}
-		default: // ALL_REQUIRED / MAJORITY 简化按 ALL_REQUIRED
-			if abnormal > 0 {
-				status = "ABNORMAL"
-			} else if normal == len(required) {
-				status = "NORMAL"
-			}
-		}
-	}
-
 	return s.deps.Sources.Upsert(ctx, tx, port.SourceState{
 		ServiceID: serviceID, SourceType: "MONITOR", Status: status,
 	})
+}
+
+func monitorTargetHealths(targets []port.MonitorTarget) []domain.TargetHealth {
+	out := make([]domain.TargetHealth, 0, len(targets))
+	for _, t := range targets {
+		out = append(out, domain.TargetHealth{
+			Required: t.IsRequired,
+			Enabled:  t.Enabled,
+			Deleted:  t.DeletedAt != nil,
+			Status:   t.Status,
+		})
+	}
+	return out
 }
 
 func (s *Service) appendServiceStateChanged(ctx context.Context, tx port.Tx, serviceID string) error {
