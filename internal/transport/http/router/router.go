@@ -16,6 +16,7 @@ import (
 type Deps struct {
 	Health    *handler.Health
 	Service   *handler.Service
+	Target    *handler.Target
 	Dashboard *handler.Dashboard
 	Episode   *handler.Episode
 	Timeout   time.Duration
@@ -54,10 +55,10 @@ func New(deps Deps) *gin.Engine {
 	v1.GET("/services/:service_id", deps.Service.Get)
 	v1.PATCH("/services/:service_id", deps.Service.Patch)
 	v1.DELETE("/services/:service_id", deps.Service.Delete)
-	v1.GET("/services/:service_id/targets", deps.Service.ListTargets)
-	v1.POST("/services/:service_id/targets", deps.Service.CreateTarget)
-	v1.PATCH("/targets/:target_id", deps.Service.PatchTarget)
-	v1.DELETE("/targets/:target_id", deps.Service.DeleteTarget)
+	v1.GET("/services/:service_id/targets", deps.Target.ListTargets)
+	v1.POST("/services/:service_id/targets", deps.Target.CreateTarget)
+	v1.PATCH("/targets/:target_id", deps.Target.PatchTarget)
+	v1.DELETE("/targets/:target_id", deps.Target.DeleteTarget)
 	v1.GET("/episodes", deps.Episode.List)
 	v1.GET("/episodes/:episode_id", deps.Episode.Get)
 	v1.POST("/services/:service_id/events", deps.Episode.AppendEvent)

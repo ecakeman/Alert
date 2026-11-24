@@ -1,76 +1,20 @@
 package handler
 
 import (
-	"encoding/json"
 	"net/http"
-	"strconv"
-	"time"
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/ecakeman/alert/internal/application/apperr"
 	portService "github.com/ecakeman/alert/internal/application/port/service"
 	appservice "github.com/ecakeman/alert/internal/application/service"
 	"github.com/ecakeman/alert/internal/transport/http/dto"
-	"github.com/ecakeman/alert/internal/transport/http/httperr"
 	"github.com/ecakeman/alert/internal/transport/http/response"
 )
 
-// Service 承载服务与目标相关的 HTTP Handler（B4.1：路由 2~6）。
+// Service 承载服务相关的 HTTP Handler（B4.1：路由 2~6）。
 type Service struct{ uc *appservice.Service }
 
 func NewService(uc *appservice.Service) *Service { return &Service{uc: uc} }
-
-func writeErr(c *gin.Context, err error) {
-	status, code, msg := httperr.Classify(apperr.Normalize(err))
-	response.Error(c, status, code, msg)
-}
-
-func parseLimit(raw string, def int) (int, bool) {
-	if raw == "" {
-		return def, true
-	}
-	n, err := strconv.Atoi(raw)
-	if err != nil || n <= 0 || n > 200 {
-		return 0, false
-	}
-	return n, true
-}
-
-func parseOffset(raw string) (int, bool) {
-	if raw == "" {
-		return 0, true
-	}
-	n, err := strconv.Atoi(raw)
-	if err != nil || n < 0 {
-		return 0, false
-	}
-	return n, true
-}
-
-func fmtTime(t *time.Time) *string {
-	if t == nil {
-		return nil
-	}
-	s := t.UTC().Format(time.RFC3339)
-	return &s
-}
-
-func toTarget(t portService.MonitorTarget) dto.Target {
-	cfg := json.RawMessage("null")
-	if len(t.Config) > 0 {
-		cfg = json.RawMessage(t.Config)
-	}
-	return dto.Target{
-		TargetID: t.TargetID, TargetKey: t.TargetKey, TargetName: t.TargetName,
-		TargetType: t.TargetType, Address: t.Address, Config: cfg,
-		IntervalMS: t.IntervalMS, TimeoutMS: t.TimeoutMS,
-		FailureThreshold: t.FailureThreshold, RecoveryThreshold: t.RecoveryThreshold,
-		IsRequired: t.IsRequired, Enabled: t.Enabled, Status: t.Status,
-		ConsecutiveFailures: t.ConsecutiveFailures, ConsecutiveSuccesses: t.ConsecutiveSuccesses,
-		LastCheckAt: fmtTime(t.LastCheckAt),
-	}
-}
 
 func toServiceSummary(s appservice.ServiceSummaryData) dto.ServiceSummary {
 	return dto.ServiceSummary{
@@ -94,19 +38,6 @@ func toServiceView(v appservice.ServiceViewData) dto.ServiceView {
 		AuthorityProducerID:    s.Service.AuthorityProducerID,
 		MonitorStatus:          s.MonitorStatus, AppStatus: s.AppStatus, Targets: targets,
 		TargetCount: s.TargetCount, LastCheckAt: fmtTime(s.LastCheckAt), ActiveEpisodeID: s.ActiveEpisodeID,
-	}
-}
-
-func toTargetInput(t dto.TargetInput) appservice.TargetInput {
-	var cfg []byte
-	if len(t.Config) > 0 {
-		cfg = []byte(t.Config)
-	}
-	return appservice.TargetInput{
-		TargetKey: t.TargetKey, TargetName: t.TargetName, Address: t.Address,
-		TargetType: t.TargetType, Config: cfg, IntervalMS: t.IntervalMS, TimeoutMS: t.TimeoutMS,
-		FailureThreshold: t.FailureThreshold, RecoveryThreshold: t.RecoveryThreshold,
-		IsRequired: t.IsRequired,
 	}
 }
 
@@ -204,71 +135,6 @@ func (h *Service) Patch(c *gin.Context) {
 // Delete：DELETE /services/:service_id
 func (h *Service) Delete(c *gin.Context) {
 	if err := h.uc.SoftDelete(c.Request.Context(), c.Param("service_id")); err != nil {
-		writeErr(c, err)
-		return
-	}
-	c.Status(http.StatusNoContent)
-}
-func toTargetPatch(p dto.TargetPatchPayload) portService.TargetPatch {
-	var cfg []byte
-	if p.Config != nil {
-		cfg = []byte(*p.Config)
-	}
-	return portService.TargetPatch{
-		TargetName: p.TargetName, Address: p.Address, Config: cfg,
-		IntervalMS: p.IntervalMS, TimeoutMS: p.TimeoutMS,
-		FailureThreshold: p.FailureThreshold, RecoveryThreshold: p.RecoveryThreshold,
-		IsRequired: p.IsRequired, Enabled: p.Enabled,
-	}
-}
-
-// ListTargets：GET /services/:service_id/targets
-func (h *Service) ListTargets(c *gin.Context) {
-	targets, err := h.uc.ListTargets(c.Request.Context(), c.Param("service_id"))
-	if err != nil {
-		writeErr(c, err)
-		return
-	}
-	resp := dto.TargetsResponse{Targets: make([]dto.Target, 0, len(targets))}
-	for _, t := range targets {
-		resp.Targets = append(resp.Targets, toTarget(t))
-	}
-	response.JSON(c, http.StatusOK, resp)
-}
-
-// CreateTarget：POST /services/:service_id/targets
-func (h *Service) CreateTarget(c *gin.Context) {
-	var in dto.TargetInput
-	if err := c.ShouldBindJSON(&in); err != nil {
-		response.Error(c, http.StatusBadRequest, "VALIDATION", "invalid json body")
-		return
-	}
-	t, err := h.uc.CreateTarget(c.Request.Context(), c.Param("service_id"), toTargetInput(in))
-	if err != nil {
-		writeErr(c, err)
-		return
-	}
-	response.JSON(c, http.StatusCreated, toTarget(t))
-}
-
-// PatchTarget：PATCH /targets/:target_id
-func (h *Service) PatchTarget(c *gin.Context) {
-	var p dto.TargetPatchPayload
-	if err := c.ShouldBindJSON(&p); err != nil {
-		response.Error(c, http.StatusBadRequest, "VALIDATION", "invalid json body")
-		return
-	}
-	t, err := h.uc.PatchTarget(c.Request.Context(), c.Param("target_id"), toTargetPatch(p))
-	if err != nil {
-		writeErr(c, err)
-		return
-	}
-	response.JSON(c, http.StatusOK, toTarget(t))
-}
-
-// DeleteTarget：DELETE /targets/:target_id
-func (h *Service) DeleteTarget(c *gin.Context) {
-	if err := h.uc.DeleteTarget(c.Request.Context(), c.Param("target_id")); err != nil {
 		writeErr(c, err)
 		return
 	}

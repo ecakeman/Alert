@@ -107,6 +107,7 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 	))
 	engine := router.New(router.Deps{
 		Health: healthH, Service: handler.NewService(svcUC),
+		Target:    handler.NewTarget(svcUC),
 		Dashboard: handler.NewDashboard(dashUC),
 		Episode:   handler.NewEpisode(epUC),
 		Timeout:   cfg.HTTPReadTimeout,
