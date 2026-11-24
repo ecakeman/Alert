@@ -123,8 +123,17 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 			Owner: "system-core", Batch: cfg.OutboxBatch,
 			ClaimLease: cfg.OutboxClaimLease, PollInterval: cfg.OutboxPollInterval,
 		})
+		auditUC := appoutbox.NewConsumer(appoutbox.ConsumerDeps{
+			UOW: uow, Idem: postgres.NewIdempotencyRepo(), Clock: clk,
+		})
 		consumer = messaging.NewConsumer(brokers, cfg.KafkaTopic, "system.audit.v1",
-			auditHandler(uow, postgres.NewIdempotencyRepo(), clk))
+			func(ctx context.Context, body []byte) error {
+				ev, err := messaging.Decode(body)
+				if err != nil {
+					return err
+				}
+				return auditUC.Handle(ctx, ev)
+			})
 	}
 
 	srv := &http.Server{
@@ -160,33 +169,6 @@ func splitBrokers(raw string) []string {
 	return out
 }
 
-func auditHandler(uow port.UnitOfWork, idem port.ConsumerIdempotencyRepo, clk port.Clock) messaging.MessageHandler {
-	const consumerName = "system.audit.v1"
-	return func(ctx context.Context, body []byte) error {
-		ev, err := messaging.Decode(body)
-		if err != nil {
-			return err
-		}
-		var reserved bool
-		if err := uow.WithinTx(ctx, func(ctx context.Context, tx port.Tx) error {
-			var err error
-			reserved, err = idem.Reserve(ctx, tx, port.ConsumerIdempotency{
-				Consumer: consumerName, IdempotencyKey: ev.EventID, EventID: &ev.EventID,
-			})
-			return err
-		}); err != nil {
-			return err
-		}
-		if !reserved {
-			return nil
-		}
-		return uow.WithinTx(ctx, func(ctx context.Context, tx port.Tx) error {
-			return idem.MarkDone(ctx, tx, consumerName, ev.EventID, "OK", clk.Now())
-		})
-	}
-}
-
-// RunMigrate 只执行 forward-only 迁移后退出，不启动 HTTP。
 func RunMigrate(ctx context.Context, cfg config.Config) error {
 	if err := cfg.ValidateRuntime(); err != nil {
 		return err
