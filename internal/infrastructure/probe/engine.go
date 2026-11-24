@@ -9,11 +9,11 @@ import (
 )
 
 // SampleHandler 由 application 注入，负责把探测结果落库并驱动故障。
-type SampleHandler func(ctx context.Context, target port.MonitorTarget, sample Sample) error
+// 入参为调度快照（含 ConfigGeneration），infrastructure 不持有仓储。
+type SampleHandler func(ctx context.Context, target port.TargetSnapshot, sample Sample) error
 
 type EngineDeps struct {
-	UOW       port.UnitOfWork
-	Targets   port.TargetRepo
+	Source    port.TargetScheduleSource
 	HTTP      Prober
 	TCP       Prober
 	Handler   SampleHandler
@@ -42,7 +42,7 @@ func NewEngine(deps EngineDeps) *Engine {
 }
 
 type job struct {
-	target port.MonitorTarget
+	target port.TargetSnapshot
 }
 
 // Run 调度 + worker 池，直到 ctx 取消；取消时关闭队列并等待在途探测结束。
@@ -83,31 +83,19 @@ func (e *Engine) Run(ctx context.Context) error {
 }
 
 func (e *Engine) schedule(ctx context.Context, queue chan job) {
-	var targets []port.MonitorTarget
-	err := e.deps.UOW.WithinTx(ctx, func(ctx context.Context, tx port.Tx) error {
-		var err error
-		targets, err = e.deps.Targets.ListEnabled(ctx, tx)
-		return err
-	})
+	// 调度编排（读启用目标 + 到期过滤）在应用侧 DueTargets；这里只做执行机制。
+	snapshots, err := e.deps.Source.DueTargets(ctx, e.deps.Clock.Now().UTC())
 	if err != nil {
 		return
 	}
-	now := e.deps.Clock.Now().UTC()
-	for _, t := range targets {
-		interval := time.Duration(t.IntervalMS) * time.Millisecond
-		if interval <= 0 {
-			interval = 30 * time.Second
-		}
-		if t.LastCheckAt != nil && t.LastCheckAt.Add(interval).After(now) {
-			continue
-		}
-		if _, loaded := e.inflight.LoadOrStore(t.TargetID, struct{}{}); loaded {
+	for _, snap := range snapshots {
+		if _, loaded := e.inflight.LoadOrStore(snap.TargetID, struct{}{}); loaded {
 			continue
 		}
 		select {
-		case queue <- job{target: t}:
+		case queue <- job{target: snap}:
 		default:
-			e.inflight.Delete(t.TargetID) // 队列满，下轮重排，不丢
+			e.inflight.Delete(snap.TargetID) // 队列满，下轮重排，不丢
 		}
 	}
 }
@@ -120,6 +108,28 @@ func (e *Engine) probeOne(ctx context.Context, j job) {
 	if j.target.TargetType == "TCP" {
 		p = e.deps.TCP
 	}
-	smp := p.Probe(ctx, j.target)
+	smp := p.Probe(ctx, toMonitorTarget(j.target))
 	_ = e.deps.Handler(ctx, j.target, smp)
+}
+
+// toMonitorTarget 把调度快照适配为 prober 入参（prober 只读地址/类型/超时）。
+func toMonitorTarget(snap port.TargetSnapshot) port.MonitorTarget {
+	return port.MonitorTarget{
+		TargetID:             snap.TargetID,
+		ServiceID:            snap.ServiceID,
+		TargetKey:            snap.TargetKey,
+		TargetType:           snap.TargetType,
+		Address:              snap.Address,
+		Config:               snap.Config,
+		IntervalMS:           snap.IntervalMS,
+		TimeoutMS:            snap.TimeoutMS,
+		FailureThreshold:     snap.FailureThreshold,
+		RecoveryThreshold:    snap.RecoveryThreshold,
+		IsRequired:           snap.IsRequired,
+		Status:               snap.Status,
+		ConsecutiveFailures:  snap.ConsecutiveFailures,
+		ConsecutiveSuccesses: snap.ConsecutiveSuccesses,
+		LastCheckAt:          snap.LastCheckAt,
+		ConfigGeneration:     snap.ConfigGeneration,
+	}
 }

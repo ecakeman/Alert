@@ -89,9 +89,9 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 		Clock:    clk,
 	})
 	probeEngine := probe.NewEngine(probe.EngineDeps{
-		UOW: uow, Targets: postgres.NewTargetRepo(),
-		HTTP: probe.NewHTTPProber(), TCP: probe.NewTCPProber(),
-		Handler: func(ctx context.Context, target port.MonitorTarget, smp probe.Sample) error {
+		Source: monitorUC,
+		HTTP:   probe.NewHTTPProber(), TCP: probe.NewTCPProber(),
+		Handler: func(ctx context.Context, target port.TargetSnapshot, smp probe.Sample) error {
 			_, err := monitorUC.ApplySample(ctx, target.ServiceID, target.TargetID, target.ConfigGeneration, appmonitor.Sample{
 				CheckStatus: smp.CheckStatus, StatusClass: smp.StatusClass, ErrorClass: smp.ErrorClass,
 				LatencyMS: smp.LatencyMS, StateFingerprint: smp.StateFingerprint,
