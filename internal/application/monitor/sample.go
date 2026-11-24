@@ -14,6 +14,7 @@ type Deps struct {
 	MonitorPoints port.MonitorPointRepo
 	Sources       port.SourceStateRepo
 	Episodes      port.EpisodeRepo
+	Services      port.ServiceRepo
 	Driver        EpisodeDriver
 	Clock         port.Clock
 }
