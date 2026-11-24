@@ -1,0 +1,3 @@
+INVESTIGATION fixture for B7 route 16 acceptance.
+
+This is a demonstration fixture, not a real diagnosis content produced by the agent runtime.
