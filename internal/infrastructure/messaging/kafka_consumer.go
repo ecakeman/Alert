@@ -39,7 +39,9 @@ func (c *Consumer) Run(ctx context.Context) error {
 			}
 			return err
 		}
-		_ = c.handler(ctx, m.Value)
+		if err := c.handler(ctx, m.Value); err != nil {
+			return err
+		}
 	}
 }
 

@@ -15,5 +15,8 @@ func Decode(body []byte) (contracts.Event, error) {
 	if err := json.Unmarshal(body, &e); err != nil {
 		return contracts.Event{}, err
 	}
+	if err := e.Validate(); err != nil {
+		return contracts.Event{}, err
+	}
 	return e, nil
 }
