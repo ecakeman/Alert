@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/ecakeman/alert/internal/application/apperr"
+	"github.com/ecakeman/alert/internal/application/port"
 	appservice "github.com/ecakeman/alert/internal/application/service"
 	"github.com/ecakeman/alert/internal/infrastructure/persistence/postgres"
 )
@@ -80,5 +81,78 @@ func TestGetNotFound(t *testing.T) {
 	_, err := uc.Get(context.Background(), "10000000-0000-0000-0000-999999999999")
 	if !isCode(err, apperr.CodeNotFound) {
 		t.Fatalf("expected NOT_FOUND, got %v", err)
+	}
+}
+
+// TestListSummariesStatus：status 过滤在 SQL 层生效且 total 口径一致。
+func TestListSummariesStatus(t *testing.T) {
+	dsn := os.Getenv("TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("未执行（环境：无 TEST_DATABASE_URL）")
+	}
+	pool, err := pgxpool.New(context.Background(), dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(pool.Close)
+
+	uc := poolAndUC(t)
+	ctx := context.Background()
+	view, err := uc.Create(ctx, appservice.CreateServiceInput{
+		ServiceKey: fmt.Sprintf("st-%d", time.Now().UnixNano()),
+		Name:       "n", AuthorityProducerID: "p1",
+	})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	pageUnknown, err := uc.ListSummaries(ctx, port.ServiceFilter{Status: "UNKNOWN", Limit: 200})
+	if err != nil {
+		t.Fatalf("list unknown: %v", err)
+	}
+	foundUnknown := false
+	for _, it := range pageUnknown.Items {
+		if it.Service.ServiceID == view.Service.ServiceID {
+			foundUnknown = true
+		}
+	}
+	if !foundUnknown || pageUnknown.Total < 1 {
+		t.Fatalf("UNKNOWN filter should match new service: total=%d found=%v", pageUnknown.Total, foundUnknown)
+	}
+
+	if err := postgres.NewUnitOfWork(pool).WithinTx(ctx, func(ctx context.Context, tx port.Tx) error {
+		return postgres.NewSourceStateRepo().Upsert(ctx, tx, port.SourceState{
+			ServiceID: view.Service.ServiceID, SourceType: "MONITOR", Status: "NORMAL",
+		})
+	}); err != nil {
+		t.Fatalf("upsert source: %v", err)
+	}
+
+	pageNormal, err := uc.ListSummaries(ctx, port.ServiceFilter{Status: "NORMAL", Limit: 200})
+	if err != nil {
+		t.Fatalf("list normal: %v", err)
+	}
+	foundNormal := false
+	for _, it := range pageNormal.Items {
+		if it.Service.ServiceID == view.Service.ServiceID {
+			foundNormal = true
+		}
+	}
+	if !foundNormal {
+		t.Fatal("NORMAL filter should match after upsert")
+	}
+
+	pageAbnormal, err := uc.ListSummaries(ctx, port.ServiceFilter{Status: "ABNORMAL", Limit: 200})
+	if err != nil {
+		t.Fatalf("list abnormal: %v", err)
+	}
+	for _, it := range pageAbnormal.Items {
+		if it.Service.ServiceID == view.Service.ServiceID {
+			t.Fatal("ABNORMAL filter should not match new service")
+		}
+	}
+	if pageAbnormal.Total != len(pageAbnormal.Items) {
+		t.Fatalf("total should equal page length under limit: total=%d len=%d",
+			pageAbnormal.Total, len(pageAbnormal.Items))
 	}
 }

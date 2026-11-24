@@ -28,3 +28,9 @@ type ServiceView struct {
 	Service port.Service
 	Targets []port.MonitorTarget
 }
+
+// ServiceSummaryPage 是列表读模型：分页元信息 + 过滤后的条目（total 与过滤口径一致）。
+type ServiceSummaryPage struct {
+	port.Page
+	Items []ServiceSummaryData
+}

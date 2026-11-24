@@ -121,18 +121,25 @@ func (h *Service) List(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, "VALIDATION", "invalid offset")
 		return
 	}
-	items, err := h.uc.ListSummaries(c.Request.Context(), port.ServiceFilter{
-		Query: c.Query("q"), Status: c.Query("status"), Limit: limit, Offset: offset,
+	status := c.Query("status")
+	switch status {
+	case "", "NORMAL", "ABNORMAL", "UNKNOWN":
+	default:
+		response.Error(c, http.StatusBadRequest, "VALIDATION", "invalid status")
+		return
+	}
+	page, err := h.uc.ListSummaries(c.Request.Context(), port.ServiceFilter{
+		Query: c.Query("q"), Status: status, Limit: limit, Offset: offset,
 	})
 	if err != nil {
 		writeErr(c, err)
 		return
 	}
-	page := dto.ServicesPage{Total: len(items), Limit: limit, Offset: offset, Services: make([]dto.ServiceSummary, 0, len(items))}
-	for _, s := range items {
-		page.Services = append(page.Services, toServiceSummary(s))
+	resp := dto.ServicesPage{Total: page.Total, Limit: page.Limit, Offset: page.Offset, Services: make([]dto.ServiceSummary, 0, len(page.Items))}
+	for _, s := range page.Items {
+		resp.Services = append(resp.Services, toServiceSummary(s))
 	}
-	response.JSON(c, http.StatusOK, page)
+	response.JSON(c, http.StatusOK, resp)
 }
 
 // Create：POST /services

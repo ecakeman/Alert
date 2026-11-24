@@ -14,6 +14,7 @@ type ServiceRepo interface {
 	Get(ctx context.Context, tx Tx, serviceID string) (Service, error)
 	GetByKey(ctx context.Context, tx Tx, serviceKey string) (Service, error)
 	List(ctx context.Context, tx Tx, f ServiceFilter) ([]Service, error)
+	Count(ctx context.Context, tx Tx, f ServiceFilter) (int, error)
 
 	Patch(ctx context.Context, tx Tx, serviceID string, p ServicePatch) error
 	SoftDelete(ctx context.Context, tx Tx, serviceID string, at time.Time) error

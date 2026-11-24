@@ -257,3 +257,10 @@ type TrendPoint struct {
 	Success int
 	Failure int
 }
+
+// Page 是分页元信息（与条目类型解耦）。
+type Page struct {
+	Total  int
+	Limit  int
+	Offset int
+}

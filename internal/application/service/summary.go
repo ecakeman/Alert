@@ -64,24 +64,29 @@ func (s *Service) enrich(ctx context.Context, tx port.Tx, svc port.Service) (Ser
 	}, nil
 }
 
-// ListSummaries 返回列表聚合（含来源状态/目标数/最近检查/活动故障）。
-func (s *Service) ListSummaries(ctx context.Context, f port.ServiceFilter) ([]ServiceSummaryData, error) {
-	var out []ServiceSummaryData
+// ListSummaries 返回列表聚合：同一事务内先 Count 再 List，total 与过滤口径一致。
+func (s *Service) ListSummaries(ctx context.Context, f port.ServiceFilter) (ServiceSummaryPage, error) {
+	var page ServiceSummaryPage
 	err := s.deps.UOW.WithinTx(ctx, func(ctx context.Context, tx port.Tx) error {
+		total, err := s.deps.Services.Count(ctx, tx, f)
+		if err != nil {
+			return err
+		}
 		svcs, err := s.deps.Services.List(ctx, tx, f)
 		if err != nil {
 			return err
 		}
+		page.Page = port.Page{Total: total, Limit: f.Limit, Offset: f.Offset}
 		for _, svc := range svcs {
 			d, err := s.enrich(ctx, tx, svc)
 			if err != nil {
 				return err
 			}
-			out = append(out, d)
+			page.Items = append(page.Items, d)
 		}
 		return nil
 	})
-	return out, err
+	return page, err
 }
 
 // GetView 返回详情聚合（服务 + 目标 + 来源状态）。
