@@ -13,6 +13,8 @@ import (
 // Service 是 B7 任务链路用例编排入口。
 type Service struct{ deps Deps }
 
+func New(deps Deps) *Service { return &Service{deps: deps} }
+
 // Deps 只含端口、时钟、ID 与配置值；不含 *http / *grpc / *pgx。
 type Deps struct {
 	UOW           portshared.UnitOfWork

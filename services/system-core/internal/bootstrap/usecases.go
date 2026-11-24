@@ -3,21 +3,26 @@ package bootstrap
 import (
 	"context"
 	"strings"
+	"time"
 
 	appdashboard "github.com/ecakeman/alert/services/system-core/internal/application/dashboard"
 	appepisode "github.com/ecakeman/alert/services/system-core/internal/application/episode"
 	appmonitor "github.com/ecakeman/alert/services/system-core/internal/application/monitor"
 	appoutbox "github.com/ecakeman/alert/services/system-core/internal/application/outbox"
+	portdispatch "github.com/ecakeman/alert/services/system-core/internal/application/port/dispatch"
 	appservice "github.com/ecakeman/alert/services/system-core/internal/application/service"
+	apptask "github.com/ecakeman/alert/services/system-core/internal/application/task"
+	"github.com/ecakeman/alert/services/system-core/internal/infrastructure/artifacts"
 )
 
-// UseCases 是五个应用用例的集合。
+// UseCases 是六个应用用例的集合。
 // AuditConsumer 无条件构造：纯依赖集合、无 IO 副作用；messaging 组件仍按开关分支构造。
 type UseCases struct {
 	Service       *appservice.Service
 	Dashboard     *appdashboard.Service
 	Episode       *appepisode.Service
 	Monitor       *appmonitor.Service
+	Task          *apptask.Service
 	AuditConsumer *appoutbox.Consumer
 }
 
@@ -50,10 +55,31 @@ func NewUseCases(sh *Shared, r *Repos) *UseCases {
 		UOW: sh.UOW, Idem: r.Idem, Clock: sh.Clock,
 	})
 
+	taskUC := newTaskService(sh, r, nil)
+
 	return &UseCases{
 		Service: svcUC, Dashboard: dashUC, Episode: epUC,
-		Monitor: monitorUC, AuditConsumer: auditUC,
+		Monitor: monitorUC, Task: taskUC, AuditConsumer: auditUC,
 	}
+}
+
+func newTaskService(sh *Shared, r *Repos, submit portdispatch.TaskSubmitter) *apptask.Service {
+	return apptask.New(apptask.Deps{
+		UOW: sh.UOW, Tasks: r.Tasks, Ownership: r.Ownership, Artifacts: r.Artifacts,
+		Episodes: r.Episodes, InputVersions: r.InputVersions,
+		Outbox: r.Outbox, Idem: r.Idem,
+		Submit: submit, Reader: artifacts.NewReader(),
+		Clock: sh.Clock, IDs: sh.IDs,
+		Lease: taskLease(sh.Cfg.TaskLease, sh.Cfg.OwnershipTTL), MaxAttempts: sh.Cfg.TaskMaxAttempts,
+		RetryDelay: sh.Cfg.TaskRetryDelay, Deadline: sh.Cfg.TaskDeadline,
+	})
+}
+
+func taskLease(taskLease, ownershipTTL time.Duration) time.Duration {
+	if ownershipTTL > 0 && ownershipTTL < taskLease {
+		return ownershipTTL
+	}
+	return taskLease
 }
 
 // episodeDriverAdapter 把 episode 用例转调为 monitor.EpisodeDriver。

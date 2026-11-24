@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"strconv"
+	"sync"
 	"time"
 
 	googlegrpc "google.golang.org/grpc"
@@ -18,29 +19,42 @@ import (
 )
 
 // AgentClient 实现 TaskSubmitter；timeout 由 AGENT_GRPC_TIMEOUT 注入。
+// WithBlock 阻塞建连在无 Python 执行器的 B7 环境会阻塞 worker 启动，故改为惰性建连。
 type AgentClient struct {
+	target  string
+	timeout time.Duration
+	mu      sync.Mutex
 	conn    *googlegrpc.ClientConn
 	client  agentv1.AgentTaskServiceClient
-	timeout time.Duration
 }
 
 var _ portdispatch.TaskSubmitter = (*AgentClient)(nil)
 
-// NewAgentClient 以 WithBlock 建立连接；连接关闭由 worker 生命周期负责。
-func NewAgentClient(ctx context.Context, target string, timeout time.Duration) (*AgentClient, error) {
-	dialCtx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-	conn, err := googlegrpc.DialContext(dialCtx, target,
-		googlegrpc.WithBlock(),
-		googlegrpc.WithTransportCredentials(insecure.NewCredentials()))
+func NewAgentClient(target string, timeout time.Duration) *AgentClient {
+	return &AgentClient{target: target, timeout: timeout}
+}
+
+func (c *AgentClient) ensureClient() (agentv1.AgentTaskServiceClient, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.client != nil {
+		return c.client, nil
+	}
+	conn, err := googlegrpc.NewClient(c.target, googlegrpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		return nil, err
 	}
-	return &AgentClient{conn: conn, client: agentv1.NewAgentTaskServiceClient(conn), timeout: timeout}, nil
+	c.conn = conn
+	c.client = agentv1.NewAgentTaskServiceClient(conn)
+	return c.client, nil
 }
 
 // SubmitTask 返回 accepted 仅表示协议级受理；业务拒绝不回退重试。
 func (c *AgentClient) SubmitTask(ctx context.Context, task porttask.AgentTask) (bool, error) {
+	client, err := c.ensureClient()
+	if err != nil {
+		return false, err
+	}
 	callCtx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
 
@@ -48,7 +62,7 @@ func (c *AgentClient) SubmitTask(ctx context.Context, task porttask.AgentTask) (
 	if task.LeaseUntil != nil {
 		leaseUntil = task.LeaseUntil.Unix()
 	}
-	resp, err := c.client.SubmitTask(callCtx, &agentv1.SubmitTaskRequest{
+	resp, err := client.SubmitTask(callCtx, &agentv1.SubmitTaskRequest{
 		Identity: &systemv1.TaskIdentity{
 			TaskId:     task.TaskID,
 			EpisodeId:  task.EpisodeID,
@@ -74,7 +88,14 @@ func (c *AgentClient) SubmitTask(ctx context.Context, task porttask.AgentTask) (
 	return resp.GetAccepted(), nil
 }
 
-func (c *AgentClient) Close() error { return c.conn.Close() }
+func (c *AgentClient) Close() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.conn == nil {
+		return nil
+	}
+	return c.conn.Close()
+}
 
 func encodeLeaseToken(taskID string, generation, leaseUntilUnix int64) string {
 	raw := taskID + "|" + strconv.FormatInt(generation, 10) + "|" + strconv.FormatInt(leaseUntilUnix, 10)

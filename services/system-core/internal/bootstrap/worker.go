@@ -7,21 +7,30 @@ import (
 	appmonitor "github.com/ecakeman/alert/services/system-core/internal/application/monitor"
 	appoutbox "github.com/ecakeman/alert/services/system-core/internal/application/outbox"
 	portmonitor "github.com/ecakeman/alert/services/system-core/internal/application/port/monitor"
+	"github.com/ecakeman/alert/services/system-core/internal/infrastructure/grpcclient"
 	"github.com/ecakeman/alert/services/system-core/internal/infrastructure/messaging"
 	"github.com/ecakeman/alert/services/system-core/internal/infrastructure/probe"
 )
 
-// Worker 承载后台角色装配：probe 引擎 + 可选 Sender/Publisher/Consumer。
-// 角色白名单：仅后台装配，不含 HTTP 服务/路由/迁移（出口检查 rg 断言）；
-// OutboxPublisherEnabled=false 时空态仅探测引擎。
+// Worker 承载后台角色装配：publisher/audit/task consumer/reconciler/probe。
+// 角色白名单：仅后台装配，不含 HTTP 服务/路由。
 type Worker struct {
-	Probe     *probe.Engine
-	Sender    *messaging.Sender
-	Publisher *appoutbox.Publisher
-	Consumer  *messaging.Consumer
+	Probe        *probe.Engine
+	Sender       *messaging.Sender
+	Publisher    *appoutbox.Publisher
+	Consumer     *messaging.Consumer
+	TaskConsumer *messaging.Consumer
+	Reconciler   *Reconciler
+	AgentClient  *grpcclient.AgentClient
 }
 
 func NewWorker(sh *Shared, r *Repos, ucs *UseCases) (*Worker, error) {
+	if err := sh.Cfg.ValidateWorkerRuntime(); err != nil {
+		return nil, err
+	}
+	agent := grpcclient.NewAgentClient(sh.Cfg.AgentGRPCTarget, sh.Cfg.AgentGRPCTimeout)
+	ucs.Task = newTaskService(sh, r, agent)
+
 	engine := probe.NewEngine(probe.EngineDeps{
 		Source: ucs.Monitor,
 		HTTP:   probe.NewHTTPProber(), TCP: probe.NewTCPProber(),
@@ -38,6 +47,7 @@ func NewWorker(sh *Shared, r *Repos, ucs *UseCases) (*Worker, error) {
 	var sender *messaging.Sender
 	var publisher *appoutbox.Publisher
 	var consumer *messaging.Consumer
+	var taskConsumer *messaging.Consumer
 	if sh.Cfg.OutboxPublisherEnabled {
 		brokers := splitBrokers(sh.Cfg.KafkaBrokers)
 		sender = messaging.NewSender(brokers, sh.Cfg.KafkaTopic)
@@ -54,7 +64,19 @@ func NewWorker(sh *Shared, r *Repos, ucs *UseCases) (*Worker, error) {
 				}
 				return ucs.AuditConsumer.Handle(ctx, ev)
 			})
+		taskConsumer = messaging.NewConsumer(brokers, sh.Cfg.KafkaTopic, "system.task.dispatch.v1",
+			func(ctx context.Context, body []byte) error {
+				ev, err := messaging.Decode(body)
+				if err != nil {
+					return err
+				}
+				return ucs.Task.HandleDispatchEvent(ctx, ev)
+			})
 	}
 
-	return &Worker{Probe: engine, Sender: sender, Publisher: publisher, Consumer: consumer}, nil
+	return &Worker{
+		Probe: engine, Sender: sender, Publisher: publisher,
+		Consumer: consumer, TaskConsumer: taskConsumer,
+		Reconciler: NewReconciler(ucs.Task, sh.Cfg.TaskRetryDelay), AgentClient: agent,
+	}, nil
 }

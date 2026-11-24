@@ -373,6 +373,31 @@ func (c Config) ValidateRuntime() error {
 	return nil
 }
 
+// ValidateAPIRuntime 校验 api 角色必需项：gRPC 监听地址与租约上限关系。
+func (c Config) ValidateAPIRuntime() error {
+	if _, _, err := net.SplitHostPort(c.GRPCAddr); err != nil {
+		return &LoadError{Var: "GRPC_ADDR", Reason: "must be host:port"}
+	}
+	if c.TaskLease > c.OwnershipTTL {
+		return &LoadError{Var: "TASK_LEASE", Reason: "must not exceed OWNERSHIP_TTL"}
+	}
+	return nil
+}
+
+// ValidateWorkerRuntime 校验 worker 角色必需项：Agent 地址与 Kafka 前置。
+func (c Config) ValidateWorkerRuntime() error {
+	if c.AgentGRPCTarget == "" {
+		return &LoadError{Var: "AGENT_GRPC_TARGET", Reason: "missing"}
+	}
+	if _, _, err := net.SplitHostPort(c.AgentGRPCTarget); err != nil {
+		return &LoadError{Var: "AGENT_GRPC_TARGET", Reason: "must be host:port"}
+	}
+	if c.OutboxPublisherEnabled && c.KafkaBrokers == "" {
+		return &LoadError{Var: "KAFKA_BROKERS", Reason: "missing"}
+	}
+	return nil
+}
+
 func validateTimeout(name string, d, max time.Duration) error {
 	if d <= 0 {
 		return &LoadError{Var: name, Reason: "must be > 0"}

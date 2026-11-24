@@ -9,13 +9,16 @@ import (
 	"github.com/ecakeman/alert/services/system-core/internal/transport/http/router"
 )
 
-// API 承载 HTTP 角色装配：health checker → handler → 路由 → http.Server。
-// 角色白名单：仅 HTTP 装配，不装配后台组件（探测/发布/消费链路，出口检查 rg 断言）。
+// API 承载 HTTP + gRPC 角色装配：请求驱动，不启动后台循环。
 type API struct {
-	Server *http.Server
+	Server     *http.Server
+	GRPCServer *GRPCServer
 }
 
 func NewAPI(sh *Shared, r *Repos, ucs *UseCases) (*API, error) {
+	if err := sh.Cfg.ValidateAPIRuntime(); err != nil {
+		return nil, err
+	}
 	healthH := handler.NewHealth(health.NewService(
 		postgres.NewPGChecker(sh.Pool, sh.Cfg.ReadyzTimeout),
 		postgres.NewMigrationChecker(sh.Pool, sh.Cfg.ReadyzTimeout),
@@ -25,14 +28,20 @@ func NewAPI(sh *Shared, r *Repos, ucs *UseCases) (*API, error) {
 		Target:    handler.NewTarget(ucs.Service),
 		Dashboard: handler.NewDashboard(ucs.Dashboard),
 		Episode:   handler.NewEpisode(ucs.Episode),
+		Artifact:  handler.NewArtifact(ucs.Task),
+		Retry:     handler.NewRetry(ucs.Task),
 		Timeout:   sh.Cfg.HTTPReadTimeout,
 	})
-	srv := &http.Server{
+	server := &http.Server{
 		Addr:         sh.Cfg.HTTPAddr,
 		Handler:      engine,
 		ReadTimeout:  sh.Cfg.HTTPReadTimeout,
 		WriteTimeout: sh.Cfg.HTTPWriteTimeout,
 		IdleTimeout:  sh.Cfg.HTTPIdleTimeout,
 	}
-	return &API{Server: srv}, nil
+	grpcServer, err := NewGRPCServer(sh, ucs)
+	if err != nil {
+		return nil, err
+	}
+	return &API{Server: server, GRPCServer: grpcServer}, nil
 }
