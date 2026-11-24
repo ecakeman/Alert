@@ -33,3 +33,13 @@ type EpisodeSummaryData struct {
 	ActiveTaskType     string
 	HasDiagnosisReport bool
 }
+
+// MonitorFieldView 是时间轴 region1 投影视图（面向传输，替代 domain.MonitorField）。
+type MonitorFieldView struct {
+	TargetKey        string `json:"target_key"`
+	TargetType       string `json:"target_type"`
+	Status           string `json:"status"`
+	StatusClass      string `json:"status_class"`
+	ErrorClass       string `json:"error_class"`
+	StateFingerprint string `json:"state_fingerprint,omitempty"`
+}

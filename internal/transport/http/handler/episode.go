@@ -10,7 +10,6 @@ import (
 
 	appepisode "github.com/ecakeman/alert/internal/application/episode"
 	"github.com/ecakeman/alert/internal/application/port"
-	"github.com/ecakeman/alert/internal/domain"
 	"github.com/ecakeman/alert/internal/transport/http/dto"
 	"github.com/ecakeman/alert/internal/transport/http/response"
 )
@@ -171,7 +170,7 @@ func toEpisodeSummary(d appepisode.EpisodeSummaryData) dto.EpisodeSummary {
 	}
 	return out
 }
-func toMonitorFields(fields []domain.MonitorField) []dto.MonitorField {
+func toMonitorFields(fields []appepisode.MonitorFieldView) []dto.MonitorField {
 	out := make([]dto.MonitorField, 0, len(fields))
 	for _, f := range fields {
 		out = append(out, dto.MonitorField{

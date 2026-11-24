@@ -9,12 +9,11 @@ import (
 
 	"github.com/ecakeman/alert/internal/application/apperr"
 	"github.com/ecakeman/alert/internal/application/port"
-	"github.com/ecakeman/alert/internal/domain"
 )
 
 type TimelineData struct {
 	Episode         EpisodeView
-	Projection      []domain.MonitorField
+	Projection      []MonitorFieldView
 	MonitorStartSeq int64
 	MonitorPoints   []port.MonitorPoint
 	AppEvents       []port.AppEvent
@@ -106,7 +105,7 @@ func (s *Service) Timeline(ctx context.Context, episodeID string) (TimelineData,
 			toSeq, toEvent = view.ActiveTask.MonitorWatermark, view.ActiveTask.AppEventWatermark
 		}
 
-		var projection []domain.MonitorField
+		var projection []MonitorFieldView
 		latest, err := s.deps.InputVersions.GetLatest(ctx, tx, episodeID)
 		if err == nil {
 			if len(latest.MonitorProjection) > 0 {
