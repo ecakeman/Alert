@@ -1,0 +1,5 @@
+[project]
+name = "alert-agent-runtime"
+version = "0.0.0"
+description = "Alert cognitive component boundary (B8 not wired yet; placeholder only)"
+requires-python = ">=3.11"
