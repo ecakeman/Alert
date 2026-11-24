@@ -135,3 +135,46 @@ status 过滤：`ABNORMAL` total=1 命中、`NORMAL`/`UNKNOWN` total=0、非法�
 ### 2.7 T-S5.2 结论
 
 真实依赖冒烟**通过**（含 2 条已知偏差披露）；B0~B6 在 S3 搬迁后未退化。
+## 3. T-S5.3 前端构建与收口判定
+
+### 3.1 前端构建（工作目录 `apps/console`）
+
+| 检查 | 结果 |
+|---|---|
+| `npm run build`（Node 22.23.1 / vite 6.4.6） | ✅ 2266 modules，built in 12.88s，exit=0 |
+| `git diff --stat apps/console/src` | ✅ 零改动 |
+| dist 构建产物 | 不入库（gitignore），无未跟踪残留 |
+
+### 3.2 A01~A16 结论表
+
+| 编号 | 项 | 结论 | 依据 |
+|---|---|---|---|
+| A01 | B0~B6 基线 | 通过（含 2.6 节偏差披露） | T-S5.2 冒烟全真实（迁移/路由/探测/Kafka） |
+| A02 | B7 保留（不接线） | 通过 | T-S5.1 存在性 9/9 + 501×3 + 配置保留 19 处 |
+| A03 | 事件契约唯一 | 通过 | S5.1：`type Event struct` 仅 1 处、schema 无投递字段；S5.2：线上信封无投递控制字段 |
+| A04 | 依赖倒置 | 通过 | S5.1：monitor 无 episode import；transport 生产代码无 domain import；bootstrap 无 auditHandler |
+| A05 | MONITOR 聚合唯一 | 通过 | S1 真值表延续；S5.1 domain 测试 ok；S5.2 ALL_REQUIRED 聚合行为正常 |
+| A06 | 持久化与 probe 边界 | 通过 | S5.1：probe 无 UOW/Repo；行模型下沉由 S1 验收延续 |
+| A07 | 看板与筛选真实化 | 通过 | S5.2：trend/recent 真实读（failure=25 计入）、status/total 同口径、非法值 400 |
+| A08 | 包与装配 | 通过 | S5.1 结构断言 + S5.2 api/worker 角色边界 |
+| A09 | 配置语义 | 通过 | S5.1 config 测试 ok；S4.2 33 项冻结 |
+| A10 | 目标目录树 | 通过 | S5.1 ROOT-CLEAN、单 go.mod |
+| A11 | 模块与 import | 通过 | 旧前缀 0、无 go.work、无 replace |
+| A12 | Python/契约边界 | 通过 | agent-runtime 仅 2 文件、无伪造声明 |
+| A13 | 迁移所有权/内容 | 通过 | 专用库两次回放 + SHA-256 与基线一致 + system schema 归属 |
+| A14 | 测试与前端 | 通过 | 定向测试 ok + npm build 通过 + src 零 diff |
+| A15 | Git 历史可追溯 | 通过 | S5.1 follow 抽查 Go/SQL/证据各 1 不断链；34 task 一 task 一 commit |
+| A16 | 文档与证据 | 通过 | S4 全验收；口径偏差已在 S4.3/S4.4 commit 注明 |
+
+### 3.3 整体已知偏差汇总
+
+1. `httperr_test.go` 保留 domain import（测试构造输入）——S1 阶段已披露豁免，生产代码零依赖。
+2. episode 自动解除（RESOLVED）被 APP 来源 UNKNOWN 阻断：APP 来源无 NORMAL 转换入口，属既有业务语义（u09-b6 同范围），`TryResolve` 调用链正常触发与拒绝。
+3. 路由 6（DELETE service）冒烟未执行：冒烟服务保留供探测链路全程使用，删除能力由 #10 目标删除（204）同构覆盖。
+4. tasks.md S4.3/S4.4 验收口径与历史证据原文（含 `/home/sancho`）的冲突：以「新增文档清零、历史正文零改动」执行，commit 内披露。
+
+### 3.4 收口判定
+
+- A01~A16：**16/16 通过**（A01 含偏差披露，无未执行 A 项）。
+- 排除项（不计入本增量）：B7 接线（路由 16~18 / gRPC / task 链路）、B8（agent-runtime）、K8s 编排、APP 来源处置入口。
+- **判定：本增量（S0~S5 结构收敛与多组件目录调整）完成。**
