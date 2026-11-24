@@ -97,7 +97,5 @@ type ConsumerIdempotencyRepo interface {
 }
 
 type DashboardRepo interface {
-	Summary(ctx context.Context, tx Tx, now time.Time) (DashboardSummary, error)
-	Counts(ctx context.Context, tx Tx) (map[string]int, error)
-	Trend(ctx context.Context, tx Tx, since time.Time) ([]TrendPoint, error)
+	Summary(ctx context.Context, tx Tx, now time.Time, window time.Duration) (DashboardSummary, error)
 }

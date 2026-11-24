@@ -37,4 +37,7 @@ func TestSummary(t *testing.T) {
 	if sum.Services == nil || sum.Targets == nil || sum.Episodes == nil {
 		t.Fatalf("summary maps should be non-nil: %+v", sum)
 	}
+	if sum.Recent == nil || sum.Trend == nil {
+		t.Fatalf("recent/trend slices should be non-nil (empty as []): %+v", sum)
+	}
 }
