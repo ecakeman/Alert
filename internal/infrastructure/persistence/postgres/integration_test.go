@@ -44,11 +44,9 @@ func appCode(err error) string {
 }
 
 func sampleService(id, key string) port.Service {
-	now := time.Now().UTC()
 	return port.Service{
 		ServiceID: id, ServiceKey: key, Name: key, Enabled: true,
 		MonitorAggregationMode: "ALL_REQUIRED", AuthorityProducerID: "p1",
-		CreatedAt: now, UpdatedAt: now,
 	}
 }
 
@@ -94,13 +92,13 @@ func TestRepoOneActiveEpisode(t *testing.T) {
 		ep := NewEpisodeRepo()
 		if err := ep.Create(ctx, tx, port.Episode{
 			EpisodeID: "22222222-2222-2222-2222-222222222222", ServiceID: svcID,
-			Status: "ACTIVE", StartedBy: "MONITOR", StartedAt: now, CreatedAt: now, UpdatedAt: now,
+			Status: "ACTIVE", StartedBy: "MONITOR", StartedAt: now, UpdatedAt: now,
 		}); err != nil {
 			return err
 		}
 		return ep.Create(ctx, tx, port.Episode{
 			EpisodeID: "33333333-3333-3333-3333-333333333333", ServiceID: svcID,
-			Status: "ACTIVE", StartedBy: "APP", StartedAt: now, CreatedAt: now, UpdatedAt: now,
+			Status: "ACTIVE", StartedBy: "APP", StartedAt: now, UpdatedAt: now,
 		})
 	})
 	if appCode(err) != apperr.CodeAlreadyExists {

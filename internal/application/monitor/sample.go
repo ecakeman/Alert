@@ -123,7 +123,7 @@ func monitorTargetHealths(targets []port.MonitorTarget) []domain.TargetHealth {
 		out = append(out, domain.TargetHealth{
 			Required: t.IsRequired,
 			Enabled:  t.Enabled,
-			Deleted:  t.DeletedAt != nil,
+			Deleted:  false, // 聚合输入已由 SQL 过滤软删除目标
 			Status:   t.Status,
 		})
 	}

@@ -55,7 +55,7 @@ func (s *Service) OpenOrReuse(ctx context.Context, serviceID string) (port.Episo
 		now := s.deps.Clock.Now().UTC()
 		ep = port.Episode{
 			EpisodeID: s.deps.IDs.NewID(), ServiceID: serviceID, Status: "ACTIVE",
-			StartedBy: "MONITOR", StartedAt: now, CreatedAt: now, UpdatedAt: now,
+			StartedBy: "MONITOR", StartedAt: now, UpdatedAt: now,
 		}
 		if err := s.deps.Episodes.Create(ctx, tx, ep); err != nil {
 			return err
@@ -187,11 +187,10 @@ func (s *Service) AppendInputVersion(ctx context.Context, episodeID string) (boo
 		if err != nil {
 			return err
 		}
-		now := s.deps.Clock.Now().UTC()
 		if _, err := s.deps.InputVersions.AppendIfChanged(ctx, tx, port.InputVersion{
 			EpisodeID: episodeID, InputVersion: newVersion, InputHash: hash,
 			MonitorProjection: projectionJSON, MonitorWatermark: latestSeq,
-			AppEventWatermark: int64(1) << 62, CreatedAt: now,
+			AppEventWatermark: int64(1) << 62,
 		}); err != nil {
 			return err
 		}

@@ -55,7 +55,6 @@ func (r TargetRow) ToApp() port.MonitorTarget {
 		IsRequired: r.IsRequired, Enabled: r.Enabled, Status: r.Status,
 		ConsecutiveFailures: r.ConsecutiveFailures, ConsecutiveSuccesses: r.ConsecutiveSuccesses,
 		LastCheckAt: r.LastCheckAt, ConfigGeneration: r.ConfigGeneration,
-		DeletedAt: r.DeletedAt, CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
 	}
 }
 
@@ -69,6 +68,5 @@ func TargetRowFromApp(t port.MonitorTarget) TargetRow {
 		IsRequired: t.IsRequired, Enabled: t.Enabled, Status: t.Status,
 		ConsecutiveFailures: t.ConsecutiveFailures, ConsecutiveSuccesses: t.ConsecutiveSuccesses,
 		LastCheckAt: t.LastCheckAt, ConfigGeneration: t.ConfigGeneration,
-		DeletedAt: t.DeletedAt, CreatedAt: t.CreatedAt, UpdatedAt: t.UpdatedAt,
 	}
 }

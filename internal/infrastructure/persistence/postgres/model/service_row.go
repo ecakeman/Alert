@@ -39,7 +39,6 @@ func (r ServiceRow) ToApp() port.Service {
 		Description: r.Description, Enabled: r.Enabled,
 		MonitorAggregationMode: r.MonitorAggregationMode,
 		AuthorityProducerID:    r.AuthorityProducerID,
-		DeletedAt:              r.DeletedAt, CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
 	}
 }
 
@@ -50,6 +49,5 @@ func ServiceRowFromApp(s port.Service) ServiceRow {
 		Description: s.Description, Enabled: s.Enabled,
 		MonitorAggregationMode: s.MonitorAggregationMode,
 		AuthorityProducerID:    s.AuthorityProducerID,
-		DeletedAt:              s.DeletedAt, CreatedAt: s.CreatedAt, UpdatedAt: s.UpdatedAt,
 	}
 }

@@ -48,8 +48,7 @@ func (r EpisodeRow) ToApp() port.Episode {
 		InputHash: r.InputHash, InputVersion: r.InputVersion,
 		ProcessedInputVersion: r.ProcessedInputVersion, FinalInputVersion: r.FinalInputVersion,
 		MonitorWatermark: r.MonitorWatermark, AppEventWatermark: r.AppEventWatermark,
-		StartedAt: r.StartedAt, ResolvedAt: r.ResolvedAt, ArchivedAt: r.ArchivedAt,
-		CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
+		StartedAt: r.StartedAt, ResolvedAt: r.ResolvedAt, ArchivedAt: r.ArchivedAt, UpdatedAt: r.UpdatedAt,
 	}
 }
 
@@ -61,7 +60,6 @@ func EpisodeRowFromApp(e port.Episode) EpisodeRow {
 		InputHash: e.InputHash, InputVersion: e.InputVersion,
 		ProcessedInputVersion: e.ProcessedInputVersion, FinalInputVersion: e.FinalInputVersion,
 		MonitorWatermark: e.MonitorWatermark, AppEventWatermark: e.AppEventWatermark,
-		StartedAt: e.StartedAt, ResolvedAt: e.ResolvedAt, ArchivedAt: e.ArchivedAt,
-		CreatedAt: e.CreatedAt, UpdatedAt: e.UpdatedAt,
+		StartedAt: e.StartedAt, ResolvedAt: e.ResolvedAt, ArchivedAt: e.ArchivedAt, UpdatedAt: e.UpdatedAt,
 	}
 }

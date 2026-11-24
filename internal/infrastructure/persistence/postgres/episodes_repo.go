@@ -58,14 +58,15 @@ LIMIT $5 OFFSET $6`, f.ServiceID, f.Status, f.From, f.To, limit, f.Offset)
 	return out, Translate(rows.Err())
 }
 
+// Create：created_at/updated_at 由 DB DEFAULT now() 接管；started_at 显式传入。
 func (episodeRepo) Create(ctx context.Context, tx port.Tx, e port.Episode) error {
 	row := model.EpisodeRowFromApp(e)
 	_, err := txFrom(tx).Exec(ctx, `
-INSERT INTO system.episodes(episode_id,service_id,status,started_by,resolution_pending,input_hash,input_version,processed_input_version,final_input_version,monitor_watermark,app_event_watermark,started_at,created_at,updated_at)
-VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
+INSERT INTO system.episodes(episode_id,service_id,status,started_by,resolution_pending,input_hash,input_version,processed_input_version,final_input_version,monitor_watermark,app_event_watermark,started_at)
+VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
 		row.EpisodeID, row.ServiceID, row.Status, row.StartedBy, row.ResolutionPending,
 		row.InputHash, row.InputVersion, row.ProcessedInputVersion, row.FinalInputVersion,
-		row.MonitorWatermark, row.AppEventWatermark, utc(row.StartedAt), utc(row.CreatedAt), utc(row.UpdatedAt))
+		row.MonitorWatermark, row.AppEventWatermark, utc(row.StartedAt))
 	return Translate(err)
 }
 

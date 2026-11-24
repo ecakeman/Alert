@@ -12,15 +12,16 @@ type targetRepo struct{}
 
 func NewTargetRepo() port.TargetRepo { return targetRepo{} }
 
+// Create：created_at/updated_at 由 DB DEFAULT now() 接管。
 func (targetRepo) Create(ctx context.Context, tx port.Tx, t port.MonitorTarget) error {
 	row := model.TargetRowFromApp(t)
 	_, err := txFrom(tx).Exec(ctx, `
-INSERT INTO system.service_monitor_targets(target_id,service_id,target_key,target_name,address,target_type,config,interval_ms,timeout_ms,failure_threshold,recovery_threshold,is_required,enabled,status,consecutive_failures,consecutive_successes,config_generation,created_at,updated_at)
-VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)`,
+INSERT INTO system.service_monitor_targets(target_id,service_id,target_key,target_name,address,target_type,config,interval_ms,timeout_ms,failure_threshold,recovery_threshold,is_required,enabled,status,consecutive_failures,consecutive_successes,config_generation)
+VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
 		row.TargetID, row.ServiceID, row.TargetKey, row.TargetName, row.Address, row.TargetType,
 		row.Config, row.IntervalMS, row.TimeoutMS, row.FailureThreshold, row.RecoveryThreshold,
 		row.IsRequired, row.Enabled, row.Status, row.ConsecutiveFailures, row.ConsecutiveSuccesses,
-		row.ConfigGeneration, utc(row.CreatedAt), utc(row.UpdatedAt))
+		row.ConfigGeneration)
 	return Translate(err)
 }
 
@@ -72,6 +73,8 @@ WHERE target_id=$1 AND deleted_at IS NULL`,
 		p.FailureThreshold, p.RecoveryThreshold, p.IsRequired, p.Enabled)
 	return Translate(err)
 }
+
+// UpdateProbeResult 更新目标聚合计数与状态（探测结果落地）。
 
 func (targetRepo) SoftDelete(ctx context.Context, tx port.Tx, targetID string, at time.Time) error {
 	_, err := txFrom(tx).Exec(ctx, `

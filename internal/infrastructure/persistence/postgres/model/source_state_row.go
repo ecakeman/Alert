@@ -31,7 +31,7 @@ func (r SourceStateRow) Scan(row Scannable) (SourceStateRow, error) {
 func (r SourceStateRow) ToApp() port.SourceState {
 	return port.SourceState{
 		ServiceID: r.ServiceID, SourceType: r.SourceType, Status: r.Status,
-		Reason: r.Reason, UpdatedAt: r.UpdatedAt, LastChangeAt: r.LastChangeAt,
+		Reason: r.Reason,
 	}
 }
 
@@ -39,6 +39,6 @@ func (r SourceStateRow) ToApp() port.SourceState {
 func SourceStateRowFromApp(s port.SourceState) SourceStateRow {
 	return SourceStateRow{
 		ServiceID: s.ServiceID, SourceType: s.SourceType, Status: s.Status,
-		Reason: s.Reason, UpdatedAt: s.UpdatedAt, LastChangeAt: s.LastChangeAt,
+		Reason: s.Reason,
 	}
 }

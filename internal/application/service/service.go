@@ -59,7 +59,6 @@ func (s *Service) Create(ctx context.Context, in CreateServiceInput) (ServiceVie
 		svc := port.Service{
 			ServiceID: svcID, ServiceKey: in.ServiceKey, Name: in.Name, Description: in.Description,
 			Enabled: true, MonitorAggregationMode: mode, AuthorityProducerID: in.AuthorityProducerID,
-			CreatedAt: now, UpdatedAt: now,
 		}
 		if err := s.deps.Services.Create(ctx, tx, svc); err != nil {
 			return err
@@ -266,7 +265,6 @@ func (s *Service) newTarget(serviceID string, in TargetInput, now time.Time) por
 		TargetName: in.TargetName, Address: in.Address, TargetType: tt, Config: in.Config,
 		IntervalMS: im, TimeoutMS: tm, FailureThreshold: ft, RecoveryThreshold: rt,
 		IsRequired: in.IsRequired, Enabled: true, Status: "UNKNOWN", ConfigGeneration: 1,
-		CreatedAt: now, UpdatedAt: now,
 	}
 }
 
@@ -291,7 +289,7 @@ func monitorTargetHealths(targets []port.MonitorTarget) []domain.TargetHealth {
 		out = append(out, domain.TargetHealth{
 			Required: t.IsRequired,
 			Enabled:  t.Enabled,
-			Deleted:  t.DeletedAt != nil,
+			Deleted:  false, // 聚合输入已由 SQL 过滤软删除目标
 			Status:   t.Status,
 		})
 	}

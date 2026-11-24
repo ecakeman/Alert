@@ -12,13 +12,14 @@ type serviceRepo struct{}
 
 func NewServiceRepo() port.ServiceRepo { return serviceRepo{} }
 
+// Create：created_at/updated_at 由 DB DEFAULT now() 接管（应用类型已去存储时间字段）。
 func (serviceRepo) Create(ctx context.Context, tx port.Tx, s port.Service) error {
 	row := model.ServiceRowFromApp(s)
 	_, err := txFrom(tx).Exec(ctx, `
-INSERT INTO system.services(service_id,service_key,name,description,enabled,monitor_aggregation_mode,authority_producer_id,created_at,updated_at)
-VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+INSERT INTO system.services(service_id,service_key,name,description,enabled,monitor_aggregation_mode,authority_producer_id)
+VALUES($1,$2,$3,$4,$5,$6,$7)`,
 		row.ServiceID, row.ServiceKey, row.Name, row.Description, row.Enabled,
-		row.MonitorAggregationMode, row.AuthorityProducerID, utc(row.CreatedAt), utc(row.UpdatedAt))
+		row.MonitorAggregationMode, row.AuthorityProducerID)
 	return Translate(err)
 }
 

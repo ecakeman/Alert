@@ -12,14 +12,15 @@ type inputVersionRepo struct{}
 func NewInputVersionRepo() port.InputVersionRepo { return inputVersionRepo{} }
 
 // AppendIfChanged 以 (episode_id, input_hash) 幂等：同内容不新增，返回 false。
+// created_at 由 DB DEFAULT now() 接管。
 func (inputVersionRepo) AppendIfChanged(ctx context.Context, tx port.Tx, v port.InputVersion) (bool, error) {
 	row := model.InputVersionRowFromApp(v)
 	tag, err := txFrom(tx).Exec(ctx, `
-INSERT INTO system.episode_input_versions(episode_id,input_version,input_hash,monitor_projection,monitor_watermark,app_event_watermark,created_at)
-VALUES($1,$2,$3,$4,$5,$6,$7)
+INSERT INTO system.episode_input_versions(episode_id,input_version,input_hash,monitor_projection,monitor_watermark,app_event_watermark)
+VALUES($1,$2,$3,$4,$5,$6)
 ON CONFLICT (episode_id, input_hash) DO NOTHING`,
 		row.EpisodeID, row.InputVersion, row.InputHash, row.MonitorProjection,
-		row.MonitorWatermark, row.AppEventWatermark, utc(row.CreatedAt))
+		row.MonitorWatermark, row.AppEventWatermark)
 	if err != nil {
 		return false, Translate(err)
 	}

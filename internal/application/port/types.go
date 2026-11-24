@@ -16,9 +16,6 @@ type Service struct {
 	Enabled                bool
 	MonitorAggregationMode string
 	AuthorityProducerID    string
-	DeletedAt              *time.Time
-	CreatedAt              time.Time
-	UpdatedAt              time.Time
 }
 
 type MonitorTarget struct {
@@ -40,18 +37,13 @@ type MonitorTarget struct {
 	ConsecutiveSuccesses int
 	LastCheckAt          *time.Time
 	ConfigGeneration     int64
-	DeletedAt            *time.Time
-	CreatedAt            time.Time
-	UpdatedAt            time.Time
 }
 
 type SourceState struct {
-	ServiceID    string
-	SourceType   string
-	Status       string
-	Reason       string
-	UpdatedAt    time.Time
-	LastChangeAt time.Time
+	ServiceID  string
+	SourceType string
+	Status     string
+	Reason     string
 }
 
 type Episode struct {
@@ -69,7 +61,6 @@ type Episode struct {
 	StartedAt             time.Time
 	ResolvedAt            *time.Time
 	ArchivedAt            *time.Time
-	CreatedAt             time.Time
 	UpdatedAt             time.Time
 }
 
@@ -80,7 +71,6 @@ type InputVersion struct {
 	MonitorProjection []byte
 	MonitorWatermark  int64
 	AppEventWatermark int64
-	CreatedAt         time.Time
 }
 
 type MonitorPoint struct {

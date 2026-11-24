@@ -34,7 +34,7 @@ func (r InputVersionRow) ToApp() port.InputVersion {
 	return port.InputVersion{
 		EpisodeID: r.EpisodeID, InputVersion: r.InputVersion, InputHash: r.InputHash,
 		MonitorProjection: r.MonitorProjection, MonitorWatermark: r.MonitorWatermark,
-		AppEventWatermark: r.AppEventWatermark, CreatedAt: r.CreatedAt,
+		AppEventWatermark: r.AppEventWatermark,
 	}
 }
 
@@ -43,6 +43,6 @@ func InputVersionRowFromApp(v port.InputVersion) InputVersionRow {
 	return InputVersionRow{
 		EpisodeID: v.EpisodeID, InputVersion: v.InputVersion, InputHash: v.InputHash,
 		MonitorProjection: v.MonitorProjection, MonitorWatermark: v.MonitorWatermark,
-		AppEventWatermark: v.AppEventWatermark, CreatedAt: v.CreatedAt,
+		AppEventWatermark: v.AppEventWatermark,
 	}
 }
