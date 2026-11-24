@@ -45,3 +45,12 @@ func TestClassifyStableCode(t *testing.T) {
 		t.Fatalf("unknown should map INTERNAL, got %s", code)
 	}
 }
+
+// T-S1.14：domain 错误归一后 code/status 不变。
+func TestDomainErrorNormalizeKeepsCodeAndStatus(t *testing.T) {
+	err := domain.CanTransitionIncident(domain.IncidentActive, domain.IncidentArchived)
+	status, code, _ := Classify(apperr.Normalize(err))
+	if status != http.StatusConflict || code != domain.CodeInvalidTransition {
+		t.Fatalf("normalize should keep code/status: status=%d code=%s", status, code)
+	}
+}

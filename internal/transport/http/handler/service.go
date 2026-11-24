@@ -8,6 +8,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/ecakeman/alert/internal/application/apperr"
 	"github.com/ecakeman/alert/internal/application/port"
 	appservice "github.com/ecakeman/alert/internal/application/service"
 	"github.com/ecakeman/alert/internal/transport/http/dto"
@@ -21,7 +22,7 @@ type Service struct{ uc *appservice.Service }
 func NewService(uc *appservice.Service) *Service { return &Service{uc: uc} }
 
 func writeErr(c *gin.Context, err error) {
-	status, code, msg := httperr.Classify(err)
+	status, code, msg := httperr.Classify(apperr.Normalize(err))
 	response.Error(c, status, code, msg)
 }
 
