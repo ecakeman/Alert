@@ -18,13 +18,14 @@
 
 **禁止**在线上信封中出现投递控制字段：`claim_owner`、`claim_until`、`publish_attempts`、`next_retry_at`、`published_at`、`last_error`。这些只存在于 Outbox 存储行（`port.OutboxRecord`），不进入本契约。
 
-## 事件类型（当前 3 个）
+## 事件类型（当前 4 个）
 
 | event_type | aggregate_type | payload 要点 |
 |---|---|---|
 | `service.state.changed.v1` | `service` | `{ "service_id": "..." }` |
 | `episode.status.changed.v1` | `episode` | `{ "episode_id": "...", "status": "..." }` |
 | `episode.input.appended.v1` | `episode` | `{ "episode_id": "...", "input_version": N }` |
+| `task.dispatch.requested.v1` | `task` | `{ "task_id": "...", "generation": N }` |
 
 ## 兼容规则
 

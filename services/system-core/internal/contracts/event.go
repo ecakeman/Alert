@@ -22,9 +22,10 @@ type Event struct {
 
 // 已支持的事件类型（schema_version=1）。
 const (
-	EventServiceStateChanged  = "service.state.changed.v1"
-	EventEpisodeStatusChanged = "episode.status.changed.v1"
-	EventEpisodeInputAppended = "episode.input.appended.v1"
+	EventServiceStateChanged   = "service.state.changed.v1"
+	EventEpisodeStatusChanged  = "episode.status.changed.v1"
+	EventEpisodeInputAppended  = "episode.input.appended.v1"
+	EventTaskDispatchRequested = "task.dispatch.requested.v1"
 )
 
 // ErrUnsupportedEvent 表示事件类型或版本不受支持。
@@ -33,7 +34,7 @@ var ErrUnsupportedEvent = errors.New("unsupported event type or schema version")
 // Supported 判断事件类型与版本是否受支持。
 func Supported(eventType string, schemaVersion int) bool {
 	switch eventType {
-	case EventServiceStateChanged, EventEpisodeStatusChanged, EventEpisodeInputAppended:
+	case EventServiceStateChanged, EventEpisodeStatusChanged, EventEpisodeInputAppended, EventTaskDispatchRequested:
 		return schemaVersion == 1
 	default:
 		return false

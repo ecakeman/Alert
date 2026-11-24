@@ -64,3 +64,20 @@ func TestEventValidateUnknownVersionReturnsSentinel(t *testing.T) {
 		t.Fatalf("known version should pass: %v", err)
 	}
 }
+func TestTaskDispatchEventSupported(t *testing.T) {
+	e := Event{
+		EventID: "e4", EventType: EventTaskDispatchRequested, SchemaVersion: 1,
+		AggregateType: "task", AggregateID: "t1",
+		OccurredAt: time.Now().UTC(),
+		Payload:    json.RawMessage(`{"task_id":"t1","generation":1}`),
+	}
+	if err := e.Validate(); err != nil {
+		t.Fatalf("task dispatch event should pass: %v", err)
+	}
+	if !Supported(EventTaskDispatchRequested, 1) {
+		t.Fatal("task dispatch v1 should be supported")
+	}
+	if Supported(EventTaskDispatchRequested, 2) {
+		t.Fatal("task dispatch v2 should be rejected")
+	}
+}
