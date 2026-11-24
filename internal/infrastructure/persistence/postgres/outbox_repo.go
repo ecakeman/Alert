@@ -6,26 +6,12 @@ import (
 
 	"github.com/ecakeman/alert/internal/application/port"
 	"github.com/ecakeman/alert/internal/contracts"
+	"github.com/ecakeman/alert/internal/infrastructure/persistence/postgres/model"
 )
 
 type outboxRepo struct{}
 
 func NewOutboxRepo() port.OutboxRepo { return outboxRepo{} }
-
-const outboxColumns = `event_id,event_type,schema_version,aggregate_type,aggregate_id,payload,dedupe_key,created_at,published_at,publish_attempts,next_retry_at,claim_owner,claim_until,last_error`
-
-// scanOutboxRecord 把一行映射为事件信封 + 投递控制字段；created_at ↔ OccurredAt。
-func scanOutboxRecord(row scannable) (port.OutboxRecord, error) {
-	var r port.OutboxRecord
-	var e contracts.Event
-	if err := row.Scan(&e.EventID, &e.EventType, &e.SchemaVersion, &e.AggregateType, &e.AggregateID,
-		&e.Payload, &r.DedupeKey, &e.OccurredAt, &r.PublishedAt, &r.PublishAttempts,
-		&r.NextRetryAt, &r.ClaimOwner, &r.ClaimUntil, &r.LastError); err != nil {
-		return port.OutboxRecord{}, Translate(err)
-	}
-	r.Event = e
-	return r, nil
-}
 
 func (outboxRepo) Append(ctx context.Context, tx port.Tx, e contracts.Event, dedupeKey *string) error {
 	_, err := txFrom(tx).Exec(ctx, `
@@ -50,18 +36,18 @@ WHERE event_id IN (
   LIMIT $3
   FOR UPDATE SKIP LOCKED
 )
-RETURNING `+outboxColumns, owner, utc(until), limit)
+RETURNING `+model.OutboxColumns, owner, utc(until), limit)
 	if err != nil {
 		return nil, Translate(err)
 	}
 	defer rows.Close()
 	var out []port.OutboxRecord
 	for rows.Next() {
-		r, err := scanOutboxRecord(rows)
+		row, err := model.OutboxRow{}.Scan(rows)
 		if err != nil {
-			return nil, err
+			return nil, Translate(err)
 		}
-		out = append(out, r)
+		out = append(out, row.ToApp())
 	}
 	return out, Translate(rows.Err())
 }

@@ -5,22 +5,12 @@ import (
 	"time"
 
 	"github.com/ecakeman/alert/internal/application/port"
+	"github.com/ecakeman/alert/internal/infrastructure/persistence/postgres/model"
 )
 
 type ownershipRepo struct{}
 
 func NewOwnershipRepo() port.OwnershipRepo { return ownershipRepo{} }
-
-const ownershipColumns = `service_id,task_id,episode_id,task_type,generation,lease_until,acquired_at,updated_at`
-
-func scanOwnership(row scannable) (port.Ownership, error) {
-	var o port.Ownership
-	if err := row.Scan(&o.ServiceID, &o.TaskID, &o.EpisodeID, &o.TaskType, &o.Generation,
-		&o.LeaseUntil, &o.AcquiredAt, &o.UpdatedAt); err != nil {
-		return port.Ownership{}, Translate(err)
-	}
-	return o, nil
-}
 
 // Acquire：服务级执行权；过期或同 task+generation 幂等时允许接管。
 func (ownershipRepo) Acquire(ctx context.Context, tx port.Tx, o port.Ownership) (bool, error) {
@@ -44,8 +34,12 @@ WHERE o.lease_until <= now()
 }
 
 func (ownershipRepo) Get(ctx context.Context, tx port.Tx, serviceID string) (port.Ownership, error) {
-	return scanOwnership(txFrom(tx).QueryRow(ctx,
-		`SELECT `+ownershipColumns+` FROM system.service_execution_ownership WHERE service_id=$1`, serviceID))
+	row, err := model.OwnershipRow{}.Scan(txFrom(tx).QueryRow(ctx,
+		`SELECT `+model.OwnershipColumns+` FROM system.service_execution_ownership WHERE service_id=$1`, serviceID))
+	if err != nil {
+		return port.Ownership{}, Translate(err)
+	}
+	return row.ToApp(), nil
 }
 
 func (ownershipRepo) Release(ctx context.Context, tx port.Tx, serviceID, taskID string, generation int64) (bool, error) {

@@ -4,31 +4,21 @@ import (
 	"context"
 
 	"github.com/ecakeman/alert/internal/application/port"
+	"github.com/ecakeman/alert/internal/infrastructure/persistence/postgres/model"
 )
 
 type monitorPointRepo struct{}
 
 func NewMonitorPointRepo() port.MonitorPointRepo { return monitorPointRepo{} }
 
-const monitorPointColumns = `point_seq,service_id,target_id,target_key,target_type,observed_at,received_at,check_status,status_class,error_class,state_fingerprint,latency_ms,probe_generation`
-
-func scanMonitorPoint(row scannable) (port.MonitorPoint, error) {
-	var p port.MonitorPoint
-	if err := row.Scan(&p.PointSeq, &p.ServiceID, &p.TargetID, &p.TargetKey, &p.TargetType,
-		&p.ObservedAt, &p.ReceivedAt, &p.CheckStatus, &p.StatusClass, &p.ErrorClass,
-		&p.StateFingerprint, &p.LatencyMS, &p.ProbeGeneration); err != nil {
-		return port.MonitorPoint{}, Translate(err)
-	}
-	return p, nil
-}
-
 func (monitorPointRepo) Append(ctx context.Context, tx port.Tx, p port.MonitorPoint) (int64, error) {
+	row := model.MonitorPointRowFromApp(p)
 	var seq int64
 	err := txFrom(tx).QueryRow(ctx, `
 INSERT INTO system.service_monitor_points(service_id,target_id,target_key,target_type,observed_at,received_at,check_status,status_class,error_class,state_fingerprint,latency_ms,probe_generation)
 VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING point_seq`,
-		p.ServiceID, p.TargetID, p.TargetKey, p.TargetType, utc(p.ObservedAt), utc(p.ReceivedAt),
-		p.CheckStatus, p.StatusClass, p.ErrorClass, p.StateFingerprint, p.LatencyMS, p.ProbeGeneration).Scan(&seq)
+		row.ServiceID, row.TargetID, row.TargetKey, row.TargetType, utc(row.ObservedAt), utc(row.ReceivedAt),
+		row.CheckStatus, row.StatusClass, row.ErrorClass, row.StateFingerprint, row.LatencyMS, row.ProbeGeneration).Scan(&seq)
 	if err != nil {
 		return 0, Translate(err)
 	}
@@ -40,7 +30,7 @@ func (monitorPointRepo) ListByBound(ctx context.Context, tx port.Tx, serviceID s
 		limit = 100
 	}
 	rows, err := txFrom(tx).Query(ctx, `
-SELECT `+monitorPointColumns+` FROM system.service_monitor_points
+SELECT `+model.MonitorPointColumns+` FROM system.service_monitor_points
 WHERE service_id=$1 AND point_seq >= $2 AND point_seq <= $3
 ORDER BY point_seq
 LIMIT $4`, serviceID, fromSeq, toSeq, limit)
@@ -50,11 +40,11 @@ LIMIT $4`, serviceID, fromSeq, toSeq, limit)
 	defer rows.Close()
 	var out []port.MonitorPoint
 	for rows.Next() {
-		p, err := scanMonitorPoint(rows)
+		row, err := model.MonitorPointRow{}.Scan(rows)
 		if err != nil {
-			return nil, err
+			return nil, Translate(err)
 		}
-		out = append(out, p)
+		out = append(out, row.ToApp())
 	}
 	return out, Translate(rows.Err())
 }

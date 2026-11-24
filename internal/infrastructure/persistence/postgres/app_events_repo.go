@@ -4,27 +4,21 @@ import (
 	"context"
 
 	"github.com/ecakeman/alert/internal/application/port"
+	"github.com/ecakeman/alert/internal/infrastructure/persistence/postgres/model"
 )
 
 type appEventRepo struct{}
 
 func NewAppEventRepo() port.AppEventRepo { return appEventRepo{} }
 
-const appEventColumns = `event_record_id,app_event_seq,service_id,episode_id,producer_id,event_id,event_kind,health_status,payload,content_hash,event_time,received_at`
-
-func scanAppEvent(row scannable) (port.AppEvent, error) {
-	var e port.AppEvent
-	if err := row.Scan(&e.EventRecordID, &e.AppEventSeq, &e.ServiceID, &e.EpisodeID, &e.ProducerID,
-		&e.EventID, &e.EventKind, &e.HealthStatus, &e.Payload, &e.ContentHash, &e.EventTime, &e.ReceivedAt); err != nil {
+func (appEventRepo) GetByIdentity(ctx context.Context, tx port.Tx, serviceID, producerID, eventID string) (port.AppEvent, error) {
+	row, err := model.AppEventRow{}.Scan(txFrom(tx).QueryRow(ctx,
+		`SELECT `+model.AppEventColumns+` FROM system.episode_app_events WHERE service_id=$1 AND producer_id=$2 AND event_id=$3`,
+		serviceID, producerID, eventID))
+	if err != nil {
 		return port.AppEvent{}, Translate(err)
 	}
-	return e, nil
-}
-
-func (appEventRepo) GetByIdentity(ctx context.Context, tx port.Tx, serviceID, producerID, eventID string) (port.AppEvent, error) {
-	return scanAppEvent(txFrom(tx).QueryRow(ctx,
-		`SELECT `+appEventColumns+` FROM system.episode_app_events WHERE service_id=$1 AND producer_id=$2 AND event_id=$3`,
-		serviceID, producerID, eventID))
+	return row.ToApp(), nil
 }
 
 // Append：在服务行锁下分配 app_event_seq（同服务事件串行），返回 event_record_id。
@@ -50,7 +44,7 @@ func (appEventRepo) ListByBound(ctx context.Context, tx port.Tx, serviceID strin
 		limit = 100
 	}
 	rows, err := txFrom(tx).Query(ctx, `
-SELECT `+appEventColumns+` FROM system.episode_app_events
+SELECT `+model.AppEventColumns+` FROM system.episode_app_events
 WHERE service_id=$1 AND app_event_seq >= $2 AND app_event_seq <= $3
 ORDER BY app_event_seq
 LIMIT $4`, serviceID, fromSeq, toSeq, limit)
@@ -60,11 +54,11 @@ LIMIT $4`, serviceID, fromSeq, toSeq, limit)
 	defer rows.Close()
 	var out []port.AppEvent
 	for rows.Next() {
-		e, err := scanAppEvent(rows)
+		row, err := model.AppEventRow{}.Scan(rows)
 		if err != nil {
-			return nil, err
+			return nil, Translate(err)
 		}
-		out = append(out, e)
+		out = append(out, row.ToApp())
 	}
 	return out, Translate(rows.Err())
 }
