@@ -19,20 +19,9 @@ type Deps struct {
 	Target    *handler.Target
 	Dashboard *handler.Dashboard
 	Episode   *handler.Episode
+	Artifact  *handler.Artifact
+	Retry     *handler.Retry
 	Timeout   time.Duration
-}
-
-type route struct {
-	method string
-	path   string
-}
-
-// pendingRoutes 是尚未施工的业务路由（B4.2/B4.3/B4.4 及 B7），保持 501。
-var pendingRoutes = []route{
-
-	{"GET", "/episodes/:episode_id/artifacts"},
-	{"POST", "/episodes/:episode_id/retry-diagnosis"},
-	{"POST", "/episodes/:episode_id/retry-archive"},
 }
 
 // New 是唯一公开路由注册处：中间件链 → 探针 → 已实现路由 → 未施工 501 → 统一 404。
@@ -64,10 +53,9 @@ func New(deps Deps) *gin.Engine {
 	v1.POST("/services/:service_id/events", deps.Episode.AppendEvent)
 	v1.GET("/services/:service_id/timeline", deps.Episode.ServiceTimeline)
 	v1.GET("/episodes/:episode_id/timeline", deps.Episode.Timeline)
-
-	for _, rt := range pendingRoutes {
-		v1.Handle(rt.method, rt.path, handler.NotImplemented)
-	}
+	v1.GET("/episodes/:episode_id/artifacts", deps.Artifact.Get)
+	v1.POST("/episodes/:episode_id/retry-diagnosis", deps.Retry.RetryDiagnosis)
+	v1.POST("/episodes/:episode_id/retry-archive", deps.Retry.RetryArchive)
 
 	r.NoRoute(func(c *gin.Context) {
 		response.Error(c, http.StatusNotFound, apperr.CodeNotFound, "resource not found")

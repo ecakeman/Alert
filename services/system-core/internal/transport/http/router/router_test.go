@@ -18,43 +18,6 @@ func newTestEngine() *gin.Engine {
 	return New(Deps{Health: handler.NewHealth(health.NewService()), Timeout: 5 * time.Second})
 }
 
-func concretePath(path string) string {
-	path = strings.ReplaceAll(path, ":service_id", "s")
-	path = strings.ReplaceAll(path, ":episode_id", "e")
-	path = strings.ReplaceAll(path, ":target_id", "t")
-	return "/api/v1" + path
-}
-
-// 未施工路由（pendingRoutes）保持 501。
-func TestPendingRoutes501(t *testing.T) {
-	r := newTestEngine()
-	for _, rt := range pendingRoutes {
-		w := httptest.NewRecorder()
-		req := httptest.NewRequest(rt.method, concretePath(rt.path), nil)
-		r.ServeHTTP(w, req)
-		if w.Code != http.StatusNotImplemented {
-			t.Fatalf("%s %s expected 501, got %d", rt.method, rt.path, w.Code)
-		}
-	}
-}
-
-func TestNotImplementedAndRequestID(t *testing.T) {
-	r := newTestEngine()
-	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/episodes/e/artifacts", nil)
-	r.ServeHTTP(w, req)
-
-	if w.Code != http.StatusNotImplemented {
-		t.Fatalf("expected 501, got %d", w.Code)
-	}
-	if w.Header().Get("X-Request-ID") == "" {
-		t.Fatal("missing X-Request-ID header")
-	}
-	if !strings.Contains(w.Body.String(), "NOT_IMPLEMENTED") {
-		t.Fatalf("expected NOT_IMPLEMENTED body, got %s", w.Body.String())
-	}
-}
-
 func TestNoRoute404(t *testing.T) {
 	r := newTestEngine()
 	w := httptest.NewRecorder()
