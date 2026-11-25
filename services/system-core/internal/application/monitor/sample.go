@@ -19,16 +19,17 @@ import (
 
 // Deps 是探测采样落库与故障驱动的依赖。
 type Deps struct {
-	UOW           portshared.UnitOfWork
-	Targets       portService.TargetRepo
-	MonitorPoints portmonitor.MonitorPointRepo
-	Sources       portService.SourceStateRepo
-	Episodes      portepisode.EpisodeRepo
-	Services      portService.ServiceRepo
-	Outbox        portoutbox.OutboxRepo
-	Driver        EpisodeDriver
-	Clock         portshared.Clock
-	IDs           portshared.IDGen
+	UOW            portshared.UnitOfWork
+	Targets        portService.TargetRepo
+	MonitorPoints  portmonitor.MonitorPointRepo
+	Sources        portService.SourceStateRepo
+	Episodes       portepisode.EpisodeRepo
+	Services       portService.ServiceRepo
+	Outbox         portoutbox.OutboxRepo
+	Driver         EpisodeDriver
+	Clock          portshared.Clock
+	IDs            portshared.IDGen
+	RemoteRegistry bool
 }
 
 type Service struct {
@@ -56,6 +57,13 @@ type Sample struct {
 //   - 事务内只写本域自产数据：points + outbox + targets.last_check_at；
 //   - 事务外更新 targets 状态、sources，并驱动 episode（失败 WARN + 计数，由下一轮补偿）。
 func (s *Service) ApplySample(ctx context.Context, serviceID, targetID string, probeGeneration int64, smp Sample) (string, error) {
+	if s.deps.RemoteRegistry {
+		return s.applySampleRemote(ctx, serviceID, targetID, probeGeneration, smp)
+	}
+	return s.applySampleTx(ctx, serviceID, targetID, probeGeneration, smp)
+}
+
+func (s *Service) applySampleTx(ctx context.Context, serviceID, targetID string, probeGeneration int64, smp Sample) (string, error) {
 	var (
 		sourceStatus    string
 		targetStatus    string
@@ -281,4 +289,99 @@ func monitorTargetHealths(targets []portService.MonitorTarget) []domain.TargetHe
 		})
 	}
 	return out
+}
+
+// applySampleRemote（P2 过渡）：远程读写全部在事务外；事务内只写本地 points / outbox。
+func (s *Service) applySampleRemote(ctx context.Context, serviceID, targetID string, probeGeneration int64, smp Sample) (string, error) {
+	now := s.deps.Clock.Now().UTC()
+
+	t, err := s.deps.Targets.Get(ctx, nil, targetID)
+	if err != nil {
+		return "", err
+	}
+	if t.ConfigGeneration != probeGeneration {
+		return t.Status, nil
+	}
+
+	observed := smp.ObservedAt
+	if observed.IsZero() {
+		observed = now
+	}
+
+	svc, err := s.deps.Services.Get(ctx, nil, serviceID)
+	if err != nil {
+		return "", err
+	}
+	targets, err := s.deps.Targets.ListByService(ctx, nil, serviceID, false)
+	if err != nil {
+		return "", err
+	}
+	sources, err := s.deps.Sources.ListByService(ctx, nil, serviceID)
+	if err != nil {
+		return "", err
+	}
+
+	targetStatus, targetFailures, targetSuccesses := nextStatus(t.Status, smp.CheckStatus,
+		t.ConsecutiveFailures, t.ConsecutiveSuccesses, t.FailureThreshold, t.RecoveryThreshold)
+	targetChanged := targetStatus != t.Status
+
+	for i := range targets {
+		if targets[i].TargetID == targetID {
+			targets[i].Status = targetStatus
+			targets[i].ConsecutiveFailures = targetFailures
+			targets[i].ConsecutiveSuccesses = targetSuccesses
+			last := observed
+			targets[i].LastCheckAt = &last
+		}
+	}
+
+	oldSource := "UNKNOWN"
+	for _, st := range sources {
+		if st.SourceType == "MONITOR" {
+			oldSource = st.Status
+		}
+	}
+	newSource, err := domain.AggregateMonitor(svc.MonitorAggregationMode, monitorTargetHealths(targets))
+	if err != nil {
+		return "", err
+	}
+	sourceChanged := newSource != oldSource
+
+	err = s.deps.UOW.WithinTx(ctx, func(ctx context.Context, tx portshared.Tx) error {
+		if _, err := s.deps.MonitorPoints.Append(ctx, tx, portmonitor.MonitorPoint{
+			ServiceID: serviceID, TargetID: targetID, TargetKey: t.TargetKey, TargetType: t.TargetType,
+			ObservedAt: observed, ReceivedAt: now,
+			CheckStatus: smp.CheckStatus, StatusClass: smp.StatusClass, ErrorClass: smp.ErrorClass,
+			StateFingerprint: smp.StateFingerprint, LatencyMS: smp.LatencyMS, ProbeGeneration: probeGeneration,
+		}); err != nil {
+			return err
+		}
+		if targetChanged {
+			if err := s.appendTargetStateChanged(ctx, tx, t, targetStatus, targetFailures, targetSuccesses, observed); err != nil {
+				return err
+			}
+		}
+		if sourceChanged {
+			if err := s.appendServiceStateChanged(ctx, tx, serviceID, oldSource, newSource, svc.MonitorAggregationMode, targets); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return "", err
+	}
+
+	if err := s.deps.Targets.UpdateProbeResult(ctx, nil, targetID, targetStatus, targetFailures, targetSuccesses, observed); err != nil {
+		s.outOfTxFailure("targets.update_probe_result_remote", err)
+	}
+	if err := s.deps.Sources.Upsert(ctx, nil, portService.SourceState{
+		ServiceID: serviceID, SourceType: "MONITOR", Status: newSource,
+	}); err != nil {
+		s.outOfTxFailure("sources.upsert_remote", err)
+	}
+	if sourceChanged {
+		s.driveEpisode(ctx, serviceID, newSource)
+	}
+	return newSource, nil
 }

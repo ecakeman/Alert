@@ -8,6 +8,7 @@ import (
 	portService "github.com/ecakeman/alert/services/system-core/internal/application/port/service"
 	porttask "github.com/ecakeman/alert/services/system-core/internal/application/port/task"
 	"github.com/ecakeman/alert/services/system-core/internal/infrastructure/persistence/postgres"
+	"github.com/ecakeman/alert/services/system-core/internal/infrastructure/registryclient"
 )
 
 // Repos 集中持有全部仓储实例；纯实例化：不开事务、不构造用例。
@@ -29,7 +30,7 @@ type Repos struct {
 }
 
 func NewRepos(sh *Shared) *Repos {
-	return &Repos{
+	repos := &Repos{
 		Services:      postgres.NewServiceRepo(),
 		Targets:       postgres.NewTargetRepo(),
 		Sources:       postgres.NewSourceStateRepo(),
@@ -44,4 +45,11 @@ func NewRepos(sh *Shared) *Repos {
 		Ownership:     postgres.NewOwnershipRepo(),
 		Artifacts:     postgres.NewArtifactRepo(),
 	}
+	if sh.Cfg.RemoteRegistry {
+		client := registryclient.New(sh.Cfg.RegistryBaseURL, sh.Cfg.UpstreamTimeout)
+		repos.Services = client.ServiceRepo()
+		repos.Targets = client.TargetRepo()
+		repos.Sources = client.SourceStateRepo()
+	}
+	return repos
 }

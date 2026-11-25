@@ -105,6 +105,13 @@ type SourceState struct {
 	Reason     string `json:"reason"`
 }
 
+type ProbeResultPayload struct {
+	Status               string  `json:"status"`
+	ConsecutiveFailures  int     `json:"consecutive_failures"`
+	ConsecutiveSuccesses int     `json:"consecutive_successes"`
+	LastCheckAt          *string `json:"last_check_at"`
+}
+
 type Stats struct {
 	Services int            `json:"services"`
 	Targets  map[string]int `json:"targets"`

@@ -37,9 +37,13 @@ func (h *Registry) Register(router *gin.Engine) {
 	g.DELETE("/services/:service_id", h.deleteService)
 	g.GET("/services/:service_id/targets", h.listTargets)
 	g.POST("/services/:service_id/targets", h.createTarget)
+	g.GET("/targets", h.listEnabledTargets)
+	g.GET("/targets/:target_id", h.getTarget)
+	g.POST("/targets/:target_id/probe-result", h.probeResult)
 	g.PATCH("/targets/:target_id", h.patchTarget)
 	g.DELETE("/targets/:target_id", h.deleteTarget)
 	g.GET("/services/:service_id/source-states", h.listSourceStates)
+	g.POST("/services/:service_id/source-states", h.upsertSourceState)
 	g.GET("/stats", h.stats)
 }
 
@@ -400,4 +404,66 @@ func rawMessageBytes(value *json.RawMessage) []byte {
 		return nil
 	}
 	return []byte(*value)
+}
+
+func (h *Registry) listEnabledTargets(c *gin.Context) {
+	targets, err := h.uc.ListEnabledTargets(c.Request.Context())
+	if err != nil {
+		writeErr(c, err)
+		return
+	}
+	out := make([]dto.Target, 0, len(targets))
+	for _, target := range targets {
+		out = append(out, toTarget(target))
+	}
+	c.JSON(200, out)
+}
+
+func (h *Registry) getTarget(c *gin.Context) {
+	target, err := h.uc.GetTarget(c.Request.Context(), c.Param("target_id"))
+	if err != nil {
+		writeErr(c, err)
+		return
+	}
+	c.JSON(200, toTarget(target))
+}
+
+func (h *Registry) probeResult(c *gin.Context) {
+	var payload dto.ProbeResultPayload
+	if err := c.ShouldBindJSON(&payload); err != nil {
+		writeErr(c, apperr.Validation("invalid json body"))
+		return
+	}
+	lastCheckAt := time.Now().UTC()
+	if payload.LastCheckAt != nil && *payload.LastCheckAt != "" {
+		if parsed, err := time.Parse(time.RFC3339, *payload.LastCheckAt); err == nil {
+			lastCheckAt = parsed
+		}
+	}
+	if err := h.uc.ApplyProbeResult(c.Request.Context(), c.Param("target_id"), payload.Status,
+		payload.ConsecutiveFailures, payload.ConsecutiveSuccesses, lastCheckAt); err != nil {
+		writeErr(c, err)
+		return
+	}
+	c.Status(204)
+}
+
+func (h *Registry) upsertSourceState(c *gin.Context) {
+	var payload dto.SourceState
+	if err := c.ShouldBindJSON(&payload); err != nil {
+		writeErr(c, apperr.Validation("invalid json body"))
+		return
+	}
+	if payload.SourceType == "" || payload.Status == "" {
+		writeErr(c, apperr.Validation("source_type and status are required"))
+		return
+	}
+	if err := h.uc.UpsertSourceState(c.Request.Context(), portService.SourceState{
+		ServiceID: c.Param("service_id"), SourceType: payload.SourceType,
+		Status: payload.Status, Reason: payload.Reason,
+	}); err != nil {
+		writeErr(c, err)
+		return
+	}
+	c.Status(204)
 }

@@ -27,6 +27,9 @@ type Config struct {
 	OutboxBatch            int
 	KafkaBrokers           string
 	KafkaTopic             string
+	RemoteRegistry         bool
+	RegistryBaseURL        string
+	UpstreamTimeout        time.Duration
 	ProbeWorkers           int
 	ProbeQueueCapacity     int
 	AgentGRPCTarget        string
@@ -145,6 +148,9 @@ var (
 		boolSpec("OUTBOX_PUBLISHER_ENABLED", func(c *Config, v bool) { c.OutboxPublisherEnabled = v }),
 		durSpec("OUTBOX_CLAIM_LEASE", func(c *Config, v time.Duration) { c.OutboxClaimLease = v }),
 		intSpec("OUTBOX_BATCH", func(c *Config, v int) { c.OutboxBatch = v }),
+		boolSpec("REMOTE_REGISTRY", func(c *Config, v bool) { c.RemoteRegistry = v }),
+		strSpec("REGISTRY_BASE_URL", func(c *Config, v string) { c.RegistryBaseURL = v }),
+		durSpec("UPSTREAM_TIMEOUT", func(c *Config, v time.Duration) { c.UpstreamTimeout = v }),
 		strSpec("KAFKA_BROKERS", func(c *Config, v string) { c.KafkaBrokers = v }),
 		strSpec("KAFKA_TOPIC", func(c *Config, v string) { c.KafkaTopic = v }),
 		intSpec("PROBE_WORKERS", func(c *Config, v int) { c.ProbeWorkers = v }),
@@ -206,6 +212,8 @@ func Load(lookup func(string) string) (Config, error) {
 		OutboxClaimLease:       30 * time.Second,
 		OutboxBatch:            16,
 		KafkaTopic:             "alertflow.system.events.v1",
+		RegistryBaseURL:        "http://127.0.0.1:8081",
+		UpstreamTimeout:        3 * time.Second,
 		ProbeWorkers:           8,
 		ProbeQueueCapacity:     1024,
 		DBMaxConns:             10,
