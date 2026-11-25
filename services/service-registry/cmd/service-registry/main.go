@@ -17,9 +17,15 @@ import (
 	"github.com/ecakeman/alert/services/platform/logging"
 	platformmigrate "github.com/ecakeman/alert/services/platform/migrate"
 
+	"github.com/gin-gonic/gin"
+
+	appservice "github.com/ecakeman/alert/services/service-registry/internal/application/service"
 	"github.com/ecakeman/alert/services/service-registry/internal/config"
+	"github.com/ecakeman/alert/services/service-registry/internal/infrastructure/clock"
+	"github.com/ecakeman/alert/services/service-registry/internal/infrastructure/idgen"
 	registrypostgres "github.com/ecakeman/alert/services/service-registry/internal/infrastructure/persistence/postgres"
 	registryhttp "github.com/ecakeman/alert/services/service-registry/internal/transport/http"
+	registryhandler "github.com/ecakeman/alert/services/service-registry/internal/transport/http/handler"
 	"github.com/ecakeman/alert/services/service-registry/migrations"
 )
 
@@ -86,8 +92,21 @@ func main() {
 	})
 	health.CheckTimeout = cfg.ReadyzTimeout
 
+	uc := appservice.New(appservice.Deps{
+		UOW:      registrypostgres.NewUnitOfWork(pool.Raw()),
+		Services: registrypostgres.NewServiceRepo(),
+		Targets:  registrypostgres.NewTargetRepo(),
+		Sources:  registrypostgres.NewSourceStateRepo(),
+		Outbox:   registrypostgres.NewOutboxRepo(),
+		Clock:    clock.System{},
+		IDs:      idgen.Generator{},
+	})
+	engine := gin.New()
+	engine.Use(gin.Recovery())
+	registryhandler.NewRegistry(uc).Register(engine)
+
 	handler := httpx.Chain(
-		registryhttp.New(registryhttp.Deps{Health: health, Logger: logger}),
+		registryhttp.New(registryhttp.Deps{Health: health, Logger: logger, API: engine}),
 		httpx.Recovery(logger),
 		httpx.Trace(logger),
 		httpx.AccessLog(logger),

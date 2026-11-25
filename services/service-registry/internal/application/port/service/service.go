@@ -75,6 +75,7 @@ type ServiceRepo interface {
 	Get(ctx context.Context, tx portshared.Tx, serviceID string) (Service, error)
 	GetByKey(ctx context.Context, tx portshared.Tx, serviceKey string) (Service, error)
 	List(ctx context.Context, tx portshared.Tx, f ServiceFilter) ([]Service, error)
+	ListByIDs(ctx context.Context, tx portshared.Tx, ids []string) ([]Service, error)
 	Count(ctx context.Context, tx portshared.Tx, f ServiceFilter) (int, error)
 
 	Patch(ctx context.Context, tx portshared.Tx, serviceID string, p ServicePatch) error

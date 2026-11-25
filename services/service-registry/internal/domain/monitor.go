@@ -1,6 +1,6 @@
 package domain
 
-// MONITOR 来源聚合模式（与 system.services.monitor_aggregation_mode 对应）。
+// MONITOR 来源聚合模式（与 registry.services.monitor_aggregation_mode 对应）。
 const (
 	ModeAllRequired = "ALL_REQUIRED"
 	ModeAnyRequired = "ANY_REQUIRED"

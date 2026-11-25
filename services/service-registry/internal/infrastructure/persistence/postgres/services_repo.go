@@ -17,7 +17,7 @@ func NewServiceRepo() portService.ServiceRepo { return serviceRepo{} }
 func (serviceRepo) Create(ctx context.Context, tx portshared.Tx, s portService.Service) error {
 	row := model.ServiceRowFromApp(s)
 	_, err := txFrom(tx).Exec(ctx, `
-INSERT INTO system.services(service_id,service_key,name,description,enabled,monitor_aggregation_mode,authority_producer_id)
+INSERT INTO registry.services(service_id,service_key,name,description,enabled,monitor_aggregation_mode,authority_producer_id)
 VALUES($1,$2,$3,$4,$5,$6,$7)`,
 		row.ServiceID, row.ServiceKey, row.Name, row.Description, row.Enabled,
 		row.MonitorAggregationMode, row.AuthorityProducerID)
@@ -26,7 +26,7 @@ VALUES($1,$2,$3,$4,$5,$6,$7)`,
 
 func (serviceRepo) Get(ctx context.Context, tx portshared.Tx, serviceID string) (portService.Service, error) {
 	row, err := model.ServiceRow{}.Scan(txFrom(tx).QueryRow(ctx,
-		`SELECT `+model.ServiceColumns+` FROM system.services WHERE service_id=$1`, serviceID))
+		`SELECT `+model.ServiceColumns+` FROM registry.services WHERE service_id=$1 AND deleted_at IS NULL`, serviceID))
 	if err != nil {
 		return portService.Service{}, Translate(err)
 	}
@@ -35,7 +35,7 @@ func (serviceRepo) Get(ctx context.Context, tx portshared.Tx, serviceID string) 
 
 func (serviceRepo) GetByKey(ctx context.Context, tx portshared.Tx, serviceKey string) (portService.Service, error) {
 	row, err := model.ServiceRow{}.Scan(txFrom(tx).QueryRow(ctx,
-		`SELECT `+model.ServiceColumns+` FROM system.services WHERE service_key=$1`, serviceKey))
+		`SELECT `+model.ServiceColumns+` FROM registry.services WHERE service_key=$1`, serviceKey))
 	if err != nil {
 		return portService.Service{}, Translate(err)
 	}
@@ -49,9 +49,9 @@ func serviceFilterWhere(f portService.ServiceFilter) (string, []any) {
   AND ($1 = '' OR name ILIKE '%'||$1||'%' OR service_key ILIKE '%'||$1||'%')
   AND (
     $2 = ''
-    OR EXISTS (SELECT 1 FROM system.service_source_states st
+    OR EXISTS (SELECT 1 FROM registry.service_source_states st
                WHERE st.service_id = services.service_id AND st.source_type='MONITOR' AND st.status=$2)
-    OR ($2 = 'UNKNOWN' AND NOT EXISTS (SELECT 1 FROM system.service_source_states st2
+    OR ($2 = 'UNKNOWN' AND NOT EXISTS (SELECT 1 FROM registry.service_source_states st2
                WHERE st2.service_id = services.service_id AND st2.source_type='MONITOR'))
   )`
 	return where, []any{f.Query, f.Status}
@@ -61,7 +61,7 @@ func (serviceRepo) Count(ctx context.Context, tx portshared.Tx, f portService.Se
 	where, args := serviceFilterWhere(f)
 	var total int
 	err := txFrom(tx).QueryRow(ctx,
-		`SELECT count(*) FROM system.services WHERE `+where, args...).Scan(&total)
+		`SELECT count(*) FROM registry.services WHERE `+where, args...).Scan(&total)
 	if err != nil {
 		return 0, Translate(err)
 	}
@@ -75,7 +75,7 @@ func (serviceRepo) List(ctx context.Context, tx portshared.Tx, f portService.Ser
 	}
 	where, args := serviceFilterWhere(f)
 	rows, err := txFrom(tx).Query(ctx, `
-SELECT `+model.ServiceColumns+` FROM system.services
+SELECT `+model.ServiceColumns+` FROM registry.services
 WHERE `+where+`
 ORDER BY created_at DESC
 LIMIT $3 OFFSET $4`, append(args, limit, f.Offset)...)
@@ -96,7 +96,7 @@ LIMIT $3 OFFSET $4`, append(args, limit, f.Offset)...)
 
 func (serviceRepo) Patch(ctx context.Context, tx portshared.Tx, serviceID string, p portService.ServicePatch) error {
 	_, err := txFrom(tx).Exec(ctx, `
-UPDATE system.services SET
+UPDATE registry.services SET
   name = COALESCE($2, name),
   description = COALESCE($3, description),
   enabled = COALESCE($4, enabled),
@@ -109,7 +109,31 @@ WHERE service_id=$1 AND deleted_at IS NULL`,
 
 func (serviceRepo) SoftDelete(ctx context.Context, tx portshared.Tx, serviceID string, at time.Time) error {
 	_, err := txFrom(tx).Exec(ctx, `
-UPDATE system.services SET deleted_at=$2, enabled=false, updated_at=now()
+UPDATE registry.services SET deleted_at=$2, enabled=false, updated_at=now()
 WHERE service_id=$1 AND deleted_at IS NULL`, serviceID, utc(at))
 	return Translate(err)
+}
+
+// ListByIDs 批量取服务（ids 为空时返回空列表），用于 BFF/域内批量补齐。
+func (serviceRepo) ListByIDs(ctx context.Context, tx portshared.Tx, ids []string) ([]portService.Service, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	rows, err := txFrom(tx).Query(ctx, `
+SELECT `+model.ServiceColumns+` FROM registry.services
+WHERE service_id = ANY($1::uuid[]) AND deleted_at IS NULL
+ORDER BY created_at`, ids)
+	if err != nil {
+		return nil, Translate(err)
+	}
+	defer rows.Close()
+	var out []portService.Service
+	for rows.Next() {
+		row, err := model.ServiceRow{}.Scan(rows)
+		if err != nil {
+			return nil, Translate(err)
+		}
+		out = append(out, row.ToApp())
+	}
+	return out, Translate(rows.Err())
 }

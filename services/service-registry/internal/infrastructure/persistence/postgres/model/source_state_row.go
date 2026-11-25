@@ -6,10 +6,10 @@ import (
 	portService "github.com/ecakeman/alert/services/service-registry/internal/application/port/service"
 )
 
-// SourceStateColumns 是 system.service_source_states 的完整列清单（唯一来源）。
+// SourceStateColumns 是 registry.service_source_states 的完整列清单（唯一来源）。
 const SourceStateColumns = `service_id,source_type,status,reason,updated_at,last_change_at`
 
-// SourceStateRow 是 system.service_source_states 行模型（PK：service_id + source_type）。
+// SourceStateRow 是 registry.service_source_states 行模型（PK：service_id + source_type）。
 type SourceStateRow struct {
 	ServiceID    string
 	SourceType   string

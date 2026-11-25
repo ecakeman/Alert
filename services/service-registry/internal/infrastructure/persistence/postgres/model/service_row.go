@@ -6,10 +6,10 @@ import (
 	portService "github.com/ecakeman/alert/services/service-registry/internal/application/port/service"
 )
 
-// ServiceColumns 是 system.services 的完整列清单（唯一来源）。
+// ServiceColumns 是 registry.services 的完整列清单（唯一来源）。
 const ServiceColumns = `service_id,service_key,name,description,enabled,monitor_aggregation_mode,authority_producer_id,deleted_at,created_at,updated_at`
 
-// ServiceRow 是 system.services 行模型。
+// ServiceRow 是 registry.services 行模型。
 type ServiceRow struct {
 	ServiceID              string
 	ServiceKey             string

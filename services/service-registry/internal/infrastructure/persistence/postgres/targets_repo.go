@@ -17,7 +17,7 @@ func NewTargetRepo() portService.TargetRepo { return targetRepo{} }
 func (targetRepo) Create(ctx context.Context, tx portshared.Tx, t portService.MonitorTarget) error {
 	row := model.TargetRowFromApp(t)
 	_, err := txFrom(tx).Exec(ctx, `
-INSERT INTO system.service_monitor_targets(target_id,service_id,target_key,target_name,address,target_type,config,interval_ms,timeout_ms,failure_threshold,recovery_threshold,is_required,enabled,status,consecutive_failures,consecutive_successes,config_generation)
+INSERT INTO registry.service_monitor_targets(target_id,service_id,target_key,target_name,address,target_type,config,interval_ms,timeout_ms,failure_threshold,recovery_threshold,is_required,enabled,status,consecutive_failures,consecutive_successes,config_generation)
 VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
 		row.TargetID, row.ServiceID, row.TargetKey, row.TargetName, row.Address, row.TargetType,
 		row.Config, row.IntervalMS, row.TimeoutMS, row.FailureThreshold, row.RecoveryThreshold,
@@ -28,7 +28,7 @@ VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
 
 func (targetRepo) Get(ctx context.Context, tx portshared.Tx, targetID string) (portService.MonitorTarget, error) {
 	row, err := model.TargetRow{}.Scan(txFrom(tx).QueryRow(ctx,
-		`SELECT `+model.TargetColumns+` FROM system.service_monitor_targets WHERE target_id=$1`, targetID))
+		`SELECT `+model.TargetColumns+` FROM registry.service_monitor_targets WHERE target_id=$1`, targetID))
 	if err != nil {
 		return portService.MonitorTarget{}, Translate(err)
 	}
@@ -37,7 +37,7 @@ func (targetRepo) Get(ctx context.Context, tx portshared.Tx, targetID string) (p
 
 func (targetRepo) ListByService(ctx context.Context, tx portshared.Tx, serviceID string, includeDeleted bool) ([]portService.MonitorTarget, error) {
 	rows, err := txFrom(tx).Query(ctx, `
-SELECT `+model.TargetColumns+` FROM system.service_monitor_targets
+SELECT `+model.TargetColumns+` FROM registry.service_monitor_targets
 WHERE service_id=$1 AND ($2 OR deleted_at IS NULL)
 ORDER BY created_at`, serviceID, includeDeleted)
 	if err != nil {
@@ -57,7 +57,7 @@ ORDER BY created_at`, serviceID, includeDeleted)
 
 func (targetRepo) Patch(ctx context.Context, tx portshared.Tx, targetID string, p portService.TargetPatch) error {
 	_, err := txFrom(tx).Exec(ctx, `
-UPDATE system.service_monitor_targets SET
+UPDATE registry.service_monitor_targets SET
   target_name = COALESCE($2, target_name),
   address = COALESCE($3, address),
   config = COALESCE($4, config),
@@ -79,7 +79,7 @@ WHERE target_id=$1 AND deleted_at IS NULL`,
 
 func (targetRepo) SoftDelete(ctx context.Context, tx portshared.Tx, targetID string, at time.Time) error {
 	_, err := txFrom(tx).Exec(ctx, `
-UPDATE system.service_monitor_targets SET deleted_at=$2, enabled=false, updated_at=now()
+UPDATE registry.service_monitor_targets SET deleted_at=$2, enabled=false, updated_at=now()
 WHERE target_id=$1 AND deleted_at IS NULL`, targetID, utc(at))
 	return Translate(err)
 }

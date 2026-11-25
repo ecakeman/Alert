@@ -6,10 +6,10 @@ import (
 	portService "github.com/ecakeman/alert/services/service-registry/internal/application/port/service"
 )
 
-// TargetColumns 是 system.service_monitor_targets 的完整列清单（唯一来源）。
+// TargetColumns 是 registry.service_monitor_targets 的完整列清单（唯一来源）。
 const TargetColumns = `target_id,service_id,target_key,target_name,address,target_type,config,interval_ms,timeout_ms,failure_threshold,recovery_threshold,is_required,enabled,status,consecutive_failures,consecutive_successes,last_check_at,config_generation,deleted_at,created_at,updated_at`
 
-// TargetRow 是 system.service_monitor_targets 行模型。
+// TargetRow 是 registry.service_monitor_targets 行模型。
 type TargetRow struct {
 	TargetID             string
 	ServiceID            string
