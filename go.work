@@ -4,4 +4,5 @@ use (
 	./services/contracts
 	./services/platform
 	./services/system-core
+	./services/console-bff
 )
