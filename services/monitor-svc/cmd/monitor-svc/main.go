@@ -15,9 +15,13 @@ import (
 	"github.com/ecakeman/alert/services/platform/db"
 	"github.com/ecakeman/alert/services/platform/httpx"
 	"github.com/ecakeman/alert/services/platform/logging"
+	"github.com/ecakeman/alert/services/platform/messaging"
 	platformmigrate "github.com/ecakeman/alert/services/platform/migrate"
+	"github.com/jackc/pgx/v5/pgxpool"
 
+	monitorprojection "github.com/ecakeman/alert/services/monitor-svc/internal/application/projection"
 	"github.com/ecakeman/alert/services/monitor-svc/internal/config"
+	"github.com/ecakeman/alert/services/monitor-svc/internal/infrastructure/clock"
 	monitorpostgres "github.com/ecakeman/alert/services/monitor-svc/internal/infrastructure/persistence/postgres"
 	monitorhttp "github.com/ecakeman/alert/services/monitor-svc/internal/transport/http"
 	"github.com/ecakeman/alert/services/monitor-svc/migrations"
@@ -80,11 +84,41 @@ func main() {
 		os.Exit(1)
 	}
 
+	synced := monitorprojection.NewSyncState()
+	// 重启后以持久化消费记录判定"已同步"，避免 readyz 永久 503。
+	if catalogSyncedBefore(ctx, pool.Raw()) {
+		synced.Mark()
+	}
 	health := httpx.NewHealthService(cfg.ServiceName, map[string]httpx.Checker{
 		"database":  pool,
 		"migration": monitorpostgres.MigrationChecker{Pool: pool.Raw(), Timeout: cfg.ReadyzTimeout},
+		"catalog":   synced,
 	})
 	health.CheckTimeout = cfg.ReadyzTimeout
+
+	if cfg.KafkaBrokers != "" {
+		catalogConsumer := monitorprojection.New(monitorprojection.Deps{
+			UOW:        monitorpostgres.NewUnitOfWork(pool.Raw()),
+			Projection: monitorpostgres.NewProjectionRepo(),
+			Idem:       monitorpostgres.NewIdempotencyRepo(),
+			Clock:      clock.System{},
+			Synced:     synced,
+		})
+		kafkaConsumer, err := messaging.NewConsumer(messaging.ConsumerConfig{
+			Brokers: splitBrokers(cfg.KafkaBrokers), Topics: cfg.KafkaConsumeTopics,
+			GroupID: "monitor.catalog-events.v1", Logger: logger,
+		}, catalogConsumer.Handle)
+		if err != nil {
+			logger.Error("kafka consumer", "reason", err.Error())
+			os.Exit(1)
+		}
+		go func() {
+			if err := kafkaConsumer.Run(ctx); err != nil && ctx.Err() == nil {
+				logger.Error("kafka consumer stopped", "reason", err.Error())
+			}
+		}()
+		defer kafkaConsumer.Close()
+	}
 
 	handler := httpx.Chain(
 		monitorhttp.New(monitorhttp.Deps{Health: health, Logger: logger}),
@@ -121,6 +155,24 @@ func main() {
 			logger.Error("shutdown", "reason", err.Error())
 		}
 	}
+}
+
+func catalogSyncedBefore(ctx context.Context, pool *pgxpool.Pool) bool {
+	var ok bool
+	err := pool.QueryRow(ctx,
+		`SELECT EXISTS(SELECT 1 FROM monitor.consumer_idempotency WHERE consumer='monitor.catalog-events.v1')`).Scan(&ok)
+	return err == nil && ok
+}
+
+func splitBrokers(raw string) []string {
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if trimmed := strings.TrimSpace(part); trimmed != "" {
+			out = append(out, trimmed)
+		}
+	}
+	return out
 }
 
 func healthcheckAddr(addr string) string {
