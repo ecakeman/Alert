@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"log/slog"
 
 	"github.com/ecakeman/alert/services/system-core/internal/application/apperr"
 	portepisode "github.com/ecakeman/alert/services/system-core/internal/application/port/episode"
@@ -210,54 +211,72 @@ func (s *Service) AppendInputVersion(ctx context.Context, episodeID string) (boo
 }
 
 // TryResolve：满足全部解除条件才置 RESOLVED（INV-03）。
+// P0 预演：判定数据在事务外读取，写侧用 CAS（仍 ACTIVE 且 updated_at 未变）避免错误解除。
 func (s *Service) TryResolve(ctx context.Context, episodeID string) (bool, []string, error) {
+	var (
+		ep          portepisode.Episode
+		sources     []portService.SourceState
+		activeTasks []porttask.AgentTask
+	)
+	if err := s.deps.UOW.WithinTx(ctx, func(ctx context.Context, tx portshared.Tx) error {
+		var err error
+		ep, err = s.deps.Episodes.Get(ctx, tx, episodeID)
+		if err != nil {
+			return err
+		}
+		sources, err = s.deps.Sources.ListByService(ctx, tx, ep.ServiceID)
+		if err != nil {
+			return err
+		}
+		activeTasks, err = s.deps.Tasks.ListActiveByEpisode(ctx, tx, episodeID)
+		return err
+	}); err != nil {
+		return false, nil, apperr.DependencyUnavailable("resolve precheck unavailable")
+	}
+
+	monitorNormal, appNormal := false, false
+	for _, st := range sources {
+		switch st.SourceType {
+		case "MONITOR":
+			monitorNormal = st.Status == "NORMAL"
+		case "APP":
+			appNormal = st.Status == "NORMAL"
+		}
+	}
+	finalProcessed := ep.FinalInputVersion > 0 && ep.ProcessedInputVersion == ep.FinalInputVersion
+	ok, miss := domain.CanResolve(domain.ResolveInput{
+		MonitorNormal:       monitorNormal,
+		AppNormal:           appNormal,
+		FinalInputProcessed: finalProcessed,
+		ActiveTaskExists:    len(activeTasks) > 0,
+	})
+	missing := make([]string, 0, len(miss))
+	for _, m := range miss {
+		missing = append(missing, string(m))
+	}
+	if !ok {
+		return false, missing, nil
+	}
+
 	var resolved bool
-	var missing []string
+	now := s.deps.Clock.Now().UTC()
 	err := s.deps.UOW.WithinTx(ctx, func(ctx context.Context, tx portshared.Tx) error {
-		ep, err := s.deps.Episodes.Get(ctx, tx, episodeID)
+		applied, err := s.deps.Episodes.ResolveIfUnchanged(ctx, tx, episodeID, ep.UpdatedAt, now)
 		if err != nil {
 			return err
 		}
-		sources, err := s.deps.Sources.ListByService(ctx, tx, ep.ServiceID)
-		if err != nil {
-			return err
-		}
-		monitorNormal, appNormal := false, false
-		for _, st := range sources {
-			switch st.SourceType {
-			case "MONITOR":
-				monitorNormal = st.Status == "NORMAL"
-			case "APP":
-				appNormal = st.Status == "NORMAL"
-			}
-		}
-		activeTasks, err := s.deps.Tasks.ListActiveByEpisode(ctx, tx, episodeID)
-		if err != nil {
-			return err
-		}
-		finalProcessed := ep.FinalInputVersion > 0 && ep.ProcessedInputVersion == ep.FinalInputVersion
-		in := domain.ResolveInput{
-			MonitorNormal:       monitorNormal,
-			AppNormal:           appNormal,
-			FinalInputProcessed: finalProcessed,
-			ActiveTaskExists:    len(activeTasks) > 0,
-		}
-		ok, miss := domain.CanResolve(in)
-		for _, m := range miss {
-			missing = append(missing, string(m))
-		}
-		if !ok {
+		if !applied {
+			slog.Default().WarnContext(ctx, "resolve skipped by CAS conflict", "episode_id", episodeID)
 			return nil
-		}
-		now := s.deps.Clock.Now().UTC()
-		if err := s.deps.Episodes.UpdateStatus(ctx, tx, episodeID, "RESOLVED", now, &now, nil); err != nil {
-			return err
 		}
 		resolved = true
 		return s.appendEvent(ctx, tx, "episode.status.changed.v1", "episode", episodeID,
 			map[string]string{"episode_id": episodeID, "status": "RESOLVED"})
 	})
-	return resolved, missing, err
+	if err != nil {
+		return false, missing, err
+	}
+	return resolved, missing, nil
 }
 
 func (s *Service) appendEvent(ctx context.Context, tx portshared.Tx, eventType, aggregateType, aggregateID string, payload any) error {

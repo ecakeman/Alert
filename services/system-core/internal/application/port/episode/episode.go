@@ -63,6 +63,7 @@ type EpisodeRepo interface {
 	List(ctx context.Context, tx portshared.Tx, f EpisodeFilter) ([]Episode, error)
 	Create(ctx context.Context, tx portshared.Tx, e Episode) error
 	UpdateStatus(ctx context.Context, tx portshared.Tx, episodeID, status string, at time.Time, resolvedAt, archivedAt *time.Time) error
+	ResolveIfUnchanged(ctx context.Context, tx portshared.Tx, episodeID string, expectedUpdatedAt, resolvedAt time.Time) (bool, error)
 	TouchInputVersion(ctx context.Context, tx portshared.Tx, episodeID string, inputVersion int64, hash string, monitorWatermark, appWatermark int64) error
 }
 

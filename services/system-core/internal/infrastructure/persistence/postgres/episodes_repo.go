@@ -82,6 +82,18 @@ WHERE episode_id=$1`, episodeID, status, utc(at), utcPtr(resolvedAt), utcPtr(arc
 	return Translate(err)
 }
 
+// ResolveIfUnchanged 以 CAS 方式解除：仅当仍 ACTIVE 且 updated_at 未被并发修改时生效。
+func (episodeRepo) ResolveIfUnchanged(ctx context.Context, tx portshared.Tx, episodeID string, expectedUpdatedAt, resolvedAt time.Time) (bool, error) {
+	tag, err := txFrom(tx).Exec(ctx, `
+UPDATE system.episodes SET status='RESOLVED', resolved_at=$3, updated_at=$3
+WHERE episode_id=$1 AND status='ACTIVE' AND updated_at=$2`,
+		episodeID, utc(expectedUpdatedAt), utc(resolvedAt))
+	if err != nil {
+		return false, Translate(err)
+	}
+	return tag.RowsAffected() > 0, nil
+}
+
 // AdvanceProcessedVersion 只推进 processed_input_version：目标大于当前且不超过 input_version 才生效。
 // 明确不触碰 episodes.status。
 func (episodeRepo) AdvanceProcessedVersion(ctx context.Context, tx portshared.Tx, episodeID string, target int64) (int64, error) {
