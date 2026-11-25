@@ -23,6 +23,7 @@ from alert_agent.bootstrap.roles import GrpcRole, WorkerRole, build_grpc_role, b
 from alert_agent.bootstrap.wiring import (
     build_gateway_channel,
     build_pool,
+    build_retrieval_searcher,
     build_submit_use_case,
     build_task_executor,
     postgres_ready_check,
@@ -41,6 +42,10 @@ def build_lifespan(settings: Settings) -> Callable[[FastAPI], AbstractAsyncConte
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         pool = build_pool(settings)
         await pool.open()
+        # T18: the /search handler resolves its searcher from app.state; the
+        # dependency is assembled here where the pool lives (disclosed
+        # whitelist-external line, CR-DISC-03).
+        app.state.retrieval_searcher = build_retrieval_searcher(settings, pool)
         # One bounded queue shared by the submit path and the consumers
         # (CR-TASK-08); queue-full keeps the receipt as the awaiting-recovery
         # fact and reports accepted=false (6.1.3.1).
