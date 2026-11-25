@@ -16,25 +16,36 @@ from uuid import uuid4
 import grpc.aio
 from psycopg_pool import AsyncConnectionPool
 
+from alert_agent.application.archive.execute import ExecuteArchive
 from alert_agent.application.diagnosis.execute import ExecuteDiagnosis
 from alert_agent.application.diagnosis.tools import DiagnosisToolExecutor
 from alert_agent.application.knowledge.ports import FaultDocSearcher, KnowledgeInvoker
 from alert_agent.application.mcp.ports import McpSession
 from alert_agent.application.shared.ports import ArtifactWriter
 from alert_agent.application.task.executor import TaskExecutor
-from alert_agent.application.task.ports import ArtifactStore, ReceiptStore, TaskGateway
+from alert_agent.application.task.ports import (
+    ArtifactStore,
+    ReceiptStore,
+    TaskGateway,
+    TaskSubmission,
+)
 from alert_agent.application.task.submit import SubmitTask
 from alert_agent.config import Settings
+from alert_agent.domain.shared import ErrorCode, FatalError
+from alert_agent.infrastructure.archive import ArtifactFileReader, LlmFaultIndexExtractor
 from alert_agent.infrastructure.artifactstore.writer import FileSystemArtifactWriter
 from alert_agent.infrastructure.grpc.gateway_client import SystemTaskGatewayClient
 from alert_agent.infrastructure.llm.client import OpenAiCompatibleLlmClient
 from alert_agent.infrastructure.persistence.postgres.artifact_repo import PostgresArtifactStore
+from alert_agent.infrastructure.persistence.postgres.fault_doc_repo import PostgresFaultDocStore
 from alert_agent.infrastructure.persistence.postgres.pool import build_pool
 from alert_agent.infrastructure.persistence.postgres.receipt_repo import PostgresReceiptStore
 
 __all__ = [
     "SystemClock",
+    "TaskTypeDispatcher",
     "UuidIdGen",
+    "build_archive_executor",
     "build_artifact_store",
     "build_artifact_writer",
     "build_diagnosis_executor",
@@ -44,6 +55,7 @@ __all__ = [
     "build_pool",
     "build_receipt_store",
     "build_submit_use_case",
+    "build_task_executor",
     "postgres_ready_check",
     "register_task_executor",
     "resolve_task_executor",
@@ -150,3 +162,48 @@ def register_task_executor(executor: TaskExecutor) -> None:
 def resolve_task_executor() -> TaskExecutor | None:
     """Late-bound lookup consumed by worker.build_task_worker_runtime (T08)."""
     return _EXECUTOR
+
+class TaskTypeDispatcher(TaskExecutor):
+    """Dispatches by task_type to the wired diagnosis/archive executors;
+    an unwired type fails deterministically instead of executing (CR-DISC-05)."""
+
+    def __init__(self, executors: dict[str, TaskExecutor]) -> None:
+        self._executors = executors
+
+    async def execute(self, submission: TaskSubmission) -> None:
+        executor = self._executors.get(submission.identity.task_type)
+        if executor is None:
+            raise FatalError(
+                ErrorCode.INPUT_INVALID,
+                f"no executor wired for task type {submission.identity.task_type}",
+            )
+        await executor.execute(submission)
+
+
+def build_archive_executor(
+    settings: Settings, pool: AsyncConnectionPool, channel: grpc.aio.Channel
+) -> ExecuteArchive:
+    """Assemble the ARCHIVE TaskExecutor (T14): LLM-structured extraction
+    (CR-ARCH-04 llm_structured strategy), artifact body reading and the
+    fault-document store."""
+    gateway = build_gateway_client(channel, settings)
+    return ExecuteArchive(
+        gateway=gateway,
+        artifact_store=build_artifact_store(pool),
+        reader=ArtifactFileReader(Path(settings.storage.artifact_storage_root)),
+        extractor=LlmFaultIndexExtractor(build_llm_client(settings)),
+        fault_doc_store=PostgresFaultDocStore(pool, UuidIdGen()),
+        clock=SystemClock(),
+    )
+
+
+def build_task_executor(
+    settings: Settings, pool: AsyncConnectionPool, channel: grpc.aio.Channel
+) -> TaskExecutor:
+    """DIAGNOSIS + ARCHIVE dispatcher registered into the worker (T13/T14)."""
+    return TaskTypeDispatcher(
+        {
+            "DIAGNOSIS": build_diagnosis_executor(settings, pool, channel),
+            "ARCHIVE": build_archive_executor(settings, pool, channel),
+        }
+    )

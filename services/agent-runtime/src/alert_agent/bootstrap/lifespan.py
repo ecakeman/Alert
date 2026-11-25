@@ -21,10 +21,10 @@ from fastapi import FastAPI
 from alert_agent.application.task.queue import BoundedTaskQueue
 from alert_agent.bootstrap.roles import GrpcRole, WorkerRole, build_grpc_role, build_worker_role
 from alert_agent.bootstrap.wiring import (
-    build_diagnosis_executor,
     build_gateway_channel,
     build_pool,
     build_submit_use_case,
+    build_task_executor,
     postgres_ready_check,
     register_task_executor,
 )
@@ -48,10 +48,11 @@ def build_lifespan(settings: Settings) -> Callable[[FastAPI], AbstractAsyncConte
         submit = EnqueueingSubmit(build_submit_use_case(pool), queue)
         worker_role = build_worker_role(settings)
         grpc_channel = build_gateway_channel(settings)
-        # T13 wiring: the DIAGNOSIS executor is registered before the worker
-        # runtime so the loops stop idling; knowledge/MCP/fault-search stay
-        # unwired until T22/T21/T14 and their actions fail explicitly then.
-        register_task_executor(build_diagnosis_executor(settings, pool, grpc_channel))
+        # T13/T14 wiring: the task-type dispatcher (DIAGNOSIS + ARCHIVE) is
+        # registered before the worker runtime so the loops stop idling;
+        # knowledge/MCP stay unwired until T22/T21 and their actions fail
+        # explicitly then.
+        register_task_executor(build_task_executor(settings, pool, grpc_channel))
         worker_runtime = build_task_worker_runtime(settings, pool, grpc_channel, queue)
         worker_role.tasks.extend(await worker_runtime.start())
         grpc_role = build_grpc_role(settings, submit)
