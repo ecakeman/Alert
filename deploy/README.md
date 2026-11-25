@@ -17,7 +17,23 @@ docker exec alert-pg psql -U alert -c 'CREATE DATABASE alert_test'
 docker exec alert-pg psql -U alert -c 'CREATE DATABASE alert_migrate_check'
 ```
 
+## Kafka listener 与 topic
+
+- **双 listener**：容器内代码使用 `kafka:29092`（`INTERNAL`）；宿主机上的 Go 进程使用 `127.0.0.1:9092`（`EXTERNAL`）。
+- **按域 topic**：`kafka-init` 一次性容器创建 4 个 topic（3 分区 / 1 副本），幂等，可重复执行：
+  - `alertflow.registry.events.v1`
+  - `alertflow.monitor.events.v1`
+  - `alertflow.episode.events.v1`
+  - `alertflow.task.events.v1`
+- **过渡 topic**：旧 `alertflow.system.events.v1` 在 P1~P5 保留为桥接 topic，P6 收口后停用。
+
+手工重建 topic：
+
+```bash
+docker compose -f deploy/compose/compose.yaml run --rm kafka-init
+```
+
 ## 已知限制
 
-- Kafka 仅单 listener（`PLAINTEXT://127.0.0.1:9092`），对宿主机上的 Go 进程有效；容器间访问不适用（当前应用尚未容器化，属已知限制而非降级）。
+- 宿主机上的 Go 进程必须使用 `127.0.0.1:9092`；容器内进程必须使用 `kafka:29092`。混用会拿到无法路由的 advertised 地址。
 - 示例口令 `alert/alert` 仅限本地使用，非真实凭据。
