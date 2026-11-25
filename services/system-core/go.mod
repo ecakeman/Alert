@@ -3,6 +3,7 @@ module github.com/ecakeman/alert/services/system-core
 go 1.27.4
 
 require (
+	github.com/ecakeman/alert/services/platform v0.0.0
 	github.com/gin-gonic/gin v1.12.0
 	github.com/jackc/pgx/v5 v5.13.0
 	github.com/segmentio/kafka-go v0.4.51
@@ -47,3 +48,5 @@ require (
 	golang.org/x/text v0.42.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260817212433-ac3dfec99bb1 // indirect
 )
+
+replace github.com/ecakeman/alert/services/platform => ../platform
