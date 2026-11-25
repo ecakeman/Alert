@@ -22,6 +22,7 @@ from alert_agent.application.task.submit import SubmitTask
 from alert_agent.config import Settings
 from alert_agent.infrastructure.artifactstore.writer import FileSystemArtifactWriter
 from alert_agent.infrastructure.grpc.gateway_client import SystemTaskGatewayClient
+from alert_agent.infrastructure.llm.client import OpenAiCompatibleLlmClient
 from alert_agent.infrastructure.persistence.postgres.artifact_repo import PostgresArtifactStore
 from alert_agent.infrastructure.persistence.postgres.pool import build_pool
 from alert_agent.infrastructure.persistence.postgres.receipt_repo import PostgresReceiptStore
@@ -33,6 +34,7 @@ __all__ = [
     "build_artifact_writer",
     "build_gateway_channel",
     "build_gateway_client",
+    "build_llm_client",
     "build_pool",
     "build_receipt_store",
     "build_submit_use_case",
@@ -92,3 +94,8 @@ def build_artifact_writer(settings: Settings) -> ArtifactWriter:
 def build_artifact_store(pool: AsyncConnectionPool) -> ArtifactStore:
     """Episode-artifact version registry on cognitive.episode_artifacts (CR-REG-46)."""
     return PostgresArtifactStore(pool, UuidIdGen())
+
+def build_llm_client(settings: Settings) -> OpenAiCompatibleLlmClient:
+    """OpenAI-compatible client implementing the LlmDecider port (T11);
+    complete_json/stream serve the RAG side once its ports land (T15~T17)."""
+    return OpenAiCompatibleLlmClient(settings.llm)
