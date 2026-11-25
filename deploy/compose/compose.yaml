@@ -92,6 +92,35 @@ services:
       ALERT_TASK_PASSWORD: ${ALERT_TASK_PASSWORD:-alert_task_pw_dev}
     restart: "no"
 
+  console-bff:
+    # P1 阶段下游仍是宿主机单体（8081）；P2 起逐域切换，P6 改聚合。
+    build:
+      context: ../..
+      dockerfile: services/console-bff/Dockerfile
+    container_name: alert-console-bff
+    ports:
+      - "8080:8080"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      SERVICE_NAME: console-bff
+      HTTP_ADDR: ":8080"
+      REGISTRY_BASE_URL: "http://host.docker.internal:8081"
+      MONITOR_BASE_URL: "http://host.docker.internal:8081"
+      EPISODE_BASE_URL: "http://host.docker.internal:8081"
+      TASK_BASE_URL: "http://host.docker.internal:8081"
+    healthcheck:
+      test: ["CMD", "/app/console-bff", "-healthcheck"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 5s
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+    restart: unless-stopped
+
 volumes:
   alert-pg-data:
   alert-kafka-data:
