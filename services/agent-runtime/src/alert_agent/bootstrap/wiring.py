@@ -51,6 +51,7 @@ from alert_agent.infrastructure.ingestion import (
     PostgresIngestionWriter,
 )
 from alert_agent.infrastructure.llm.client import OpenAiCompatibleLlmClient
+from alert_agent.infrastructure.mcp import McpSessionManager
 from alert_agent.infrastructure.persistence.postgres.artifact_repo import PostgresArtifactStore
 from alert_agent.infrastructure.persistence.postgres.fault_doc_repo import PostgresFaultDocStore
 from alert_agent.infrastructure.persistence.postgres.ingest_repo import PostgresIngestJobStore
@@ -145,6 +146,17 @@ def build_llm_client(settings: Settings) -> OpenAiCompatibleLlmClient:
     complete_json/stream serve the RAG side once its ports land (T15~T17)."""
     return OpenAiCompatibleLlmClient(settings.llm)
 
+def build_mcp_session(settings: Settings) -> McpSessionManager:
+    """Assemble the MCP singleton session (T21); the per-call timeout derives
+    from the single gateway RPC setting (CR-REG-32), and the endpoint/token
+    come from the diagnosis group."""
+    return McpSessionManager(
+        endpoint=settings.diagnosis.mcp_endpoint,
+        token=settings.diagnosis.mcp_token,
+        timeout_seconds=settings.gateway.gateway_rpc_timeout_ms / 1000.0,
+    )
+
+
 def build_diagnosis_executor(
     settings: Settings,
     pool: AsyncConnectionPool,
@@ -154,9 +166,9 @@ def build_diagnosis_executor(
     mcp: McpSession | None = None,
     fault_searcher: FaultDocSearcher | None = None,
 ) -> ExecuteDiagnosis:
-    """Assemble the DIAGNOSIS TaskExecutor (T13). knowledge/MCP/fault-search
-    implementations land with T22/T21/T14; until then the corresponding
-    actions fail explicitly instead of fabricating results (CR-DISC-05)."""
+    """Assemble the DIAGNOSIS TaskExecutor (T13). knowledge stays unwired
+    until T22; MCP is wired by default since T21 (CR-GW-05); fault-search
+    fails explicitly until T14 lands its store (CR-DISC-05)."""
     gateway = build_gateway_client(channel, settings)
     return ExecuteDiagnosis(
         gateway=gateway,
@@ -166,8 +178,8 @@ def build_diagnosis_executor(
         tool_executor=DiagnosisToolExecutor(
             gateway=gateway,
             knowledge=knowledge,
-            mcp=mcp,
-            fault_searcher=fault_searcher,
+            mcp=mcp if mcp is not None else build_mcp_session(settings),
+            fault_searcher=PostgresFaultDocStore(pool, UuidIdGen()),
         ),
         settings=settings,
         clock=SystemClock(),
