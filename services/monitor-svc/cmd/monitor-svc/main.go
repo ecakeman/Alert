@@ -25,9 +25,13 @@ import (
 	"github.com/ecakeman/alert/services/monitor-svc/internal/config"
 	"github.com/ecakeman/alert/services/monitor-svc/internal/infrastructure/clock"
 	"github.com/ecakeman/alert/services/monitor-svc/internal/infrastructure/idgen"
-	"github.com/ecakeman/alert/services/monitor-svc/internal/infrastructure/probe"
 	monitorpostgres "github.com/ecakeman/alert/services/monitor-svc/internal/infrastructure/persistence/postgres"
+	"github.com/ecakeman/alert/services/monitor-svc/internal/infrastructure/probe"
 	monitorhttp "github.com/ecakeman/alert/services/monitor-svc/internal/transport/http"
+	monitorhandler "github.com/ecakeman/alert/services/monitor-svc/internal/transport/http/handler"
+
+	"github.com/gin-gonic/gin"
+
 	"github.com/ecakeman/alert/services/monitor-svc/migrations"
 )
 
@@ -124,9 +128,11 @@ func main() {
 		defer kafkaConsumer.Close()
 	}
 
+	uow := monitorpostgres.NewUnitOfWork(pool.Raw())
+
 	if cfg.ProbeEnabled {
 		sampler := monitorapp.New(monitorapp.Deps{
-			UOW:        monitorpostgres.NewUnitOfWork(pool.Raw()),
+			UOW:        uow,
 			Points:     monitorpostgres.NewMonitorPointRepo(),
 			Projection: monitorpostgres.NewProjectionRepo(),
 			States:     monitorpostgres.NewStateRepo(),
@@ -154,8 +160,12 @@ func main() {
 		logger.Info("probe engine started", "workers", cfg.ProbeWorkers, "scan_every", cfg.MonitorScanInterval.String())
 	}
 
+	engine := gin.New()
+	engine.Use(gin.Recovery())
+	monitorhandler.NewMonitor(uow, clock.System{}).Register(engine)
+
 	handler := httpx.Chain(
-		monitorhttp.New(monitorhttp.Deps{Health: health, Logger: logger}),
+		monitorhttp.New(monitorhttp.Deps{Health: health, Logger: logger, API: engine}),
 		httpx.Recovery(logger),
 		httpx.Trace(logger),
 		httpx.AccessLog(logger),
