@@ -1,6 +1,8 @@
 services:
   postgres:
-    image: postgres:16
+    # pgvector image: cognitive migrations require the vector extension (D7).
+    # The alert-pg-data volume is preserved across the image swap.
+    image: pgvector/pgvector:pg16
     container_name: alert-pg
     ports:
       - "5432:5432"
