@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"flag"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -14,14 +15,17 @@ import (
 	"github.com/ecakeman/alert/services/platform/db"
 	"github.com/ecakeman/alert/services/platform/httpx"
 	"github.com/ecakeman/alert/services/platform/logging"
+	platformmigrate "github.com/ecakeman/alert/services/platform/migrate"
 
 	"github.com/ecakeman/alert/services/service-registry/internal/config"
 	registrypostgres "github.com/ecakeman/alert/services/service-registry/internal/infrastructure/persistence/postgres"
 	registryhttp "github.com/ecakeman/alert/services/service-registry/internal/transport/http"
+	"github.com/ecakeman/alert/services/service-registry/migrations"
 )
 
 func main() {
 	healthcheck := flag.Bool("healthcheck", false, "probe local /readyz and exit")
+	migrateOnly := flag.Bool("migrate", false, "run registry migrations then exit")
 	flag.Parse()
 
 	cfg, err := config.Load(os.Getenv)
@@ -34,21 +38,47 @@ func main() {
 		os.Exit(httpx.Run(healthcheckAddr(cfg.HTTPAddr)))
 	}
 
-	logger, err := logging.New(logging.Config{Service: cfg.ServiceName, Level: cfg.LogLevel, JSON: true})
-	if err != nil {
-		log.Printf("logging: %v", err)
-		os.Exit(1)
-	}
-
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
 	pool, err := db.New(ctx, cfg.DBConfig())
 	if err != nil {
-		logger.Error("database config", "reason", err.Error())
+		log.Printf("database config: %v", err)
 		os.Exit(1)
 	}
 	defer pool.Close()
+
+	if *migrateOnly {
+		waitCtx, cancel := context.WithTimeout(ctx, cfg.DBConnectTimeout)
+		waitErr := pool.WaitReady(waitCtx)
+		cancel()
+		if waitErr != nil {
+			log.Printf("migrate: database not ready: %v", waitErr)
+			os.Exit(1)
+		}
+		result, err := platformmigrate.Up(ctx, pool.Raw(), platformmigrate.Target{
+			Schema:       "registry",
+			VersionTable: "registry.schema_migrations",
+			LockKey:      "alert.registry.migrate",
+			FS:           migrations.FS,
+		})
+		if err != nil {
+			log.Printf("migrate: %v", err)
+			os.Exit(1)
+		}
+		if len(result.Conflicts) > 0 {
+			log.Printf("migration conflicts: %v", result.Conflicts)
+			os.Exit(1)
+		}
+		fmt.Printf("applied=%d skipped=%d conflicts=%d\n", len(result.Applied), len(result.Skipped), len(result.Conflicts))
+		return
+	}
+
+	logger, err := logging.New(logging.Config{Service: cfg.ServiceName, Level: cfg.LogLevel, JSON: true})
+	if err != nil {
+		log.Printf("logging: %v", err)
+		os.Exit(1)
+	}
 
 	health := httpx.NewHealthService(cfg.ServiceName, map[string]httpx.Checker{
 		"database":  pool,

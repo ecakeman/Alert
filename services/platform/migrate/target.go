@@ -62,8 +62,14 @@ func splitVersionTable(full string) (schema, table string) {
 
 // EnsureVersionTable 幂等引导 <schema>.<version_table>，列结构与历史 system 表一致。
 func EnsureVersionTable(ctx context.Context, c *pgx.Conn, t Target) error {
-	if _, err := c.Exec(ctx, "CREATE SCHEMA IF NOT EXISTS "+t.Schema); err != nil {
-		return fmt.Errorf("ensure schema: %w", err)
+	var schemaExists bool
+	if err := c.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM pg_namespace WHERE nspname=$1)", t.Schema).Scan(&schemaExists); err != nil {
+		return fmt.Errorf("check schema: %w", err)
+	}
+	if !schemaExists {
+		if _, err := c.Exec(ctx, "CREATE SCHEMA "+t.Schema); err != nil {
+			return fmt.Errorf("ensure schema: %w", err)
+		}
 	}
 	if _, err := c.Exec(ctx, `CREATE TABLE IF NOT EXISTS `+t.VersionTable+` (
 		version bigint PRIMARY KEY,
