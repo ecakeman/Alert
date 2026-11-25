@@ -18,8 +18,15 @@ from contextlib import AbstractAsyncContextManager, asynccontextmanager
 
 from fastapi import FastAPI
 
+from alert_agent.application.task.queue import BoundedTaskQueue
 from alert_agent.bootstrap.roles import GrpcRole, WorkerRole, build_grpc_role, build_worker_role
-from alert_agent.bootstrap.wiring import build_pool, build_submit_use_case, postgres_ready_check
+from alert_agent.bootstrap.wiring import (
+    build_gateway_channel,
+    build_pool,
+    build_submit_use_case,
+    postgres_ready_check,
+)
+from alert_agent.bootstrap.worker import EnqueueingSubmit, build_task_worker_runtime
 from alert_agent.config import Settings
 
 LOGGER = logging.getLogger(__name__)
@@ -32,10 +39,16 @@ def build_lifespan(settings: Settings) -> Callable[[FastAPI], AbstractAsyncConte
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         pool = build_pool(settings)
         await pool.open()
-        submit = build_submit_use_case(pool)
+        # One bounded queue shared by the submit path and the consumers
+        # (CR-TASK-08); queue-full keeps the receipt as the awaiting-recovery
+        # fact and reports accepted=false (6.1.3.1).
+        queue = BoundedTaskQueue(settings.gateway.queue_capacity)
+        submit = EnqueueingSubmit(build_submit_use_case(pool), queue)
         worker_role = build_worker_role(settings)
+        grpc_channel = build_gateway_channel(settings)
+        worker_runtime = build_task_worker_runtime(settings, pool, grpc_channel, queue)
+        worker_role.tasks.extend(await worker_runtime.start())
         grpc_role = build_grpc_role(settings, submit)
-        await worker_role.start()
         await grpc_role.start()
         app.state.ready_checks.append(grpc_started_check(grpc_role))
         app.state.ready_checks.append(lambda: postgres_ready_check(pool))
@@ -44,6 +57,7 @@ def build_lifespan(settings: Settings) -> Callable[[FastAPI], AbstractAsyncConte
         finally:
             await shutdown(app, worker_role, grpc_role, settings)
             await pool.close()
+            await grpc_channel.close()
 
     return lifespan
 
