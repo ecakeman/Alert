@@ -1,0 +1,156 @@
+package config
+
+import (
+	"net/url"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/ecakeman/alert/services/platform/db"
+)
+
+// Config 是 episode-svc 的启动期配置；DATABASE_URL 必填（alert_episode）。
+type Config struct {
+	ServiceName string
+	LogLevel    string
+	AppEnv      string
+
+	HTTPAddr            string
+	ReadyzTimeout       time.Duration
+	HTTPReadTimeout     time.Duration
+	HTTPWriteTimeout    time.Duration
+	HTTPIdleTimeout     time.Duration
+	HTTPShutdownTimeout time.Duration
+
+	DatabaseURL         string
+	DBMaxConns          int32
+	DBMinConns          int32
+	DBConnectTimeout    time.Duration
+	DBMaxConnLifetime   time.Duration
+	DBMaxConnIdleTime   time.Duration
+	DBHealthcheckPeriod time.Duration
+
+	KafkaBrokers       string
+	KafkaPublishTopic  string
+	KafkaConsumeTopics []string
+
+	RegistryBaseURL string
+	MonitorBaseURL  string
+	TaskBaseURL     string
+	UpstreamTimeout time.Duration
+}
+
+type LoadError struct {
+	Var    string
+	Reason string
+}
+
+func (e *LoadError) Error() string { return "config " + e.Var + ": " + e.Reason }
+
+func Load(getenv func(string) string) (Config, error) {
+	cfg := Config{
+		ServiceName:        value(getenv, "SERVICE_NAME", "episode-svc"),
+		LogLevel:           value(getenv, "LOG_LEVEL", "info"),
+		AppEnv:             value(getenv, "APP_ENV", "local"),
+		HTTPAddr:           value(getenv, "HTTP_ADDR", ":8082"),
+		DatabaseURL:        strings.TrimSpace(getenv("DATABASE_URL")),
+		KafkaBrokers:       strings.TrimSpace(getenv("KAFKA_BROKERS")),
+		KafkaPublishTopic:  value(getenv, "KAFKA_PUBLISH_TOPIC", "alertflow.episode.events.v1"),
+		KafkaConsumeTopics: splitList(value(getenv, "KAFKA_CONSUME_TOPICS", "alertflow.monitor.events.v1")),
+		RegistryBaseURL:    value(getenv, "REGISTRY_BASE_URL", "http://127.0.0.1:8081"),
+		MonitorBaseURL:     value(getenv, "MONITOR_BASE_URL", "http://127.0.0.1:8083"),
+		TaskBaseURL:        value(getenv, "TASK_BASE_URL", "http://127.0.0.1:8084"),
+	}
+	if cfg.DatabaseURL == "" {
+		return Config{}, &LoadError{Var: "DATABASE_URL", Reason: "missing"}
+	}
+	u, err := url.Parse(cfg.DatabaseURL)
+	if err != nil || (u.Scheme != "postgres" && u.Scheme != "postgresql") {
+		return Config{}, &LoadError{Var: "DATABASE_URL", Reason: "invalid url"}
+	}
+
+	var perr error
+	if cfg.DBMaxConns, perr = int32Value(getenv, "DB_MAX_CONNS", 10); perr != nil {
+		return Config{}, perr
+	}
+	if cfg.DBMinConns, perr = int32Value(getenv, "DB_MIN_CONNS", 1); perr != nil {
+		return Config{}, perr
+	}
+	durations := []struct {
+		key      string
+		fallback time.Duration
+		target   *time.Duration
+	}{
+		{"READYZ_TIMEOUT", 2 * time.Second, &cfg.ReadyzTimeout},
+		{"HTTP_READ_TIMEOUT", 10 * time.Second, &cfg.HTTPReadTimeout},
+		{"HTTP_WRITE_TIMEOUT", 15 * time.Second, &cfg.HTTPWriteTimeout},
+		{"HTTP_IDLE_TIMEOUT", 60 * time.Second, &cfg.HTTPIdleTimeout},
+		{"HTTP_SHUTDOWN_TIMEOUT", 10 * time.Second, &cfg.HTTPShutdownTimeout},
+		{"DB_CONNECT_TIMEOUT", 5 * time.Second, &cfg.DBConnectTimeout},
+		{"DB_MAX_CONN_LIFETIME", 30 * time.Minute, &cfg.DBMaxConnLifetime},
+		{"DB_MAX_CONN_IDLE_TIME", 5 * time.Minute, &cfg.DBMaxConnIdleTime},
+		{"DB_HEALTHCHECK_PERIOD", 30 * time.Second, &cfg.DBHealthcheckPeriod},
+		{"UPSTREAM_TIMEOUT", 3 * time.Second, &cfg.UpstreamTimeout},
+	}
+	for _, d := range durations {
+		v, err := duration(getenv, d.key, d.fallback)
+		if err != nil {
+			return Config{}, err
+		}
+		*d.target = v
+	}
+	return cfg, nil
+}
+
+func (c Config) DBConfig() db.Config {
+	return db.Config{
+		URL:               c.DatabaseURL,
+		MaxConns:          c.DBMaxConns,
+		MinConns:          c.DBMinConns,
+		ConnectTimeout:    c.DBConnectTimeout,
+		MaxConnLifetime:   c.DBMaxConnLifetime,
+		MaxConnIdleTime:   c.DBMaxConnIdleTime,
+		HealthCheckPeriod: c.DBHealthcheckPeriod,
+	}
+}
+
+func value(getenv func(string) string, key, fallback string) string {
+	if v := strings.TrimSpace(getenv(key)); v != "" {
+		return v
+	}
+	return fallback
+}
+
+func duration(getenv func(string) string, key string, fallback time.Duration) (time.Duration, error) {
+	raw := strings.TrimSpace(getenv(key))
+	if raw == "" {
+		return fallback, nil
+	}
+	d, err := time.ParseDuration(raw)
+	if err != nil || d <= 0 {
+		return 0, &LoadError{Var: key, Reason: "must be a positive duration"}
+	}
+	return d, nil
+}
+
+func int32Value(getenv func(string) string, key string, fallback int32) (int32, error) {
+	raw := strings.TrimSpace(getenv(key))
+	if raw == "" {
+		return fallback, nil
+	}
+	n, err := strconv.ParseInt(raw, 10, 32)
+	if err != nil || n < 0 {
+		return 0, &LoadError{Var: key, Reason: "must be a non-negative integer"}
+	}
+	return int32(n), nil
+}
+
+func splitList(raw string) []string {
+	var out []string
+	for _, part := range strings.Split(raw, ",") {
+		if trimmed := strings.TrimSpace(part); trimmed != "" {
+			out = append(out, trimmed)
+		}
+	}
+	return out
+}

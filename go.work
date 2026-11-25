@@ -7,4 +7,5 @@ use (
 	./services/console-bff
 	./services/service-registry
 	./services/monitor-svc
+	./services/episode-svc
 )
