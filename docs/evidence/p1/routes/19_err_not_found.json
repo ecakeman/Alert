@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "resource not found",
+    "request_id": "<hex32>"
+  }
+}

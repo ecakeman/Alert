@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "ALREADY_EXISTS",
+    "message": "service_key already exists",
+    "request_id": "<hex32>"
+  }
+}

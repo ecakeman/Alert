@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "STATE_CONFLICT",
+    "message": "an active task exists for this episode",
+    "request_id": "<hex32>"
+  }
+}
