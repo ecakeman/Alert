@@ -1,8 +1,9 @@
 services:
   postgres:
     # pgvector image: cognitive migrations require the vector extension (D7).
-    # The alert-pg-data volume is preserved across the image swap.
-    image: pgvector/pgvector:pg16
+    # Pulled through the DaoCloud Docker Hub mirror for CN network reliability;
+    # the alert-pg-data volume is preserved across the image swap.
+    image: docker.m.daocloud.io/pgvector/pgvector:pg16
     container_name: alert-pg
     ports:
       - "5432:5432"
