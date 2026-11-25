@@ -34,6 +34,15 @@ func StateConflict(message string) *Error         { return New(CodeStateConflict
 func DependencyUnavailable(message string) *Error { return New(CodeDependencyUnavailable, message) }
 func NotImplemented(message string) *Error        { return New(CodeNotImplemented, message) }
 
+// Code 提取稳定错误码；非业务错误返回 INTERNAL。
+func Code(err error) string {
+	var ae *Error
+	if errors.As(err, &ae) {
+		return ae.Code
+	}
+	return CodeInternal
+}
+
 // HTTPStatus 返回稳定码对应的 HTTP 状态：422/404/409/503/501/500。
 func HTTPStatus(code string) int {
 	switch code {
