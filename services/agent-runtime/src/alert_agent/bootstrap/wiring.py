@@ -39,6 +39,7 @@ from alert_agent.bootstrap.ingest_worker import IngestWorkerRuntime
 from alert_agent.config import Settings
 from alert_agent.domain.retrieval.budget import RetrievalBudget
 from alert_agent.domain.shared import ErrorCode, FatalError
+from alert_agent.infrastructure.a2a import build_agent_card
 from alert_agent.infrastructure.archive import ArtifactFileReader, LlmFaultIndexExtractor
 from alert_agent.infrastructure.artifactstore.writer import FileSystemArtifactWriter
 from alert_agent.infrastructure.bm25 import InProcessBm25Index
@@ -50,6 +51,7 @@ from alert_agent.infrastructure.ingestion import (
     IngestFileLoader,
     PostgresIngestionWriter,
 )
+from alert_agent.infrastructure.knowledge import A2aKnowledgeClient
 from alert_agent.infrastructure.llm.client import OpenAiCompatibleLlmClient
 from alert_agent.infrastructure.mcp import McpSessionManager
 from alert_agent.infrastructure.persistence.postgres.artifact_repo import PostgresArtifactStore
@@ -157,6 +159,22 @@ def build_mcp_session(settings: Settings) -> McpSessionManager:
     )
 
 
+def build_knowledge_client(settings: Settings) -> A2aKnowledgeClient:
+    """Assemble the A2A knowledge client (T22, CR-KNOW-05): the timeout
+    derives from the single gateway RPC setting; the internal token
+    authenticates the knowledge agent endpoint."""
+    return A2aKnowledgeClient(
+        endpoint=settings.diagnosis.knowledge_a2a_endpoint,
+        token=settings.gateway.internal_token,
+        timeout_seconds=settings.gateway.gateway_rpc_timeout_ms / 1000.0,
+    )
+
+
+def build_agent_card_endpoint() -> dict:
+    """AgentCard payload for the discovery endpoint (T22)."""
+    return build_agent_card().model_dump()
+
+
 def build_diagnosis_executor(
     settings: Settings,
     pool: AsyncConnectionPool,
@@ -177,7 +195,7 @@ def build_diagnosis_executor(
         decider=build_llm_client(settings),
         tool_executor=DiagnosisToolExecutor(
             gateway=gateway,
-            knowledge=knowledge,
+            knowledge=knowledge if knowledge is not None else build_knowledge_client(settings),
             mcp=mcp if mcp is not None else build_mcp_session(settings),
             fault_searcher=PostgresFaultDocStore(pool, UuidIdGen()),
         ),
