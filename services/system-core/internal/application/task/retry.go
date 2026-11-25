@@ -74,8 +74,14 @@ func (s *Service) retry(ctx context.Context, episodeID, taskType string) (TaskVi
 		}
 
 		now := s.deps.Clock.Now()
-		from := episode.ProcessedInputVersion + 1
+		from := last.InputVersionFrom
+		if from <= 0 {
+			from = 1
+		}
 		to := episode.InputVersion
+		if to < from {
+			to = from
+		}
 		if taskType == TaskTypeArchive {
 			from = to
 		}
