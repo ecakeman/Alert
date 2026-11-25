@@ -1,0 +1,7 @@
+{
+  "service_id": "47ceb5ca-3235-43c0-9089-53d7bdf412ed",
+  "source_status": "HEALTHY",
+  "status": "ABNORMAL",
+  "aggregation_mode": "ALL_TARGETS",
+  "target_health_digest": "1/2-abnormal"
+}

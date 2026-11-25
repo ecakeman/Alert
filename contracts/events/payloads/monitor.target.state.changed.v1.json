@@ -1,0 +1,8 @@
+{
+  "service_id": "47ceb5ca-3235-43c0-9089-53d7bdf412ed",
+  "target_id": "8f1f0d0e-2c1a-4f6e-9b7a-1c2d3e4f5a6b",
+  "status": "ABNORMAL",
+  "consecutive_failures": 2,
+  "consecutive_successes": 0,
+  "last_check_at": "2026-11-25T10:00:00Z"
+}

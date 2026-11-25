@@ -1,0 +1,22 @@
+{
+  "service": {
+    "id": "47ceb5ca-3235-43c0-9089-53d7bdf412ed",
+    "enabled": true,
+    "aggregation_mode": "ALL_TARGETS"
+  },
+  "targets": [
+    {
+      "target_id": "8f1f0d0e-2c1a-4f6e-9b7a-1c2d3e4f5a6b",
+      "target_key": "http-primary",
+      "target_type": "HTTP",
+      "address": "http://127.0.0.1:18080/healthz",
+      "interval_ms": 15000,
+      "timeout_ms": 3000,
+      "failure_threshold": 2,
+      "recovery_threshold": 2,
+      "is_required": true,
+      "enabled": true,
+      "config_generation": 7
+    }
+  ]
+}

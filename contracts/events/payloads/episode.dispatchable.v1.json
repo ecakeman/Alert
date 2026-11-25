@@ -1,0 +1,17 @@
+{
+  "episode_id": "22222222-2222-2222-2222-222222222222",
+  "service_id": "47ceb5ca-3235-43c0-9089-53d7bdf412ed",
+  "episode_status": "ACTIVE",
+  "input_version_from": 1,
+  "input_version_to": 3,
+  "monitor_watermark": 42,
+  "app_event_watermark": 7,
+  "final_input_version": 3,
+  "processed_input_version": 1,
+  "reason": "INPUT_APPENDED",
+  "artifact_readiness": {
+    "investigation": true,
+    "diagnosis_report": true,
+    "hashes_match": true
+  }
+}
