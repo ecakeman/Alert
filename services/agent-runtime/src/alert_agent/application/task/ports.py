@@ -87,3 +87,81 @@ class ReceiptStore(Protocol):
     async def list_unfinished(self) -> list[UnfinishedReceipt]: ...
 
     async def list_unconfirmed_results(self) -> list[UnfinishedReceipt]: ...
+
+class GatewayAck(BaseModel):
+    """Protocol-level acknowledgement of one callback (design 4.3).
+
+    ``accepted`` mirrors ``TaskAck.accepted``; the client implementation reads
+    it as a precondition for every follow-up action (CR-TASK-06, Q5 lesson).
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    accepted: bool
+
+
+class ArtifactCallback(BaseModel):
+    """RegisterTaskArtifact payload (design 4.3, CR-GW-09)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    identity: TaskIdentity
+    artifact_type: str = Field(min_length=1)
+    artifact_version: int = Field(gt=0)
+    content_hash: str = Field(min_length=1)
+    content_type: str = Field(min_length=1)
+    storage_key: str = Field(min_length=1)
+    source_refs: tuple[str, ...] = ()
+
+
+class TaskFailureReport(BaseModel):
+    """ReportTaskFailure payload; only RetryableError maps to retryable=true (CR-TASK-12/13)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    identity: TaskIdentity
+    retryable: bool
+    error_code: str = Field(min_length=1, max_length=100)
+    error_message: str = Field(min_length=1)
+
+
+class TaskContextView(BaseModel):
+    """GetTaskContext response as business fields (design 4.3).
+
+    ``deadline_at`` is timezone-aware UTC, parsed from the proto int64 Unix
+    seconds; callers compare it with the SubmitTask boundary.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    input_version_from: int
+    input_version_to: int
+    monitor_watermark: int
+    app_event_watermark: int
+    deadline_at: datetime
+    task_type: str = Field(min_length=1)
+
+
+class TaskGateway(Protocol):
+    """The seven SystemTaskGatewayService callbacks (design 4.3, CR-GW-04).
+
+    Implementations must read ``TaskAck.accepted`` as a precondition for the
+    next action and never swallow exceptions: a single failed renewal surfaces
+    immediately so the worker can count failures and terminate at threshold
+    (CR-REG-44). Deterministic rejections (LEASE_LOST/STALE_GENERATION stable
+    codes) raise FatalError; transient ones surface after bounded retries.
+    """
+
+    async def report_started(self, identity: TaskIdentity) -> GatewayAck: ...
+
+    async def report_heartbeat(self, identity: TaskIdentity) -> GatewayAck: ...
+
+    async def register_artifact(self, artifact: ArtifactCallback) -> GatewayAck: ...
+
+    async def report_result(self, identity: TaskIdentity) -> GatewayAck: ...
+
+    async def report_failure(self, failure: TaskFailureReport) -> GatewayAck: ...
+
+    async def get_task_context(self, identity: TaskIdentity) -> TaskContextView: ...
+
+    async def abandon_task(self, identity: TaskIdentity) -> GatewayAck: ...
