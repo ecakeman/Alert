@@ -7,6 +7,7 @@ import (
 	portoutbox "github.com/ecakeman/alert/services/system-core/internal/application/port/outbox"
 	portService "github.com/ecakeman/alert/services/system-core/internal/application/port/service"
 	porttask "github.com/ecakeman/alert/services/system-core/internal/application/port/task"
+	"github.com/ecakeman/alert/services/system-core/internal/infrastructure/monitorclient"
 	"github.com/ecakeman/alert/services/system-core/internal/infrastructure/persistence/postgres"
 	"github.com/ecakeman/alert/services/system-core/internal/infrastructure/registryclient"
 )
@@ -27,6 +28,7 @@ type Repos struct {
 	Tasks         porttask.TaskRepo
 	Ownership     porttask.OwnershipRepo
 	Artifacts     porttask.ArtifactRepo
+	MonitorReader portmonitor.RemoteReader
 }
 
 func NewRepos(sh *Shared) *Repos {
@@ -44,6 +46,9 @@ func NewRepos(sh *Shared) *Repos {
 		Tasks:         postgres.NewTaskRepo(),
 		Ownership:     postgres.NewOwnershipRepo(),
 		Artifacts:     postgres.NewArtifactRepo(),
+	}
+	if sh.Cfg.RemoteMonitor {
+		repos.MonitorReader = monitorclient.New(sh.Cfg.MonitorBaseURL, sh.Cfg.UpstreamTimeout)
 	}
 	if sh.Cfg.RemoteRegistry {
 		client := registryclient.New(sh.Cfg.RegistryBaseURL, sh.Cfg.UpstreamTimeout)

@@ -26,6 +26,7 @@ type Deps struct {
 	InputVersions portepisode.InputVersionRepo
 	AppEvents     portepisode.AppEventRepo
 	MonitorPoints portmonitor.MonitorPointRepo
+	MonitorRemote portmonitor.RemoteReader
 	Sources       portService.SourceStateRepo
 	Services      portService.ServiceRepo
 	Tasks         porttask.TaskRepo
@@ -172,6 +173,33 @@ func (s *Service) AppendAppEvent(ctx context.Context, serviceID string, in AppEv
 
 // AppendInputVersion：仅在指纹变化时新增版本，并推进水位线（INV-04）。
 func (s *Service) AppendInputVersion(ctx context.Context, episodeID string) (bool, error) {
+	// 事务外先取 episode 以确定 service_id（远程点位查询必须在事务外）。
+	var current portepisode.Episode
+	if err := s.deps.UOW.WithinTx(ctx, func(ctx context.Context, tx portshared.Tx) error {
+		var err error
+		current, err = s.deps.Episodes.Get(ctx, tx, episodeID)
+		return err
+	}); err != nil {
+		return false, err
+	}
+
+	// P3 过渡：点位查询走 monitor-svc HTTP；失败不推进水位线，返回 503。
+	var remoteLatest int64
+	var remotePoints []portmonitor.MonitorPoint
+	if s.deps.MonitorRemote != nil {
+		latest, err := s.deps.MonitorRemote.LatestSeqByService(ctx, current.ServiceID)
+		if err != nil {
+			slog.Default().WarnContext(ctx, "monitor latest-seq failed", "service_id", current.ServiceID, "reason", err.Error())
+			return false, apperr.DependencyUnavailable("monitor unavailable")
+		}
+		points, err := s.deps.MonitorRemote.ListByBound(ctx, current.ServiceID, 0, latest, 1000)
+		if err != nil {
+			slog.Default().WarnContext(ctx, "monitor points failed", "service_id", current.ServiceID, "reason", err.Error())
+			return false, apperr.DependencyUnavailable("monitor unavailable")
+		}
+		remoteLatest, remotePoints = latest, points
+	}
+
 	var appended bool
 	err := s.deps.UOW.WithinTx(ctx, func(ctx context.Context, tx portshared.Tx) error {
 		ep, err := s.deps.Episodes.Get(ctx, tx, episodeID)
@@ -179,13 +207,19 @@ func (s *Service) AppendInputVersion(ctx context.Context, episodeID string) (boo
 			return err
 		}
 
-		latestSeq, err := s.deps.MonitorPoints.LatestSeqByService(ctx, tx, ep.ServiceID)
-		if err != nil {
-			return err
-		}
-		points, err := s.deps.MonitorPoints.ListByBound(ctx, tx, ep.ServiceID, 0, latestSeq, 1000)
-		if err != nil {
-			return err
+		var latestSeq int64
+		var points []portmonitor.MonitorPoint
+		if s.deps.MonitorRemote != nil {
+			latestSeq, points = remoteLatest, remotePoints
+		} else {
+			latestSeq, err = s.deps.MonitorPoints.LatestSeqByService(ctx, tx, ep.ServiceID)
+			if err != nil {
+				return err
+			}
+			points, err = s.deps.MonitorPoints.ListByBound(ctx, tx, ep.ServiceID, 0, latestSeq, 1000)
+			if err != nil {
+				return err
+			}
 		}
 		events, err := s.deps.AppEvents.ListByBound(ctx, tx, ep.ServiceID, 0, int64(1)<<62, 1000)
 		if err != nil {

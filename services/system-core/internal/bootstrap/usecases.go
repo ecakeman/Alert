@@ -39,7 +39,7 @@ func NewUseCases(sh *Shared, r *Repos) *UseCases {
 	})
 	epUC := appepisode.New(appepisode.Deps{
 		UOW: sh.UOW, Episodes: r.Episodes, InputVersions: r.InputVersions,
-		AppEvents: r.AppEvents, MonitorPoints: r.MonitorPoints,
+		AppEvents: r.AppEvents, MonitorPoints: r.MonitorPoints, MonitorRemote: r.MonitorReader,
 		Sources: r.Sources, Services: r.Services,
 		Tasks: r.Tasks, Artifacts: r.Artifacts,
 		Outbox: r.Outbox, Clock: sh.Clock, IDs: sh.IDs,

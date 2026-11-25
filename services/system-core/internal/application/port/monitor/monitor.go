@@ -48,6 +48,12 @@ type MonitorPointRepo interface {
 	LatestSeqByService(ctx context.Context, tx portshared.Tx, serviceID string) (int64, error)
 }
 
+// RemoteReader 是 P3 过渡期对 monitor-svc 的最小读取端口（事务外调用）。
+type RemoteReader interface {
+	LatestSeqByService(ctx context.Context, serviceID string) (int64, error)
+	ListByBound(ctx context.Context, serviceID string, fromSeq, toSeq int64, limit int) ([]MonitorPoint, error)
+}
+
 // TargetScheduleSource 是探测调度读取“启用且到期目标快照”的窄端口；
 // 由 monitor 用例实现，bootstrap 注入 probe（T-S1.13 接线）。
 type TargetScheduleSource interface {

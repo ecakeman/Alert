@@ -31,6 +31,8 @@ type Config struct {
 	ProbeEnabled           bool
 	RemoteRegistry         bool
 	RegistryBaseURL        string
+	RemoteMonitor          bool
+	MonitorBaseURL         string
 	UpstreamTimeout        time.Duration
 	ProbeWorkers           int
 	ProbeQueueCapacity     int
@@ -152,6 +154,8 @@ var (
 		intSpec("OUTBOX_BATCH", func(c *Config, v int) { c.OutboxBatch = v }),
 		boolSpec("REMOTE_REGISTRY", func(c *Config, v bool) { c.RemoteRegistry = v }),
 		strSpec("REGISTRY_BASE_URL", func(c *Config, v string) { c.RegistryBaseURL = v }),
+		boolSpec("REMOTE_MONITOR", func(c *Config, v bool) { c.RemoteMonitor = v }),
+		strSpec("MONITOR_BASE_URL", func(c *Config, v string) { c.MonitorBaseURL = v }),
 		durSpec("UPSTREAM_TIMEOUT", func(c *Config, v time.Duration) { c.UpstreamTimeout = v }),
 		strSpec("KAFKA_BROKERS", func(c *Config, v string) { c.KafkaBrokers = v }),
 		strSpec("KAFKA_TOPIC", func(c *Config, v string) { c.KafkaTopic = v }),
@@ -197,6 +201,7 @@ var loadOrder = []string{
 	"HTTP_IDLE_TIMEOUT", "HTTP_SHUTDOWN_TIMEOUT", "TASK_LEASE",
 	"KAFKA_MONITOR_TOPIC", "PROBE_ENABLED",
 	"REMOTE_REGISTRY", "REGISTRY_BASE_URL", "UPSTREAM_TIMEOUT",
+	"REMOTE_MONITOR", "MONITOR_BASE_URL",
 }
 
 // Load 从 lookup 读取配置：先填默认值，再按表解析（首个非法项即返回），最后校验。
@@ -221,6 +226,7 @@ func Load(lookup func(string) string) (Config, error) {
 		KafkaMonitorTopic:      "alertflow.monitor.events.v1",
 		ProbeEnabled:           true,
 		RegistryBaseURL:        "http://127.0.0.1:8081",
+		MonitorBaseURL:         "http://127.0.0.1:8083",
 		UpstreamTimeout:        3 * time.Second,
 		ProbeWorkers:           8,
 		ProbeQueueCapacity:     1024,
