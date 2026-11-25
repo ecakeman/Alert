@@ -22,6 +22,7 @@ from alert_agent.application.task.queue import BoundedTaskQueue
 from alert_agent.bootstrap.roles import GrpcRole, WorkerRole, build_grpc_role, build_worker_role
 from alert_agent.bootstrap.wiring import (
     build_gateway_channel,
+    build_ingestion_acceptance,
     build_pool,
     build_retrieval_searcher,
     build_submit_use_case,
@@ -46,6 +47,9 @@ def build_lifespan(settings: Settings) -> Callable[[FastAPI], AbstractAsyncConte
         # dependency is assembled here where the pool lives (disclosed
         # whitelist-external line, CR-DISC-03).
         app.state.retrieval_searcher = build_retrieval_searcher(settings, pool)
+        # T19: the ingest handlers resolve their acceptance use case from
+        # app.state as well (disclosed whitelist-external line, CR-DISC-03).
+        app.state.ingestion_accept = build_ingestion_acceptance(settings, pool)
         # One bounded queue shared by the submit path and the consumers
         # (CR-TASK-08); queue-full keeps the receipt as the awaiting-recovery
         # fact and reports accepted=false (6.1.3.1).

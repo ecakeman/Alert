@@ -19,6 +19,7 @@ from psycopg_pool import AsyncConnectionPool
 from alert_agent.application.archive.execute import ExecuteArchive
 from alert_agent.application.diagnosis.execute import ExecuteDiagnosis
 from alert_agent.application.diagnosis.tools import DiagnosisToolExecutor
+from alert_agent.application.ingestion.accept import AcceptIngestion
 from alert_agent.application.knowledge.ports import FaultDocSearcher, KnowledgeInvoker
 from alert_agent.application.mcp.ports import McpSession
 from alert_agent.application.retrieval.execute import ChatAnswer
@@ -44,6 +45,7 @@ from alert_agent.infrastructure.grpc.gateway_client import SystemTaskGatewayClie
 from alert_agent.infrastructure.llm.client import OpenAiCompatibleLlmClient
 from alert_agent.infrastructure.persistence.postgres.artifact_repo import PostgresArtifactStore
 from alert_agent.infrastructure.persistence.postgres.fault_doc_repo import PostgresFaultDocStore
+from alert_agent.infrastructure.persistence.postgres.ingest_repo import PostgresIngestJobStore
 from alert_agent.infrastructure.persistence.postgres.pool import build_pool
 from alert_agent.infrastructure.persistence.postgres.receipt_repo import PostgresReceiptStore
 from alert_agent.infrastructure.persistence.postgres.retrieval_repo import (
@@ -63,6 +65,7 @@ __all__ = [
     "build_diagnosis_executor",
     "build_gateway_channel",
     "build_gateway_client",
+    "build_ingestion_acceptance",
     "build_llm_client",
     "build_pool",
     "build_receipt_store",
@@ -262,3 +265,18 @@ def build_chat_answer(settings: Settings, pool: AsyncConnectionPool) -> ChatAnsw
         clock=SystemClock(),
     )
     return ChatAnswer(nodes=nodes, clock=SystemClock())
+
+
+def build_ingestion_acceptance(settings: Settings, pool: AsyncConnectionPool):
+    """Assemble POST /ingest acceptance (T19): persisted job store + path/
+    callback rules rooted at INGEST_FILE_ROOT (CR-ING-01/02, CR-REG-36)."""
+    allowlist = tuple(
+        entry.strip()
+        for entry in settings.ingestion.callback_host_allowlist.split(",")
+        if entry.strip()
+    )
+    return AcceptIngestion(
+        store=PostgresIngestJobStore(pool),
+        ingest_root=Path(settings.ingestion.ingest_file_root),
+        host_allowlist=allowlist,
+    )
