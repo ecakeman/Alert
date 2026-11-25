@@ -11,12 +11,14 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/ecakeman/alert/services/platform/db"
 	"github.com/ecakeman/alert/services/platform/httpx"
 	"github.com/ecakeman/alert/services/platform/logging"
 	"github.com/ecakeman/alert/services/platform/messaging"
 	platformmigrate "github.com/ecakeman/alert/services/platform/migrate"
+	platformoutbox "github.com/ecakeman/alert/services/platform/outbox"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	monitorapp "github.com/ecakeman/alert/services/monitor-svc/internal/application/monitor"
@@ -25,6 +27,7 @@ import (
 	"github.com/ecakeman/alert/services/monitor-svc/internal/config"
 	"github.com/ecakeman/alert/services/monitor-svc/internal/infrastructure/clock"
 	"github.com/ecakeman/alert/services/monitor-svc/internal/infrastructure/idgen"
+	"github.com/ecakeman/alert/services/monitor-svc/internal/infrastructure/outboxsender"
 	monitorpostgres "github.com/ecakeman/alert/services/monitor-svc/internal/infrastructure/persistence/postgres"
 	"github.com/ecakeman/alert/services/monitor-svc/internal/infrastructure/probe"
 	monitorhttp "github.com/ecakeman/alert/services/monitor-svc/internal/transport/http"
@@ -105,6 +108,31 @@ func main() {
 	health.CheckTimeout = cfg.ReadyzTimeout
 
 	if cfg.KafkaBrokers != "" {
+		sender, err := messaging.NewSender(messaging.SenderConfig{
+			Brokers: splitBrokers(cfg.KafkaBrokers), Topic: cfg.KafkaPublishTopic,
+		})
+		if err != nil {
+			logger.Error("kafka sender", "reason", err.Error())
+			os.Exit(1)
+		}
+		outboxRepo, err := platformoutbox.NewRepo("monitor")
+		if err != nil {
+			logger.Error("outbox repo", "reason", err.Error())
+			os.Exit(1)
+		}
+		publisher, err := platformoutbox.New(platformoutbox.Deps{
+			Store: outboxRepo, Tx: pool.Raw(),
+			Sender: outboxsender.New(sender), Owner: "monitor",
+			PublishTopic: cfg.KafkaPublishTopic,
+			ClaimLease:   30 * time.Second, Batch: 16, PollInterval: 500 * time.Millisecond,
+		})
+		if err != nil {
+			logger.Error("outbox publisher", "reason", err.Error())
+			os.Exit(1)
+		}
+		go publisher.Run(ctx)
+		defer sender.Close()
+
 		catalogConsumer := monitorprojection.New(monitorprojection.Deps{
 			UOW:        monitorpostgres.NewUnitOfWork(pool.Raw()),
 			Projection: monitorpostgres.NewProjectionRepo(),
