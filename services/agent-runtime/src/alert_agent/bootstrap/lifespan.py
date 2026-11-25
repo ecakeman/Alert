@@ -23,6 +23,7 @@ from alert_agent.bootstrap.roles import GrpcRole, WorkerRole, build_grpc_role, b
 from alert_agent.bootstrap.wiring import (
     build_gateway_channel,
     build_ingestion_acceptance,
+    build_ingestion_worker,
     build_pool,
     build_retrieval_searcher,
     build_submit_use_case,
@@ -50,6 +51,7 @@ def build_lifespan(settings: Settings) -> Callable[[FastAPI], AbstractAsyncConte
         # T19: the ingest handlers resolve their acceptance use case from
         # app.state as well (disclosed whitelist-external line, CR-DISC-03).
         app.state.ingestion_accept = build_ingestion_acceptance(settings, pool)
+
         # One bounded queue shared by the submit path and the consumers
         # (CR-TASK-08); queue-full keeps the receipt as the awaiting-recovery
         # fact and reports accepted=false (6.1.3.1).
@@ -64,6 +66,12 @@ def build_lifespan(settings: Settings) -> Callable[[FastAPI], AbstractAsyncConte
         register_task_executor(build_task_executor(settings, pool, grpc_channel))
         worker_runtime = build_task_worker_runtime(settings, pool, grpc_channel, queue)
         worker_role.tasks.extend(await worker_runtime.start())
+        # T20: the ingestion worker loop polls QUEUED jobs until READY/FAILED
+        # (disclosed whitelist-external registration, CR-DISC-03).
+        ingest_worker = build_ingestion_worker(settings, pool)
+        worker_role.tasks.append(
+            asyncio.create_task(ingest_worker.run_forever(), name="ingest-worker")
+        )
         grpc_role = build_grpc_role(settings, submit)
         await grpc_role.start()
         app.state.ready_checks.append(grpc_started_check(grpc_role))

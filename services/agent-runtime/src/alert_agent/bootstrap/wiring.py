@@ -20,6 +20,7 @@ from alert_agent.application.archive.execute import ExecuteArchive
 from alert_agent.application.diagnosis.execute import ExecuteDiagnosis
 from alert_agent.application.diagnosis.tools import DiagnosisToolExecutor
 from alert_agent.application.ingestion.accept import AcceptIngestion
+from alert_agent.application.ingestion.execute import ProcessIngestion
 from alert_agent.application.knowledge.ports import FaultDocSearcher, KnowledgeInvoker
 from alert_agent.application.mcp.ports import McpSession
 from alert_agent.application.retrieval.execute import ChatAnswer
@@ -34,6 +35,7 @@ from alert_agent.application.task.ports import (
     TaskSubmission,
 )
 from alert_agent.application.task.submit import SubmitTask
+from alert_agent.bootstrap.ingest_worker import IngestWorkerRuntime
 from alert_agent.config import Settings
 from alert_agent.domain.retrieval.budget import RetrievalBudget
 from alert_agent.domain.shared import ErrorCode, FatalError
@@ -42,6 +44,12 @@ from alert_agent.infrastructure.artifactstore.writer import FileSystemArtifactWr
 from alert_agent.infrastructure.bm25 import InProcessBm25Index
 from alert_agent.infrastructure.embedding import OpenAiCompatibleEmbedder
 from alert_agent.infrastructure.grpc.gateway_client import SystemTaskGatewayClient
+from alert_agent.infrastructure.ingestion import (
+    DeterministicChunker,
+    HttpCallbackSender,
+    IngestFileLoader,
+    PostgresIngestionWriter,
+)
 from alert_agent.infrastructure.llm.client import OpenAiCompatibleLlmClient
 from alert_agent.infrastructure.persistence.postgres.artifact_repo import PostgresArtifactStore
 from alert_agent.infrastructure.persistence.postgres.fault_doc_repo import PostgresFaultDocStore
@@ -66,6 +74,7 @@ __all__ = [
     "build_gateway_channel",
     "build_gateway_client",
     "build_ingestion_acceptance",
+    "build_ingestion_worker",
     "build_llm_client",
     "build_pool",
     "build_receipt_store",
@@ -279,4 +288,33 @@ def build_ingestion_acceptance(settings: Settings, pool: AsyncConnectionPool):
         store=PostgresIngestJobStore(pool),
         ingest_root=Path(settings.ingestion.ingest_file_root),
         host_allowlist=allowlist,
+    )
+
+def build_ingestion_worker(settings: Settings, pool: AsyncConnectionPool):
+    """Assemble the ingestion execution stack (T20): loader/chunker/embedder/
+    single-transaction writer + three-state callback sender (CR-ING-03~05)."""
+    allowlist = tuple(
+        entry.strip()
+        for entry in settings.ingestion.callback_host_allowlist.split(",")
+        if entry.strip()
+    )
+    embedder = (
+        OpenAiCompatibleEmbedder(settings.llm) if settings.llm.enable_embedding else None
+    )
+    process = ProcessIngestion(
+        store=PostgresIngestJobStore(pool),
+        loader=IngestFileLoader(Path(settings.ingestion.ingest_file_root)),
+        chunker=DeterministicChunker(
+            chunk_size_tokens=settings.ingestion.chunk_size_tokens,
+            overlap_tokens=settings.ingestion.chunk_overlap_tokens,
+        ),
+        embedder=embedder,
+        writer=PostgresIngestionWriter(pool),
+        callbacks=HttpCallbackSender(internal_token=settings.gateway.internal_token),
+        host_allowlist=allowlist,
+    )
+    return IngestWorkerRuntime(
+        store=PostgresIngestJobStore(pool),
+        process=process,
+        poll_interval_seconds=settings.ingestion.ingest_poll_interval_seconds,
     )
