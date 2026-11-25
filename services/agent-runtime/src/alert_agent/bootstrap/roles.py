@@ -15,7 +15,10 @@ from dataclasses import dataclass, field
 import grpc.aio
 from fastapi import FastAPI
 
+from alert_agent.application.task.submit import SubmitTask
 from alert_agent.config import Settings
+from alert_agent.infrastructure.grpc.gen.alertflow.agent.v1 import agent_task_pb2_grpc
+from alert_agent.transport.grpc.servicer import AgentTaskServicer
 
 LOGGER = logging.getLogger(__name__)
 
@@ -53,9 +56,11 @@ class WorkerRole:
         self.tasks.clear()
 
 
-def build_grpc_role(settings: Settings) -> GrpcRole:
-    """Create the grpc.aio server and bind it; servicers register in T07."""
+def build_grpc_role(settings: Settings, submit: SubmitTask) -> GrpcRole:
+    """Create the grpc.aio server, register the SubmitTask servicer and bind it
+    (T07, CR-GW-02); the servicer is a real wired dependency, not dead code."""
     server = grpc.aio.server()
+    agent_task_pb2_grpc.add_AgentTaskServiceServicer_to_server(AgentTaskServicer(submit), server)
     bound = server.add_insecure_port(settings.gateway.agent_grpc_listen)
     if bound == 0:
         raise RuntimeError(f"failed to bind gRPC listen address {settings.gateway.agent_grpc_listen}")
