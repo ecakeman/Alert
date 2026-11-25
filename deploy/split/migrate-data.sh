@@ -78,8 +78,14 @@ snapshot() {
     local last=$(( ${#TABLES[@]} - 1 )) i table rows size
     for i in "${!TABLES[@]}"; do
       table="${TABLES[$i]}"
-      rows="$(query "SELECT count(*) FROM system.${table}")"
-      size="$(query "SELECT pg_total_relation_size('system.${table}')")"
+      # 前序阶段已搬走的表不再出现在 system，快照记 0 而非报错。
+      if [ "$(query "SELECT to_regclass('system.${table}') IS NOT NULL")" = "t" ]; then
+        rows="$(query "SELECT count(*) FROM system.${table}")"
+        size="$(query "SELECT pg_total_relation_size('system.${table}')")"
+      else
+        rows=0
+        size=0
+      fi
       if [ "$i" -eq "$last" ]; then
         printf '    "system.%s": {"rows": %s, "size_bytes": %s}\n' "$table" "$rows" "$size"
       else
@@ -99,6 +105,69 @@ write_state() {
     "$stage" "$phase" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${snapshot:-}" > "$tmp"
   mv "$tmp" "$STATE_FILE"
 }
+
+if [ "$STAGE" = "P3" ]; then
+  if [ -f "$STATE_FILE" ] && grep -q '"stage":"P3"' "$STATE_FILE" && grep -q '"phase":"complete"' "$STATE_FILE"; then
+    echo "P3 搬迁已完成（读状态文件，no-op）"
+    exit 0
+  fi
+  ensure_db
+
+  if [ "$(query "SELECT to_regclass('monitor.service_monitor_points') IS NOT NULL")" != "t" ]; then
+    echo "monitor.service_monitor_points 不存在：请先执行 monitor-svc -migrate（P3.1）"
+    exit 5
+  fi
+  monitor_rows="$(query "SELECT count(*) FROM monitor.service_monitor_points")"
+  if [ "$monitor_rows" != "0" ]; then
+    echo "monitor.service_monitor_points 已含 $monitor_rows 行，拒绝覆盖"
+    exit 5
+  fi
+
+  SNAPSHOT_FILE="$(snapshot P3)"
+  echo "S0 预检完成：$SNAPSHOT_FILE"
+  before_points="$(query "SELECT count(*) FROM system.service_monitor_points")"
+
+  MIGRATE_SQL="$(cat <<'SQL'
+ALTER TABLE system.service_monitor_points DROP CONSTRAINT IF EXISTS service_monitor_points_service_id_fkey;
+ALTER TABLE system.service_monitor_points DROP CONSTRAINT IF EXISTS service_monitor_points_target_id_fkey;
+-- 前置校验已保证 monitor 版为空表；删空表以让 SET SCHEMA 接管（保留索引/序列随表迁移）。
+DROP TABLE IF EXISTS monitor.service_monitor_points;
+ALTER TABLE system.service_monitor_points SET SCHEMA monitor;
+SQL
+)"
+
+  if [ "$DRY_RUN" = true ]; then
+    printf '%s\n' "$MIGRATE_SQL"
+    echo "[dry-run] P3 搬迁 SQL 打印完毕（未执行）"
+    exit 0
+  fi
+  if [ "$CONFIRM" != true ]; then
+    echo "拒绝执行危险动作（缺少 --confirm）"
+    exit 4
+  fi
+
+  printf '%s\n' "$MIGRATE_SQL" | psql_exec --single-transaction >/dev/null
+
+  psql_exec >/dev/null <<'SQL'
+GRANT ALL ON monitor.service_monitor_points TO alert_monitor;
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA monitor TO alert_monitor;
+SQL
+
+  after_points="$(query "SELECT count(*) FROM monitor.service_monitor_points")"
+  if [ "$before_points" != "$after_points" ]; then
+    echo "行数对账失败: points $before_points->$after_points"
+    exit 6
+  fi
+  if [ "$(query "SELECT to_regclass('system.service_monitor_points') IS NOT NULL")" = "t" ]; then
+    echo "system.service_monitor_points 仍存在，搬迁未完成"
+    exit 7
+  fi
+
+  write_state P3 complete "$(basename "$SNAPSHOT_FILE")"
+  echo "P3 搬迁完成：points=$after_points"
+  echo "状态文件：$STATE_FILE（stage=P3 phase=complete）"
+  exit 0
+fi
 
 if [ "$STAGE" = "P2" ]; then
   if [ -f "$STATE_FILE" ] && grep -q '"stage":"P2"' "$STATE_FILE" && grep -q '"phase":"complete"' "$STATE_FILE"; then

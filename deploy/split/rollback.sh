@@ -72,6 +72,20 @@ SQL
   mv "$tmp" "$STATE_FILE"
 }
 
+# P3 回退：points 移回 system。注意 P2 完成态本身不含跨域 FK（S1 已拆），
+# 因此这里只做 SET SCHEMA；若要恢复完整单体（含 FK）请使用 --to P0。
+rollback_monitor_points() {
+  docker exec -i -e PGPASSWORD="${PGPASSWORD:-alert}" "$PG_CONTAINER" psql \
+    -U alert -d "$PGDATABASE" --set=ON_ERROR_STOP=1 --single-transaction <<'SQL'
+ALTER TABLE monitor.service_monitor_points SET SCHEMA system;
+GRANT ALL ON system.service_monitor_points TO alert;
+SQL
+  local tmp
+  tmp="$(mktemp "$SPLIT_DIR/.split-state.json.XXXXXX")"
+  printf '{"stage":"P2","phase":"rolled-back","started_at":"%s","snapshot":""}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$tmp"
+  mv "$tmp" "$STATE_FILE"
+}
+
 case "$TARGET" in
   P1)
     # P1 回退：停 BFF + 控制台指回单体；--restore 恢复 P1 链路。
@@ -97,7 +111,13 @@ case "$TARGET" in
       echo "R5 恢复旧进程：请按 README 启动 system-core api/worker（脚本不自动拉起裸进程）"
     fi
     ;;
-  P2|P3|P4|P5)
+  P2)
+    if [ "$(docker exec -e PGPASSWORD="${PGPASSWORD:-alert}" "$PG_CONTAINER" psql -U alert -d "$PGDATABASE" -tAc "SELECT to_regclass('monitor.service_monitor_points') IS NOT NULL" 2>/dev/null)" = "t" ]; then
+      run_or_echo "R2 反向移表 monitor→system" rollback_monitor_points
+    fi
+    echo "R1 停 monitor-svc：P3 前 compose 未启用（no-op）"
+    ;;
+  P3|P4|P5)
     echo "未实现阶段：$TARGET 的 R2~R4 尚未实装（按 tasks.md 在该阶段任务内补齐）"
     exit 3
     ;;
