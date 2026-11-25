@@ -68,6 +68,28 @@ services:
       KAFKA_TOPICS: "alertflow.registry.events.v1 alertflow.monitor.events.v1 alertflow.episode.events.v1 alertflow.task.events.v1"
     restart: "no"
 
+  provision:
+    # 一次性创建 4 schema / 4 role；profile=setup，可重复执行。
+    image: docker.m.daocloud.io/pgvector/pgvector:pg16
+    container_name: alert-provision
+    profiles: ["setup"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ../split/provision.sh:/opt/provision.sh:ro
+    entrypoint: ["/bin/bash", "/opt/provision.sh"]
+    environment:
+      PGHOST: postgres
+      PGPORT: "5432"
+      PGUSER: alert
+      PGDATABASE: alert
+      ALERT_REGISTRY_PASSWORD: ${ALERT_REGISTRY_PASSWORD:-alert_registry_pw_dev}
+      ALERT_MONITOR_PASSWORD: ${ALERT_MONITOR_PASSWORD:-alert_monitor_pw_dev}
+      ALERT_EPISODE_PASSWORD: ${ALERT_EPISODE_PASSWORD:-alert_episode_pw_dev}
+      ALERT_TASK_PASSWORD: ${ALERT_TASK_PASSWORD:-alert_task_pw_dev}
+    restart: "no"
+
 volumes:
   alert-pg-data:
   alert-kafka-data:

@@ -33,7 +33,31 @@ docker exec alert-pg psql -U alert -c 'CREATE DATABASE alert_migrate_check'
 docker compose -f deploy/compose/compose.yaml run --rm kafka-init
 ```
 
+## 域账号隔离（setup profile）
+
+```bash
+docker compose -f deploy/compose/compose.yaml --profile setup run --rm provision
+```
+
+该步骤幂等，创建：
+
+| schema | role | 默认本地口令（env 覆盖） |
+|---|---|---|
+| `registry` | `alert_registry` | `ALERT_REGISTRY_PASSWORD` |
+| `monitor` | `alert_monitor` | `ALERT_MONITOR_PASSWORD` |
+| `episode` | `alert_episode` | `ALERT_EPISODE_PASSWORD` |
+| `task` | `alert_task` | `ALERT_TASK_PASSWORD` |
+
+隔离规则：`REVOKE ALL ON SCHEMA public FROM PUBLIC`；每个角色只被授予自有 schema 的
+`USAGE/CREATE` 与对象权限，跨 schema 访问在数据库层被拒绝。`system` / `cognitive` schema 不动。
+
+反向验证（跨 schema 读写必须被拒）：
+
+```bash
+bash deploy/split/verify-isolation.sh
+```
+
 ## 已知限制
 
 - 宿主机上的 Go 进程必须使用 `127.0.0.1:9092`；容器内进程必须使用 `kafka:29092`。混用会拿到无法路由的 advertised 地址。
-- 示例口令 `alert/alert` 仅限本地使用，非真实凭据。
+- 示例口令 `alert/alert` 与各域默认口令仅限本地使用，非真实凭据。
