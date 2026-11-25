@@ -43,6 +43,19 @@ func main() {
 		os.Exit(1)
 	}
 
+	proxy, err := bffhttp.NewProxy(bffhttp.ProxyConfig{
+		Registry: cfg.RegistryBaseURL,
+		Monitor:  cfg.MonitorBaseURL,
+		Episode:  cfg.EpisodeBaseURL,
+		Task:     cfg.TaskBaseURL,
+		Timeout:  cfg.UpstreamTimeout,
+		Logger:   logger,
+	})
+	if err != nil {
+		logger.Error("proxy", "reason", err.Error())
+		os.Exit(1)
+	}
+
 	health := httpx.NewHealthService(cfg.ServiceName, map[string]httpx.Checker{
 		"registry": downstream("registry", cfg.RegistryBaseURL, cfg.UpstreamTimeout),
 		"monitor":  downstream("monitor", cfg.MonitorBaseURL, cfg.UpstreamTimeout),
@@ -52,7 +65,7 @@ func main() {
 	health.CheckTimeout = cfg.ReadyzTimeout
 
 	handler := httpx.Chain(
-		bffhttp.New(bffhttp.Deps{Health: health, Logger: logger, Timeout: cfg.HTTPReadTimeout}),
+		bffhttp.New(bffhttp.Deps{Health: health, Logger: logger, Proxy: proxy, Timeout: cfg.HTTPReadTimeout}),
 		httpx.Recovery(logger),
 		httpx.Trace(logger),
 		httpx.AccessLog(logger),
