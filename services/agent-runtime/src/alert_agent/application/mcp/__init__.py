@@ -1,0 +1,1 @@
+"""MCP session application package (M5, wired by T21)."""

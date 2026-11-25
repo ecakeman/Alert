@@ -1,0 +1,1 @@
+"""Diagnosis application package: loop use case and ports (M4, batches T10~T13)."""
