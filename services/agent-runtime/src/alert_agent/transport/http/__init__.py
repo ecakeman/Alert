@@ -1,0 +1,1 @@
+"""HTTP transport: router registry, handlers, DTOs, mappers and auth deps."""
