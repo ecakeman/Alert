@@ -20,11 +20,11 @@ type Config struct {
 	HTTPIdleTimeout     time.Duration
 	HTTPShutdownTimeout time.Duration
 
-	RegistryBaseURL string
-	MonitorBaseURL  string
-	EpisodeBaseURL  string
-	TaskBaseURL     string
-	UpstreamTimeout time.Duration
+	RegistryBaseURL  string
+	MonitorBaseURL   string
+	EpisodeBaseURL   string
+	TaskBaseURL      string
+	UpstreamTimeout  time.Duration
 	AggregateTimeout time.Duration
 }
 
@@ -39,14 +39,14 @@ func (e *LoadError) Error() string { return "config " + e.Var + ": " + e.Reason 
 // Load 读取 BFF 配置表；DATABASE_URL 存在即 fail-fast（BFF 无库）。
 func Load(getenv func(string) string) (Config, error) {
 	cfg := Config{
-		ServiceName:         value(getenv, "SERVICE_NAME", "console-bff"),
-		LogLevel:            value(getenv, "LOG_LEVEL", "info"),
-		AppEnv:              value(getenv, "APP_ENV", "local"),
-		HTTPAddr:            value(getenv, "HTTP_ADDR", ":8080"),
-		RegistryBaseURL:     value(getenv, "REGISTRY_BASE_URL", "http://127.0.0.1:8081"),
-		MonitorBaseURL:      value(getenv, "MONITOR_BASE_URL", "http://127.0.0.1:8081"),
-		EpisodeBaseURL:      value(getenv, "EPISODE_BASE_URL", "http://127.0.0.1:8081"),
-		TaskBaseURL:         value(getenv, "TASK_BASE_URL", "http://127.0.0.1:8081"),
+		ServiceName:     value(getenv, "SERVICE_NAME", "console-bff"),
+		LogLevel:        value(getenv, "LOG_LEVEL", "info"),
+		AppEnv:          value(getenv, "APP_ENV", "local"),
+		HTTPAddr:        value(getenv, "HTTP_ADDR", ":8080"),
+		RegistryBaseURL: value(getenv, "REGISTRY_BASE_URL", "http://127.0.0.1:8081"),
+		MonitorBaseURL:  value(getenv, "MONITOR_BASE_URL", "http://127.0.0.1:8081"),
+		EpisodeBaseURL:  value(getenv, "EPISODE_BASE_URL", "http://127.0.0.1:8081"),
+		TaskBaseURL:     value(getenv, "TASK_BASE_URL", "http://127.0.0.1:8081"),
 	}
 
 	if strings.TrimSpace(getenv("DATABASE_URL")) != "" {

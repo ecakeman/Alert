@@ -263,9 +263,13 @@ func (s *Service) newTarget(serviceID string, in TargetInput, now time.Time) por
 	if tm <= 0 {
 		tm = 5000
 	}
+	cfg := in.Config
+	if len(cfg) == 0 {
+		cfg = []byte("{}")
+	}
 	return portService.MonitorTarget{
 		TargetID: s.deps.IDs.NewID(), ServiceID: serviceID, TargetKey: in.TargetKey,
-		TargetName: in.TargetName, Address: in.Address, TargetType: tt, Config: in.Config,
+		TargetName: in.TargetName, Address: in.Address, TargetType: tt, Config: cfg,
 		IntervalMS: im, TimeoutMS: tm, FailureThreshold: ft, RecoveryThreshold: rt,
 		IsRequired: in.IsRequired, Enabled: true, Status: "UNKNOWN", ConfigGeneration: 1,
 	}

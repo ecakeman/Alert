@@ -1,7 +1,18 @@
 {
-  "error": {
-    "code": "INTERNAL",
-    "message": "internal error",
-    "request_id": "<hex32>"
-  }
+  "address": "http://127.0.0.1:18084/healthz",
+  "config": {},
+  "consecutive_failures": 0,
+  "consecutive_successes": 0,
+  "enabled": true,
+  "failure_threshold": 2,
+  "interval_ms": 15000,
+  "is_required": false,
+  "last_check_at": null,
+  "recovery_threshold": 2,
+  "status": "UNKNOWN",
+  "target_id": "<uuid-1>",
+  "target_key": "snapshot-target",
+  "target_name": "Snapshot Target",
+  "target_type": "HTTP",
+  "timeout_ms": 3000
 }
