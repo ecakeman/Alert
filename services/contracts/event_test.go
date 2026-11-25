@@ -80,7 +80,7 @@ func TestEventJSONEnvelope(t *testing.T) {
 	if err != nil {
 		t.Fatalf("序列化事件信封失败: %v", err)
 	}
-	var keys map[string]any
+	var keys map[string]json.RawMessage
 	if err := json.Unmarshal(out, &keys); err != nil {
 		t.Fatalf("解析序列化结果失败: %v", err)
 	}
