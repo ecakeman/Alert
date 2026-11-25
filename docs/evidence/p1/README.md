@@ -46,3 +46,11 @@ GO_BIN=/home/sancho/go-dist/go/bin/go bash scripts/verify-p1.sh
 
 `bash deploy/split/rollback.sh --to P1 --confirm`：停 BFF、控制台代理指回 `system-core:8080`、恢复 compose 基线；
 演练记录见 `deploy/split/README.md` 与 P1.8 提交。
+
+## P1 回退演练（2026-11-25）
+
+| 步骤 | 命令 | 结果 |
+|---|---|---|
+| 回退 | `rollback.sh --to P1 --confirm` | BFF 停止；控制台代理指向 `system-core:8080` |
+| 直连回归 | 单体 8081 + `snapshot-diff` | 21 个响应与 P0 基线无差异 |
+| 恢复 | `rollback.sh --to P1 --confirm --restore` | BFF healthy；代理指回 `console-bff:8080`；`/api/v1/services` 200 |

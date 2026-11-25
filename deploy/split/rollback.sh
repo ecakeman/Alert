@@ -10,11 +10,13 @@ COMPOSE_FILE="$SPLIT_DIR/../compose/compose.yaml"
 TARGET="P0"
 DRY_RUN=false
 CONFIRM=false
+RESTORE=false
 while [ $# -gt 0 ]; do
   case "$1" in
     --to) TARGET="${2:?--to 需要值}"; shift 2 ;;
     --dry-run) DRY_RUN=true; shift ;;
     --confirm) CONFIRM=true; shift ;;
+    --restore) RESTORE=true; shift ;;
     *) echo "未知参数: $1"; exit 2 ;;
   esac
 done
@@ -42,6 +44,17 @@ run_or_echo() {
 }
 
 case "$TARGET" in
+  P1)
+    # P1 回退：停 BFF + 控制台指回单体；--restore 恢复 P1 链路。
+    NGINX_FILE="$SPLIT_DIR/../../apps/console/nginx.conf"
+    if [ "$RESTORE" = true ]; then
+      run_or_echo "R1' 启动 BFF" docker compose -f "$COMPOSE_FILE" up -d console-bff
+      run_or_echo "R2' 控制台指回 BFF" sed -i 's|http://system-core:8080|http://console-bff:8080|' "$NGINX_FILE"
+    else
+      run_or_echo "R1 停 BFF" docker compose -f "$COMPOSE_FILE" stop console-bff
+      run_or_echo "R2 控制台指回单体" sed -i 's|http://console-bff:8080|http://system-core:8080|' "$NGINX_FILE"
+    fi
+    ;;
   P0)
     # R1：P0 尚无新服务，记录为 no-op。
     echo "R1 停新服务：P0 无新服务（no-op）"
@@ -57,9 +70,9 @@ case "$TARGET" in
     exit 3
     ;;
   *)
-    echo "未知目标阶段：$TARGET（支持 P0|P2|P3|P4|P5）"
+    echo "未知目标阶段：$TARGET（支持 P0|P1|P2|P3|P4|P5）"
     exit 2
     ;;
 esac
 
-echo "rollback: $TARGET 完成（dry_run=$DRY_RUN）"
+echo "rollback: $TARGET 完成（dry_run=$DRY_RUN restore=$RESTORE）"
