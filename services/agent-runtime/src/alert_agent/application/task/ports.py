@@ -165,3 +165,59 @@ class TaskGateway(Protocol):
     async def get_task_context(self, identity: TaskIdentity) -> TaskContextView: ...
 
     async def abandon_task(self, identity: TaskIdentity) -> GatewayAck: ...
+
+class ArtifactRegistration(BaseModel):
+    """Registration payload for cognitive.episode_artifacts (design 4.6).
+
+    ``artifact_version`` is the expected version: the UNIQUE
+    (episode_id, artifact_type, artifact_version) constraint is the
+    optimistic-lock basis (CR-DIAG-19, CR-REG-46).
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    task_id: str = Field(min_length=1)
+    generation: int = Field(gt=0)
+    episode_id: str = Field(min_length=1)
+    artifact_type: str = Field(min_length=1)
+    artifact_version: int = Field(gt=0)
+    content_hash: str = Field(min_length=1)
+    content_type: str = Field(min_length=1)
+    storage_key: str = Field(min_length=1)
+
+
+class ArtifactRecord(BaseModel):
+    """Registered artifact view as business fields (no content column, D5)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    artifact_id: str = Field(min_length=1)
+    task_id: str = Field(min_length=1)
+    generation: int = Field(gt=0)
+    episode_id: str = Field(min_length=1)
+    artifact_type: str = Field(min_length=1)
+    artifact_version: int = Field(gt=0)
+    content_hash: str = Field(min_length=1)
+    content_type: str = Field(min_length=1)
+    storage_key: str = Field(min_length=1)
+
+
+class ArtifactStore(Protocol):
+    """Version registry on cognitive.episode_artifacts (design 4.6, CR-REG-46).
+
+    ``register`` is idempotent for the same generation + same hash (Q7),
+    rejects an older generation with ``ARTIFACT_VERSION_CONFLICT`` (older
+    generations never overwrite) and treats any other version clash as a
+    conflict; ``latest_version`` drives monotonic version allocation
+    (CR-DIAG-19).
+    """
+
+    async def register(self, registration: ArtifactRegistration) -> ArtifactRecord: ...
+
+    async def latest_version(self, episode_id: str, artifact_type: str) -> int:
+        """Highest registered version for one episode artifact type; 0 when none."""
+        ...
+
+    async def find(
+        self, episode_id: str, artifact_type: str, artifact_version: int
+    ) -> ArtifactRecord | None: ...

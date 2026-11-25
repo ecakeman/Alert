@@ -10,21 +10,27 @@ the wiring and never touches lifespan directly.
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from pathlib import Path
 from uuid import uuid4
 
 import grpc.aio
 from psycopg_pool import AsyncConnectionPool
 
-from alert_agent.application.task.ports import ReceiptStore, TaskGateway
+from alert_agent.application.shared.ports import ArtifactWriter
+from alert_agent.application.task.ports import ArtifactStore, ReceiptStore, TaskGateway
 from alert_agent.application.task.submit import SubmitTask
 from alert_agent.config import Settings
+from alert_agent.infrastructure.artifactstore.writer import FileSystemArtifactWriter
 from alert_agent.infrastructure.grpc.gateway_client import SystemTaskGatewayClient
+from alert_agent.infrastructure.persistence.postgres.artifact_repo import PostgresArtifactStore
 from alert_agent.infrastructure.persistence.postgres.pool import build_pool
 from alert_agent.infrastructure.persistence.postgres.receipt_repo import PostgresReceiptStore
 
 __all__ = [
     "SystemClock",
     "UuidIdGen",
+    "build_artifact_store",
+    "build_artifact_writer",
     "build_gateway_channel",
     "build_gateway_client",
     "build_pool",
@@ -77,3 +83,12 @@ def build_gateway_client(channel: grpc.aio.Channel, settings: Settings) -> TaskG
         timeout_seconds=settings.gateway.gateway_rpc_timeout_ms / 1000.0,
         max_retries=settings.gateway.gateway_rpc_max_retries,
     )
+
+def build_artifact_writer(settings: Settings) -> ArtifactWriter:
+    """Filesystem artifact writer rooted at ARTIFACT_STORAGE_ROOT (D5, design 4.6)."""
+    return FileSystemArtifactWriter(Path(settings.storage.artifact_storage_root))
+
+
+def build_artifact_store(pool: AsyncConnectionPool) -> ArtifactStore:
+    """Episode-artifact version registry on cognitive.episode_artifacts (CR-REG-46)."""
+    return PostgresArtifactStore(pool, UuidIdGen())
