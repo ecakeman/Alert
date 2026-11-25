@@ -54,6 +54,7 @@ from alert_agent.infrastructure.ingestion import (
 from alert_agent.infrastructure.knowledge import A2aKnowledgeClient
 from alert_agent.infrastructure.llm.client import OpenAiCompatibleLlmClient
 from alert_agent.infrastructure.mcp import McpSessionManager
+from alert_agent.infrastructure.observe import BoundedObservationSink
 from alert_agent.infrastructure.persistence.postgres.artifact_repo import PostgresArtifactStore
 from alert_agent.infrastructure.persistence.postgres.fault_doc_repo import PostgresFaultDocStore
 from alert_agent.infrastructure.persistence.postgres.ingest_repo import PostgresIngestJobStore
@@ -79,6 +80,7 @@ __all__ = [
     "build_ingestion_acceptance",
     "build_ingestion_worker",
     "build_llm_client",
+    "build_observation_sink",
     "build_pool",
     "build_receipt_store",
     "build_retrieval_searcher",
@@ -173,6 +175,12 @@ def build_knowledge_client(settings: Settings) -> A2aKnowledgeClient:
 def build_agent_card_endpoint() -> dict:
     """AgentCard payload for the discovery endpoint (T22)."""
     return build_agent_card().model_dump()
+
+
+def build_observation_sink(pool: AsyncConnectionPool) -> BoundedObservationSink:
+    """Assemble the bounded observation sink (T23, CR-REG-19): the main path
+    only enqueues; a background task flushes batches into llm_calls."""
+    return BoundedObservationSink(pool)
 
 
 def build_diagnosis_executor(

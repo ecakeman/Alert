@@ -9,7 +9,7 @@ protocol routes declare the standalone internal-token dependency themselves
 from fastapi import APIRouter, Depends
 
 from alert_agent.transport.http.deps import require_internal_token
-from alert_agent.transport.http.handler import a2a, health, ingest, search
+from alert_agent.transport.http.handler import a2a, chat, health, ingest, search
 
 
 def build_router() -> APIRouter:
@@ -24,6 +24,12 @@ def build_router() -> APIRouter:
     router.add_api_route(
         "/a2a/message/send",
         a2a.message_send,
+        methods=["POST"],
+        dependencies=[Depends(require_internal_token)],
+    )
+    router.add_api_route(
+        "/chat",
+        chat.chat,
         methods=["POST"],
         dependencies=[Depends(require_internal_token)],
     )

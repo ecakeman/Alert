@@ -40,6 +40,7 @@ from alert_agent.application.task.submit import SubmitTask
 from alert_agent.bootstrap.wiring import (
     SystemClock,
     build_gateway_client,
+    build_observation_sink,
     build_receipt_store,
 )
 from alert_agent.config import Settings
@@ -268,12 +269,14 @@ class TaskWorkerRuntime:
         *,
         worker_concurrency: int,
         recovery_scan_interval_seconds: float,
+        observation_sink=None,
     ) -> None:
         self._queue = queue
         self._runner = runner
         self._recover = recover
         self._worker_concurrency = worker_concurrency
         self._recovery_interval = recovery_scan_interval_seconds
+        self._observation_sink = observation_sink
 
     async def start(self) -> list[asyncio.Task[None]]:
         """Create the loop tasks; idle when the executor is not wired yet (T13/T14)."""
@@ -287,6 +290,13 @@ class TaskWorkerRuntime:
             for index in range(self._worker_concurrency)
         ]
         tasks.append(asyncio.create_task(self._recovery_loop(), name="task-recovery-scan"))
+        if self._observation_sink is not None:
+            # T23: background batched flush for cognitive.llm_calls (CR-REG-19).
+            tasks.append(
+                asyncio.create_task(
+                    self._observation_sink.flush_forever(), name="observe-flush"
+                )
+            )
         return tasks
 
     async def _consumer_loop(self, index: int) -> None:
@@ -328,6 +338,7 @@ def build_task_worker_runtime(
     executor = _resolve_task_executor()
     store = build_receipt_store(pool)
     gateway = build_gateway_client(channel, settings)
+    observation_sink = build_observation_sink(pool)
     runner = TaskRunner(
         store=store,
         gateway=gateway,
@@ -343,6 +354,7 @@ def build_task_worker_runtime(
         recover=recover,
         worker_concurrency=settings.gateway.worker_concurrency,
         recovery_scan_interval_seconds=settings.gateway.recovery_scan_interval_seconds,
+        observation_sink=observation_sink,
     )
 
 

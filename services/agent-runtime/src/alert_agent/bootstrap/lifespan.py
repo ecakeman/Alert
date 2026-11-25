@@ -21,6 +21,7 @@ from fastapi import FastAPI
 from alert_agent.application.task.queue import BoundedTaskQueue
 from alert_agent.bootstrap.roles import GrpcRole, WorkerRole, build_grpc_role, build_worker_role
 from alert_agent.bootstrap.wiring import (
+    build_chat_answer,
     build_gateway_channel,
     build_ingestion_acceptance,
     build_ingestion_worker,
@@ -51,6 +52,9 @@ def build_lifespan(settings: Settings) -> Callable[[FastAPI], AbstractAsyncConte
         # T19: the ingest handlers resolve their acceptance use case from
         # app.state as well (disclosed whitelist-external line, CR-DISC-03).
         app.state.ingestion_accept = build_ingestion_acceptance(settings, pool)
+        # T23: the /chat handler resolves its chat use case from app.state
+        # (disclosed whitelist-external line, CR-DISC-03).
+        app.state.chat_answer = build_chat_answer(settings, pool)
 
         # One bounded queue shared by the submit path and the consumers
         # (CR-TASK-08); queue-full keeps the receipt as the awaiting-recovery
