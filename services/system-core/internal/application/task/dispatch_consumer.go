@@ -49,3 +49,24 @@ func (s *Service) markDispatchDone(ctx context.Context, eventID, taskID string, 
 		return nil
 	})
 }
+
+// HandleDispatchableEvent 是派发主路径：直接用 episode 快照建任务，零回查。
+// 重复投递由 Create 内的 episode 幂等键拦截；失败返回错误由消费者重试。
+func (s *Service) HandleDispatchableEvent(ctx context.Context, event contracts.Event) error {
+	if event.EventType != contracts.EventEpisodeDispatchable {
+		return nil
+	}
+	var snapshot contracts.DispatchSnapshot
+	if err := json.Unmarshal(event.Payload, &snapshot); err != nil {
+		return fmt.Errorf("decode dispatchable payload: %w", err)
+	}
+	// 未知快照字段不能阻塞建任务；reason 决定任务类型。
+	taskType := TaskTypeDiagnosis
+	source := SourceInputAppended
+	if snapshot.Reason == "EPISODE_RESOLVED" {
+		taskType = TaskTypeArchive
+		source = SourceEpisodeResolved
+	}
+	_, _, err := s.Create(ctx, CreateInput{Snapshot: snapshot, TaskType: taskType, Source: source})
+	return err
+}

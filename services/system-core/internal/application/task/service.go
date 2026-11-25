@@ -1,6 +1,7 @@
 package task
 
 import (
+	"context"
 	"time"
 
 	portdispatch "github.com/ecakeman/alert/services/system-core/internal/application/port/dispatch"
@@ -8,6 +9,7 @@ import (
 	portoutbox "github.com/ecakeman/alert/services/system-core/internal/application/port/outbox"
 	portshared "github.com/ecakeman/alert/services/system-core/internal/application/port/shared"
 	porttask "github.com/ecakeman/alert/services/system-core/internal/application/port/task"
+	"github.com/ecakeman/alert/services/system-core/internal/contracts"
 )
 
 // Service 是 B7 任务链路用例编排入口。
@@ -33,6 +35,7 @@ type Deps struct {
 	MaxAttempts   int
 	RetryDelay    time.Duration
 	Deadline      time.Duration
+	Dispatch      DispatchSource
 }
 
 // TaskIdentity 是 gRPC 与 HTTP 共享的任务身份。
@@ -108,4 +111,9 @@ type ReconcileSummary struct {
 	RetryPromoted      int
 	OwnershipReclaimed int
 	Failures           []string
+}
+
+// DispatchSource 是 episode 域提供的待派发快照查询（对账兜底，不扫 episodes 表）。
+type DispatchSource interface {
+	ListPendingDispatch(ctx context.Context, limit int) ([]contracts.DispatchSnapshot, error)
 }

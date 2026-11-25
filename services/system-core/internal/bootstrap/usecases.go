@@ -12,6 +12,7 @@ import (
 	portdispatch "github.com/ecakeman/alert/services/system-core/internal/application/port/dispatch"
 	appservice "github.com/ecakeman/alert/services/system-core/internal/application/service"
 	apptask "github.com/ecakeman/alert/services/system-core/internal/application/task"
+	"github.com/ecakeman/alert/services/system-core/internal/contracts"
 	"github.com/ecakeman/alert/services/system-core/internal/infrastructure/artifacts"
 )
 
@@ -57,7 +58,7 @@ func NewUseCases(sh *Shared, r *Repos) *UseCases {
 		UOW: sh.UOW, Idem: r.Idem, Clock: sh.Clock,
 	})
 
-	taskUC := newTaskService(sh, r, nil)
+	taskUC := newTaskService(sh, r, nil, episodeDispatchAdapter{uc: epUC})
 
 	return &UseCases{
 		Service: svcUC, Dashboard: dashUC, Episode: epUC,
@@ -65,7 +66,7 @@ func NewUseCases(sh *Shared, r *Repos) *UseCases {
 	}
 }
 
-func newTaskService(sh *Shared, r *Repos, submit portdispatch.TaskSubmitter) *apptask.Service {
+func newTaskService(sh *Shared, r *Repos, submit portdispatch.TaskSubmitter, dispatch apptask.DispatchSource) *apptask.Service {
 	return apptask.New(apptask.Deps{
 		UOW: sh.UOW, Tasks: r.Tasks, Ownership: r.Ownership, Artifacts: r.Artifacts,
 		Episodes: r.Episodes, InputVersions: r.InputVersions,
@@ -74,6 +75,7 @@ func newTaskService(sh *Shared, r *Repos, submit portdispatch.TaskSubmitter) *ap
 		Clock: sh.Clock, IDs: sh.IDs,
 		Lease: taskLease(sh.Cfg.TaskLease, sh.Cfg.OwnershipTTL), MaxAttempts: sh.Cfg.TaskMaxAttempts,
 		RetryDelay: sh.Cfg.TaskRetryDelay, Deadline: sh.Cfg.TaskDeadline,
+		Dispatch: dispatch,
 	})
 }
 
@@ -105,4 +107,11 @@ func splitBrokers(raw string) []string {
 		}
 	}
 	return out
+}
+
+// episodeDispatchAdapter 把 episode 用例转调为 task.DispatchSource。
+type episodeDispatchAdapter struct{ uc *appepisode.Service }
+
+func (a episodeDispatchAdapter) ListPendingDispatch(ctx context.Context, limit int) ([]contracts.DispatchSnapshot, error) {
+	return a.uc.ListPendingDispatch(ctx, limit)
 }

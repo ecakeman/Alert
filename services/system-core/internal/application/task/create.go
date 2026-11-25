@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/ecakeman/alert/services/system-core/internal/application/apperr"
+	portoutbox "github.com/ecakeman/alert/services/system-core/internal/application/port/outbox"
 	portshared "github.com/ecakeman/alert/services/system-core/internal/application/port/shared"
 	porttask "github.com/ecakeman/alert/services/system-core/internal/application/port/task"
 	"github.com/ecakeman/alert/services/system-core/internal/contracts"
@@ -17,6 +18,9 @@ const (
 	TaskTypeArchive   = "ARCHIVE"
 )
 
+// dispatchSchedulerConsumer 是 episode 派发快照的幂等消费者名（design 2.5.2）。
+const dispatchSchedulerConsumer = "task.episode-events.v1"
+
 // TaskSource 是任务创建触发来源。
 type TaskSource string
 
@@ -27,8 +31,9 @@ const (
 	SourceManualRetry     TaskSource = "MANUAL_RETRY"
 )
 
-// CreateInput 是任务创建输入。
+// CreateInput 是任务创建输入：快照由 episode 域提供，task 侧零回查。
 type CreateInput struct {
+	Snapshot  contracts.DispatchSnapshot
 	EpisodeID string
 	ServiceID string
 	TaskType  string
@@ -46,19 +51,37 @@ func validSource(taskType string, source TaskSource) bool {
 	}
 }
 
-// Create 在单事务内冻结输入、写任务（PENDING）与派发事件；bool=是否复用既有活动任务。
+// Create 在单事务内消费快照建任务（PENDING）并写派发事件；bool=是否复用既有活动任务。
+// 主路径不读取 episodes / input_versions；重复快照由幂等键拦截。
 func (s *Service) Create(ctx context.Context, in CreateInput) (TaskView, bool, error) {
+	if err := in.Snapshot.Validate(); err != nil {
+		return TaskView{}, false, apperr.Validation(err.Error())
+	}
 	if !validSource(in.TaskType, in.Source) {
 		return TaskView{}, false, apperr.Validation("task type and source mismatch")
 	}
+	snap := in.Snapshot
 	var view TaskView
 	var reused bool
+
 	err := s.deps.UOW.WithinTx(ctx, func(ctx context.Context, tx portshared.Tx) error {
-		episode, err := s.deps.Episodes.Get(ctx, tx, in.EpisodeID)
+		taskID := s.deps.IDs.NewID()
+		generation := int64(1)
+		key := fmt.Sprintf("episode:%s:%d:%s", snap.EpisodeID, snap.InputVersionTo, snap.Reason)
+		reserved, err := s.deps.Idem.Reserve(ctx, tx, portoutbox.ConsumerIdempotency{
+			Consumer:       dispatchSchedulerConsumer,
+			IdempotencyKey: key,
+			TaskID:         &taskID,
+			Generation:     &generation,
+		})
 		if err != nil {
 			return err
 		}
-		active, err := s.deps.Tasks.ListActiveByEpisode(ctx, tx, in.EpisodeID)
+		if !reserved {
+			return nil
+		}
+
+		active, err := s.deps.Tasks.ListActiveByEpisode(ctx, tx, snap.EpisodeID)
 		if err != nil {
 			return err
 		}
@@ -66,42 +89,38 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (TaskView, bool, e
 			if existing.TaskType == in.TaskType {
 				view = toTaskView(existing)
 				reused = true
-				return nil
+				return s.markDispatched(ctx, tx, key, "REUSED")
 			}
 		}
 		if len(active) > 0 {
 			return apperr.New(domain.CodeStateConflict, "another task type is active for this episode")
 		}
 
-		latest, err := s.deps.InputVersions.GetLatest(ctx, tx, in.EpisodeID)
-		if err != nil {
-			return err
-		}
-		from := episode.ProcessedInputVersion + 1
-		to := episode.InputVersion
-		if latest.InputVersion > to {
-			to = latest.InputVersion
-		}
+		from := snap.InputVersionFrom
+		to := snap.InputVersionTo
 		if in.TaskType == TaskTypeArchive {
+			if !snap.ArtifactReadiness.Investigation || !snap.ArtifactReadiness.DiagnosisReport || !snap.ArtifactReadiness.HashesMatch {
+				return s.markDispatched(ctx, tx, key, "SKIPPED_NOT_READY")
+			}
 			from = to
 		}
 		if in.TaskType == TaskTypeDiagnosis && from > to {
-			return nil
+			return s.markDispatched(ctx, tx, key, "SKIPPED_NO_INPUT")
 		}
 
 		now := s.deps.Clock.Now()
 		task := porttask.AgentTask{
-			TaskID:            s.deps.IDs.NewID(),
-			EpisodeID:         episode.EpisodeID,
-			ServiceID:         episode.ServiceID,
+			TaskID:            taskID,
+			EpisodeID:         snap.EpisodeID,
+			ServiceID:         snap.ServiceID,
 			TaskType:          in.TaskType,
 			Status:            string(domain.TaskPending),
-			Generation:        1,
+			Generation:        generation,
 			MaxAttempts:       s.deps.MaxAttempts,
 			InputVersionFrom:  from,
 			InputVersionTo:    to,
-			MonitorWatermark:  episode.MonitorWatermark,
-			AppEventWatermark: episode.AppEventWatermark,
+			MonitorWatermark:  snap.MonitorWatermark,
+			AppEventWatermark: snap.AppEventWatermark,
 			DeadlineAt:        now.Add(s.deps.Deadline),
 			CreatedAt:         now,
 			UpdatedAt:         now,
@@ -134,6 +153,10 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (TaskView, bool, e
 		return nil
 	})
 	return view, reused, err
+}
+
+func (s *Service) markDispatched(ctx context.Context, tx portshared.Tx, key, resultCode string) error {
+	return s.deps.Idem.MarkDone(ctx, tx, dispatchSchedulerConsumer, key, resultCode, s.deps.Clock.Now())
 }
 
 func toTaskView(t porttask.AgentTask) TaskView {

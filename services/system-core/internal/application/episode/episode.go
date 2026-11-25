@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 
 	"github.com/ecakeman/alert/services/system-core/internal/application/apperr"
@@ -56,7 +57,7 @@ func (s *Service) OpenOrReuse(ctx context.Context, serviceID string) (portepisod
 		decision := domain.DecideIncidentOnAbnormal(activeExists, active.EpisodeID)
 		if decision.Kind == domain.IncidentReuse {
 			ep = active
-			return nil
+			return s.appendDispatchable(ctx, tx, active, "INPUT_APPENDED")
 		}
 		now := s.deps.Clock.Now().UTC()
 		ep = portepisode.Episode{
@@ -67,8 +68,11 @@ func (s *Service) OpenOrReuse(ctx context.Context, serviceID string) (portepisod
 			return err
 		}
 		created = true
-		return s.appendEvent(ctx, tx, "episode.status.changed.v1", "episode", ep.EpisodeID,
-			map[string]string{"episode_id": ep.EpisodeID, "status": "ACTIVE"})
+		if err := s.appendEvent(ctx, tx, "episode.status.changed.v1", "episode", ep.EpisodeID,
+			map[string]string{"episode_id": ep.EpisodeID, "status": "ACTIVE"}); err != nil {
+			return err
+		}
+		return s.appendDispatchable(ctx, tx, ep, "INPUT_APPENDED")
 	})
 	return ep, created, err
 }
@@ -150,8 +154,18 @@ func (s *Service) AppendAppEvent(ctx context.Context, serviceID string, in AppEv
 			return err
 		}
 		res = AppendEventResult{Event: stored, Appended: true}
-		return s.appendEvent(ctx, tx, "episode.input.appended.v1", "service", serviceID,
-			map[string]string{"service_id": serviceID, "event_id": in.EventID})
+		if err := s.appendEvent(ctx, tx, "episode.input.appended.v1", "service", serviceID,
+			map[string]string{"service_id": serviceID, "event_id": in.EventID}); err != nil {
+			return err
+		}
+		active, aerr := s.deps.Episodes.GetActiveByService(ctx, tx, serviceID)
+		if aerr != nil {
+			if isAppCode(aerr, apperr.CodeNotFound) {
+				return nil
+			}
+			return aerr
+		}
+		return s.appendDispatchable(ctx, tx, active, "INPUT_APPENDED")
 	})
 	return res, err
 }
@@ -204,8 +218,16 @@ func (s *Service) AppendInputVersion(ctx context.Context, episodeID string) (boo
 			return err
 		}
 		appended = true
-		return s.appendEvent(ctx, tx, "episode.input.appended.v1", "episode", episodeID,
-			map[string]any{"episode_id": episodeID, "input_version": newVersion})
+		if err := s.appendEvent(ctx, tx, "episode.input.appended.v1", "episode", episodeID,
+			map[string]any{"episode_id": episodeID, "input_version": newVersion}); err != nil {
+			return err
+		}
+		updated := ep
+		updated.InputVersion = newVersion
+		updated.InputHash = hash
+		updated.MonitorWatermark = latestSeq
+		updated.AppEventWatermark = int64(1) << 62
+		return s.appendDispatchable(ctx, tx, updated, "INPUT_APPENDED")
 	})
 	return appended, err
 }
@@ -270,8 +292,13 @@ func (s *Service) TryResolve(ctx context.Context, episodeID string) (bool, []str
 			return nil
 		}
 		resolved = true
-		return s.appendEvent(ctx, tx, "episode.status.changed.v1", "episode", episodeID,
-			map[string]string{"episode_id": episodeID, "status": "RESOLVED"})
+		if err := s.appendEvent(ctx, tx, "episode.status.changed.v1", "episode", episodeID,
+			map[string]string{"episode_id": episodeID, "status": "RESOLVED"}); err != nil {
+			return err
+		}
+		resolvedEp := ep
+		resolvedEp.Status = "RESOLVED"
+		return s.appendDispatchable(ctx, tx, resolvedEp, "EPISODE_RESOLVED")
 	})
 	if err != nil {
 		return false, missing, err
@@ -336,4 +363,110 @@ func buildCanon(events []portepisode.AppEvent) []domain.AppCanon {
 		})
 	}
 	return out
+}
+
+// appendDispatchable 在同一事务内写入派发决策快照；无新输入或版本非法时不写。
+func (s *Service) appendDispatchable(ctx context.Context, tx portshared.Tx, ep portepisode.Episode, reason string) error {
+	snap, ok, err := s.buildDispatchSnapshot(ctx, tx, ep, reason)
+	if err != nil || !ok {
+		return err
+	}
+	body, err := json.Marshal(snap)
+	if err != nil {
+		return err
+	}
+	key := fmt.Sprintf("episode.dispatchable:%s:%d:%s", snap.EpisodeID, snap.InputVersionTo, snap.Reason)
+	return s.deps.Outbox.Append(ctx, tx, contracts.Event{
+		EventID: s.deps.IDs.NewID(), EventType: contracts.EventEpisodeDispatchable, SchemaVersion: 1,
+		AggregateType: "episode", AggregateID: snap.EpisodeID,
+		OccurredAt: s.deps.Clock.Now().UTC(), Payload: body,
+	}, &key)
+}
+
+// ListPendingDispatch 是对账兜底查询：只走 episode 域内部数据，task 不扫 episodes 表。
+func (s *Service) ListPendingDispatch(ctx context.Context, limit int) ([]contracts.DispatchSnapshot, error) {
+	if limit <= 0 || limit > 64 {
+		limit = 64
+	}
+	var out []contracts.DispatchSnapshot
+	err := s.deps.UOW.WithinTx(ctx, func(ctx context.Context, tx portshared.Tx) error {
+		cases := []struct {
+			status string
+			reason string
+		}{
+			{status: "ACTIVE", reason: "INPUT_APPENDED"},
+			{status: "RESOLVED", reason: "EPISODE_RESOLVED"},
+		}
+		for _, c := range cases {
+			eps, err := s.deps.Episodes.List(ctx, tx, portepisode.EpisodeFilter{Status: c.status, Limit: limit})
+			if err != nil {
+				return err
+			}
+			for _, ep := range eps {
+				snap, ok, err := s.buildDispatchSnapshot(ctx, tx, ep, c.reason)
+				if err != nil {
+					return err
+				}
+				if ok {
+					out = append(out, snap)
+				}
+			}
+		}
+		return nil
+	})
+	return out, err
+}
+
+func (s *Service) buildDispatchSnapshot(ctx context.Context, tx portshared.Tx, ep portepisode.Episode, reason string) (contracts.DispatchSnapshot, bool, error) {
+	to := ep.InputVersion
+	from := ep.ProcessedInputVersion + 1
+	if reason == "EPISODE_RESOLVED" {
+		if to <= 0 {
+			return contracts.DispatchSnapshot{}, false, nil
+		}
+		from = to
+	}
+	if to <= 0 || from > to {
+		return contracts.DispatchSnapshot{}, false, nil
+	}
+	readiness, err := s.artifactReadiness(ctx, tx, ep.EpisodeID)
+	if err != nil {
+		return contracts.DispatchSnapshot{}, false, err
+	}
+	return contracts.DispatchSnapshot{
+		EpisodeID:             ep.EpisodeID,
+		ServiceID:             ep.ServiceID,
+		EpisodeStatus:         ep.Status,
+		InputVersionFrom:      from,
+		InputVersionTo:        to,
+		MonitorWatermark:      ep.MonitorWatermark,
+		AppEventWatermark:     ep.AppEventWatermark,
+		FinalInputVersion:     ep.FinalInputVersion,
+		ProcessedInputVersion: ep.ProcessedInputVersion,
+		Reason:                reason,
+		ArtifactReadiness:     readiness,
+	}, true, nil
+}
+
+func (s *Service) artifactReadiness(ctx context.Context, tx portshared.Tx, episodeID string) (contracts.ArtifactReadiness, error) {
+	inv, invErr := s.deps.Artifacts.GetLatest(ctx, tx, episodeID, string(domain.ArtifactInvestigation))
+	if invErr != nil && !isArtifactMissing(invErr) {
+		return contracts.ArtifactReadiness{}, invErr
+	}
+	rep, repErr := s.deps.Artifacts.GetLatest(ctx, tx, episodeID, string(domain.ArtifactDiagnosisReport))
+	if repErr != nil && !isArtifactMissing(repErr) {
+		return contracts.ArtifactReadiness{}, repErr
+	}
+	hasInv := invErr == nil
+	hasRep := repErr == nil
+	return contracts.ArtifactReadiness{
+		Investigation:   hasInv,
+		DiagnosisReport: hasRep,
+		// P0 简化为“两份已登记且 hash 非空”；P4 改为跨域真实 hash 比对。
+		HashesMatch: hasInv && hasRep && inv.ContentHash != "" && rep.ContentHash != "",
+	}, nil
+}
+
+func isArtifactMissing(err error) bool {
+	return isAppCode(err, apperr.CodeNotFound) || isAppCode(err, apperr.CodeArtifactNotFound)
 }

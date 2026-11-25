@@ -29,7 +29,7 @@ func NewWorker(sh *Shared, r *Repos, ucs *UseCases) (*Worker, error) {
 		return nil, err
 	}
 	agent := grpcclient.NewAgentClient(sh.Cfg.AgentGRPCTarget, sh.Cfg.AgentGRPCTimeout)
-	ucs.Task = newTaskService(sh, r, agent)
+	ucs.Task = newTaskService(sh, r, agent, episodeDispatchAdapter{uc: ucs.Episode})
 
 	engine := probe.NewEngine(probe.EngineDeps{
 		Source: ucs.Monitor,
