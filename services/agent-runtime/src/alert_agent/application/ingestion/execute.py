@@ -1,11 +1,10 @@
-"""ProcessIngestion use case (T20, CR-ING-03~05).
+"""ProcessIngestion 用例（T20，CR-ING-03~05）。
 
-Flow per job: runtime re-validation of the callback URL (T19 rules reused) ->
-PROCESSING mark + callback -> load/chunk/embed/write in one transaction ->
-READY (chunkCount) or FAILED (errorMsg <= 500, no credentials/full paths) ->
-terminal callback. The job table is the reconciliation authority: callback
-failures are logged and retried in-implementation, never fatal to the flow
-(CR-ING-05).
+每个作业的流程：运行时重新校验回调 URL（复用 T19 规则）->
+标记 PROCESSING 并回调 -> 在单个事务中完成加载/分块/向量化/写入 ->
+READY（含 chunkCount）或 FAILED（errorMsg <= 500，不含凭据/完整路径）->
+终态回调。作业表是对账的权威来源：回调失败会被记录日志并在实现内部重试，
+对流程而言永远不是致命错误（CR-ING-05）。
 """
 
 from __future__ import annotations
@@ -27,7 +26,7 @@ LOGGER = logging.getLogger(__name__)
 
 
 class ProcessIngestion:
-    """One persisted job's full execution."""
+    """一个已持久化作业的完整执行流程。"""
 
     def __init__(
         self,
@@ -51,7 +50,7 @@ class ProcessIngestion:
     async def execute(self, job: IngestJob) -> None:
         doc_id = job.doc_id
         try:
-            # Runtime re-validation of the callback URL (T19 rules reused).
+            # 运行时重新校验回调 URL（复用 T19 规则）。
             validate_callback_url(job.callback_url, self._allowlist)
         except PathRuleError as exc:
             await self._fail(doc_id, f"INVALID_CALLBACK: {exc}")
@@ -84,7 +83,7 @@ class ProcessIngestion:
             else []
         )
         by_content_id = {id(child): vector for child, vector in zip(children, vectors)}
-        # Parents carry no embedding (excluded from the vector leg, CR-REG-24).
+        # 父分块不携带向量（不参与向量化环节，CR-REG-24）。
         return [
             by_content_id.get(id(chunk)) if not chunk.is_parent else None
             for chunk in chunks

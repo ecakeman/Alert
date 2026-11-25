@@ -1,9 +1,8 @@
-"""Run-role wiring split: grpc / http / worker (CR-BOOT-04, ST-Boot-01/02).
+"""运行角色装配拆分：grpc / http / worker（CR-BOOT-04，ST-Boot-01/02）。
 
-Each builder returns a self-contained role object; the entrypoint selects the
-role combination (D4 single-process dual server in this phase). Builders are
-called by ``lifespan``/``app.main`` so nothing here is dead code; bodies grow
-in their owning tasks (servicer registration T07, worker loops T08).
+每个构建器返回一个自包含的角色对象；入口选择角色组合（本阶段为 D4
+单进程双服务器）。构建器由 ``lifespan``/``app.main`` 调用，因此这里不存在
+死代码；函数体随各自的任务增长（servicer 注册 T07、worker 循环 T08）。
 """
 
 from __future__ import annotations
@@ -46,7 +45,7 @@ class WorkerRole:
     tasks: list[asyncio.Task[None]] = field(default_factory=list)
 
     async def start(self) -> None:
-        """Start background loops; loop registration lands with the worker batch (T08)."""
+        """启动后台循环；循环注册随 worker 批次落地（T08）。"""
 
     async def stop(self) -> None:
         for task in self.tasks:
@@ -57,8 +56,8 @@ class WorkerRole:
 
 
 def build_grpc_role(settings: Settings, submit: SubmitTask) -> GrpcRole:
-    """Create the grpc.aio server, register the SubmitTask servicer and bind it
-    (T07, CR-GW-02); the servicer is a real wired dependency, not dead code."""
+    """创建 grpc.aio 服务器、注册 SubmitTask servicer 并完成绑定
+    （T07，CR-GW-02）；该 servicer 是真实接线的依赖，不是死代码。"""
     server = grpc.aio.server()
     agent_task_pb2_grpc.add_AgentTaskServiceServicer_to_server(AgentTaskServicer(submit), server)
     bound = server.add_insecure_port(settings.gateway.agent_grpc_listen)
@@ -68,7 +67,7 @@ def build_grpc_role(settings: Settings, submit: SubmitTask) -> GrpcRole:
 
 
 def build_worker_role(settings: Settings) -> WorkerRole:
-    """Assemble the worker role; queue/heartbeat/recovery loops land in T08."""
+    """装配 worker 角色；队列/心跳/恢复循环在 T08 落地。"""
     return WorkerRole()
 
 

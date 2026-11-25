@@ -1,4 +1,4 @@
-"""Ingest wire DTOs: camelCase per the RAG protocol style (CR-LAY-10)."""
+"""Ingest 线上 DTO：按照 RAG 协议风格采用 camelCase（CR-LAY-10）。"""
 
 from __future__ import annotations
 

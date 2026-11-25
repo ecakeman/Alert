@@ -1,12 +1,11 @@
-"""ExecuteDiagnosis use case: the TaskExecutor port implementation for
-DIAGNOSIS tasks (T13, design 4.2/4.3, CR-DIAG-*).
+"""ExecuteDiagnosis 用例：DIAGNOSIS 任务对应的 TaskExecutor 端口实现
+（T13，design 4.2/4.3，CR-DIAG-*）。
 
-One call covers the whole diagnosis task: started callback, task-context
-consistency check, graph construction over the frozen boundary, bounded loop
-execution, dual-artifact write/registration (via the WRITE node) and the
-result callback. Failures surface as domain errors after ``report_failure``
-(carries retryable/code/message, CR-TASK-12/13); CancelledError from heartbeat
-threshold cancellation propagates untouched (CR-TASK-06/07).
+一次调用覆盖整个诊断任务：started 回调、任务上下文一致性检查、在冻结边界
+之上构建图、有界循环执行、双产物写入/注册（经 WRITE 节点）以及结果回调。
+失败在 ``report_failure`` 之后以领域错误的形式浮出（携带
+retryable/code/message，CR-TASK-12/13）；心跳阈值取消引发的
+CancelledError 原样向上传播（CR-TASK-06/07）。
 """
 
 from __future__ import annotations
@@ -37,7 +36,7 @@ LOGGER = logging.getLogger(__name__)
 
 
 def prompt_budgets_from(settings: DiagnosisSettings) -> PromptBudgets:
-    """Single-source prompt budgets (CR-REG-05; no duplicated constants)."""
+    """唯一来源的提示词预算（CR-REG-05；无重复常量）。"""
     return PromptBudgets(
         timeline_chars=settings.prompt_timeline_budget_chars,
         search_chars=settings.prompt_search_budget_chars,
@@ -50,8 +49,8 @@ def prompt_budgets_from(settings: DiagnosisSettings) -> PromptBudgets:
 
 
 class ExecuteDiagnosis(TaskExecutor):
-    """DIAGNOSIS task runner; the graph is compiled per task because the
-    router/nodes carry that task's clock and start time."""
+    """DIAGNOSIS 任务执行器；由于路由器/节点携带该任务的时钟与开始时间，
+    图按任务逐一编译。"""
 
     def __init__(
         self,
@@ -103,8 +102,8 @@ class ExecuteDiagnosis(TaskExecutor):
         started_at = self._clock.now()
         initial = DiagnosisState(
             identity=identity,
-            # service_name is not carried by the contract; the id is the honest
-            # display value (no fabricated names).
+            # 契约不携带 service_name；id 即为诚实的展示值
+            # （不编造名称）。
             service_id=submission.service_id,
             service_name=submission.service_id,
             boundary=boundary,
@@ -122,17 +121,16 @@ class ExecuteDiagnosis(TaskExecutor):
         )
         router = DiagnosisRouter(self._clock, started_at)
         graph = build_diagnosis_graph(nodes, router)
-        # Recursion cap derived from the budget (no magic constant): worst
-        # chain is (decide + tool) per round plus load/write/finalize margin.
+        # 递归上限由预算推导（无魔法常量）：最坏链路为每轮
+        # (decide + tool)，外加 load/write/finalize 的余量。
         recursion_limit = diagnosis_settings.diagnosis_max_tool_rounds * 3 + 8
         try:
             final = await graph.ainvoke(
                 initial.model_dump(), config={"recursion_limit": recursion_limit}
             )
         except (RetryableError, FatalError) as exc:
-            # report_failure is issued here (the worker only writes the
-            # receipt); Go-side fence semantics make a duplicate replay
-            # idempotent (CR-TASK-12/13).
+            # report_failure 在此处发出（worker 只写回执）；
+            # Go 侧的栅栏语义使重复回放具有幂等性（CR-TASK-12/13）。
             await self._gateway.report_failure(
                 TaskFailureReport(
                     identity=submission.identity,
@@ -150,6 +148,6 @@ class ExecuteDiagnosis(TaskExecutor):
             final_state.phase,
             final_state.partial,
         )
-        # partial=true is still a finished task: the explicit incomplete
-        # report was registered as DIAGNOSIS_REPORT (CR-DIAG-14).
+        # partial=true 仍是一个已完成的任务：显式的不完整报告已注册为
+        # DIAGNOSIS_REPORT（CR-DIAG-14）。
         await self._gateway.report_result(identity)

@@ -1,13 +1,12 @@
-"""RAG loop node implementations (T17, design 3.2.2, CR-RAG-05~17).
+"""RAG 循环节点实现（T17，design 3.2.2，CR-RAG-05~17）。
 
-Eight nodes (rewrite/router/decompose/retrieve/grade/sufficiency/synthesize/
-verify) plus the explicit refuse and done nodes. Nodes return incremental
-dicts only (CR-REG-02); every trace entry carries real elapsed milliseconds
-(CR-REG-12). ``emit`` and ``started_at`` arrive per invocation through the
-runnable config -- the graph stays a singleton without emit binding
-(CR-RAG-15, CR-REG-11). Grade degradation gives every candidate a default 7
-(>= threshold) and sets ``degraded`` so a degraded grade still allows
-answering (CR-RAG-11); out-of-range candidate ids are dropped (CR-RAG-09).
+八个节点（rewrite/router/decompose/retrieve/grade/sufficiency/synthesize/
+verify）加上显式的 refuse 与 done 节点。节点只返回增量字典（CR-REG-02）；
+每条 trace 记录携带真实的耗时毫秒数（CR-REG-12）。``emit`` 与
+``started_at`` 通过 runnable config 逐次传入——图保持为单例且不绑定
+emit（CR-RAG-15，CR-REG-11）。评分降级时给每个候选一个默认分 7
+（>= 阈值）并设置 ``degraded``，使降级评分仍可作答（CR-RAG-11）；
+超出范围的候选 id 被丢弃（CR-RAG-09）。
 """
 
 from __future__ import annotations
@@ -35,7 +34,7 @@ from alert_agent.domain.shared import ErrorCode, FatalError, RetryableError
 
 LOGGER = logging.getLogger(__name__)
 
-_GRADE_FALLBACK_SCORE = 7  # >= threshold 6: degraded grade still answers (CR-RAG-11)
+_GRADE_FALLBACK_SCORE = 7  # >= 阈值 6：降级评分仍可作答（CR-RAG-11）
 _EXCERPT_CHARS = 200
 
 
@@ -62,8 +61,8 @@ class SufficiencyOutput(BaseModel):
 
 
 class RetrievalNodes:
-    """Node bundle wired into the compiled retrieval graph (singleton-safe:
-    all per-invocation state arrives through the config)."""
+    """接入编译后检索图的节点集合（单例安全：
+    所有逐次调用的状态都通过 config 传入）。"""
 
     def __init__(
         self,
@@ -86,12 +85,12 @@ class RetrievalNodes:
 
     @property
     def clock(self) -> Clock:
-        """Public read-only clock for the graph singleton's router wiring."""
+        """供图单例的路由器接线使用的公开只读时钟。"""
         return self._clock
 
     @property
     def budget(self) -> RetrievalBudget:
-        """Public read-only budget for the use-case entry (initial state)."""
+        """供用例入口使用的公开只读预算（初始状态）。"""
         return self._budget
 
     async def _emit(self, config: RunnableConfig, event: str, data: dict[str, Any]) -> None:
@@ -120,7 +119,7 @@ class RetrievalNodes:
     async def rewrite(self, state: RetrievalState, config: RunnableConfig) -> dict[str, Any]:
         started = self._now_ms()
         if not state.history:
-            # No history: skip the model entirely (design 3.2.2).
+            # 无历史记录：完全跳过模型（design 3.2.2）。
             trace = await self._trace(config, "rewrite", "skipped", "no history", started)
             query = state.question
             return {
@@ -195,7 +194,7 @@ class RetrievalNodes:
         return {
             "current_query": query,
             "candidates": result.chunks,
-            "hits": new_hits,  # ReduceAppend merges into the deduplicated pool
+            "hits": new_hits,  # ReduceAppend 合并进去重池
             "new_hit_count": len(new_hits),
             "zero_new_hits": zero_new,
             "hop": state.hop + 1,
@@ -222,7 +221,7 @@ class RetrievalNodes:
                 ),
                 user=f"[问题]\n{state.standalone_query or state.question}\n\n[候选片段]\n{listing}",
             )
-            # Out-of-range ids are dropped and counted (CR-RAG-09).
+            # 超出范围的 id 被丢弃并计数（CR-RAG-09）。
             size = len(state.candidates)
             items = tuple(
                 item for item in output.items if 0 <= item.id < size
@@ -244,8 +243,8 @@ class RetrievalNodes:
             )
             llm_calls = state.llm_calls + 1
         except (RetryableError, FatalError) as exc:
-            # CR-RAG-11: degradation stays self-consistent -- default scores
-            # stay at/above the threshold so the loop can still answer.
+            # CR-RAG-11：降级保持自洽——默认分数
+            # 保持在阈值及以上，循环仍可作答。
             size = len(state.candidates)
             decision = GradeDecision(
                 items=tuple(GradeItem(id=i, score=_GRADE_FALLBACK_SCORE) for i in range(size)),
@@ -334,13 +333,13 @@ class RetrievalNodes:
         )
         verdict = "PASS" if valid else "FAIL"
         trace = await self._trace(config, "verify", verdict, f"citations={len(state.citations)}", started)
-        # verify self-counts; routing only reads the counter (CR-RAG-14).
+        # verify 自行计数；路由只读取计数器（CR-RAG-14）。
         return {"verified": verdict, "verify_attempts": state.verify_attempts + 1, "trace": [trace]}
 
     async def refuse(self, state: RetrievalState, config: RunnableConfig) -> dict[str, Any]:
         started = self._now_ms()
         trace = await self._trace(config, "refuse", "ok", "fixed refusal, no fabricated answer", started)
-        # Fixed wording + empty citations; never model-invented content (3.2.4).
+        # 固定文案 + 空引用；绝不输出模型编造的内容（3.2.4）。
         return {"answer": self._refusal_message, "citations": (), "verified": "SKIPPED", "trace": [trace]}
 
     async def done(self, state: RetrievalState, config: RunnableConfig) -> dict[str, Any]:

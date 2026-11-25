@@ -1,11 +1,9 @@
-"""Decision prompt construction (design 3.1.5, CR-DIAG-07, CR-REG-05).
+"""决策提示词构建（design 3.1.5，CR-DIAG-07，CR-REG-05）。
 
-Fixed structure, never the whole state dumped into one message: system
-instructions, task view, per-list evidence summaries with explicit character
-budgets (truncation visible), the executed-action table, the last error and
-the remaining budget. User-derived content is escaped into XML boundary tags
-so injected text cannot cross sections (5.3.7); suspected injection features
-are flagged for a ``security`` trace by the caller.
+固定结构，绝不把整个状态倾倒进一条消息：系统指令、任务视图、带有显式
+字符预算（截断可见）的各列表证据摘要、已执行动作表、最近一次错误与
+剩余预算。用户派生的内容被转义进 XML 边界标签，注入的文本无法跨越
+分区（5.3.7）；疑似注入特征由调用方标记为 ``security`` trace。
 """
 
 from __future__ import annotations
@@ -63,7 +61,7 @@ SYSTEM_PROMPT = (
 
 @dataclass(frozen=True, slots=True)
 class PromptBudgets:
-    """Per-section character/item budgets, all from centralized settings."""
+    """各分区的字符/条目预算，全部来自集中式配置。"""
 
     timeline_chars: int
     search_chars: int
@@ -98,7 +96,7 @@ def _json(value: Any) -> str:
 def build_decision_messages(
     state: DiagnosisState, *, budgets: PromptBudgets, now: datetime
 ) -> DecisionMessages:
-    """Assemble the fixed-structure decision prompt for one DECIDE round."""
+    """为一次 DECIDE 轮次组装固定结构的决策提示词。"""
     boundary = state.boundary
     sections: list[str] = [
         _section(

@@ -1,4 +1,4 @@
-"""Archive domain models (M6): fault search index and fault document."""
+"""归档领域模型（M6）：故障搜索索引与故障文档。"""
 
 from alert_agent.domain.archive.index import (
     FaultDocument,

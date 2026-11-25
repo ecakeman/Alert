@@ -1,9 +1,9 @@
-"""Diagnosis budget model (design 3.1.3, CR-DIAG-13/14, D10).
+"""诊断预算模型（design 3.1.3，CR-DIAG-13/14，D10）。
 
-Defaults mirror the D10 magnitude and stay overridable from the centralized
-Settings (DIAGNOSIS_MAX_TOOL_ROUNDS family, T02). Exhausting any budget must
-lead to an explicit ``partial=true`` outcome with unknowns -- never a scripted
-fallback conclusion (CR-DIAG-14).
+默认值与 D10 的量级保持一致，且可由集中式的
+Settings 覆盖（DIAGNOSIS_MAX_TOOL_ROUNDS 族，T02）。任何预算耗尽都必须
+导向显式的 ``partial=true`` 结果并附带 unknowns——绝不使用脚本化的
+回退结论（CR-DIAG-14）。
 """
 
 from __future__ import annotations

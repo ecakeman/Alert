@@ -1,8 +1,8 @@
-"""SSE frame encoder (T23, design 3.2.3, CR-RAG-17).
+"""SSE 帧编码器（T23，design 3.2.3，CR-RAG-17）。
 
-Five event classes with contract-exact camelCase data fields; frames are
-``event: <name>\\ndata: <json>\\n\\n``. Payload models from domain.retrieval.sse
-carry the aliases, so no hand-written camelCase strings appear here.
+五类事件，数据字段与契约完全一致的 camelCase；帧格式为
+``event: <name>\\ndata: <json>\\n\\n``。载荷模型来自 domain.retrieval.sse，
+别名由其携带，因此这里不出现手写的 camelCase 字符串。
 """
 
 from __future__ import annotations
@@ -25,7 +25,7 @@ EVENT_ERROR = "error"
 
 
 def encode_event(event: str, data: dict) -> str:
-    """One SSE frame; non-serializable values degrade to str safely."""
+    """编码单个 SSE 帧；不可序列化的值安全降级为 str。"""
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False, default=str)}\n\n"
 
 

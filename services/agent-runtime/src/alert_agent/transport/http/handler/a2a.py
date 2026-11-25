@@ -1,11 +1,10 @@
-"""A2A server handlers (T22, design 4.5.1, CR-GW-08, CR-LAY-04).
+"""A2A 服务端处理器（T22，design 4.5.1，CR-GW-08，CR-LAY-04）。
 
-``/.well-known/agent.json`` publishes the fixed three-skill card;
-``/a2a/message/send`` maps an A2A Message request onto the SAME application
-use cases as the HTTP routes (retrieval -> dual-leg searcher; diagnosis/
-archive -> task-dispatch guidance) -- no second business implementation.
-message/send requires the internal token (T18 dependency, constant-time
-compare); the card is public discovery metadata.
+``/.well-known/agent.json`` 发布固定的三技能卡片；
+``/a2a/message/send`` 将 A2A Message 请求映射到与 HTTP 路由完全相同的
+应用用例（检索 -> 双路检索器；诊断/归档 -> 任务分发指引）——不实现第二套
+业务逻辑。message/send 需要内部令牌（T18 依赖，恒定时间比较）；卡片是公开
+的发现元数据。
 """
 
 from __future__ import annotations
@@ -18,13 +17,13 @@ from alert_agent.infrastructure.a2a.card import build_agent_card
 
 
 async def agent_card() -> dict:
-    """Public AgentCard discovery endpoint."""
+    """公开的 AgentCard 发现端点。"""
     return json.loads(build_agent_card().model_dump_json())
 
 
 def _extract_skill_and_text(body: dict) -> tuple[str, str]:
-    """Minimal A2A Message parsing: metadata.skill picks the skill; text parts
-    concatenate into the query."""
+    """最小化的 A2A Message 解析：metadata.skill 选择技能；text 部分
+    拼接为查询。"""
     message = body.get("message") or {}
     metadata = message.get("metadata") or {}
     skill = str(metadata.get("skill", "retrieval"))
@@ -73,8 +72,8 @@ async def message_send(request: Request) -> dict:
             "metadata": {"skill": "retrieval"},
         }
     if skill in ("diagnosis", "archive"):
-        # Task skills execute only through Go's SubmitTask dispatch; A2A
-        # message/send answers with the authoritative entry-point guidance.
+        # 任务类技能只能通过 Go 的 SubmitTask 分发执行；A2A
+        # message/send 以权威的入口指引作为响应。
         return {
             "role": "assistant",
             "parts": [

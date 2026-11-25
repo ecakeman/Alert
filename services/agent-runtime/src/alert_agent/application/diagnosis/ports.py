@@ -1,9 +1,8 @@
-"""Diagnosis use-case ports (design 3.1, §7.3).
+"""诊断用例端口（design 3.1，§7.3）。
 
-``LlmDecider`` is the structured-decision port implemented by the LLM adapter
-(T11); ``ToolExecutor`` is the action-execution port implemented by the
-diagnosis tool batch (T13). Ports speak domain models only (CR-LAY-07); no
-transport or persistence technology imports here (CR-LAY-02).
+``LlmDecider`` 是由 LLM 适配器（T11）实现的结构化决策端口；
+``ToolExecutor`` 是由诊断工具批次（T13）实现的动作执行端口。端口只涉及
+领域模型（CR-LAY-07）；此处不含任何传输或持久化技术导入（CR-LAY-02）。
 """
 
 from __future__ import annotations
@@ -15,9 +14,9 @@ from alert_agent.domain.diagnosis.state import DiagnosisState
 
 
 class LlmDecider(Protocol):
-    """Structured JSON decision/report generation with schema constraint and
-    explicit low temperature (CR-DIAG-08/09); parse retries stay inside the
-    implementation, never silent (CR-REG-13)."""
+    """带 schema 约束与显式低温度的结构化 JSON 决策/报告生成
+    （CR-DIAG-08/09）；解析重试保留在实现内部，绝不静默
+    （CR-REG-13）。"""
 
     async def decide(
         self,
@@ -30,8 +29,8 @@ class LlmDecider(Protocol):
 
 
 class ToolExecutor(Protocol):
-    """Executes one validated action against the current state and returns an
-    incremental state dict (CR-DIAG-02, CR-REG-02); failures are classified as
-    RetryableError/FatalError and surfaced, never swallowed (CR-REG-47)."""
+    """对当前状态执行一个已校验的动作并返回增量状态字典
+    （CR-DIAG-02，CR-REG-02）；失败被归类为 RetryableError/FatalError
+    并浮出，绝不吞掉（CR-REG-47）。"""
 
     async def execute(self, state: DiagnosisState, action: Action) -> dict[str, Any]: ...

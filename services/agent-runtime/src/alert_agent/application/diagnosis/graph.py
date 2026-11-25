@@ -1,11 +1,10 @@
-"""Diagnosis loop graph compilation (design 3.1.4).
+"""诊断循环图编译（design 3.1.4）。
 
-StateGraph over the pydantic ``DiagnosisState`` carrier with node-increment
-merging (list fields merge via the model's ``ReduceAppend`` reducers). The
-graph is compiled once per process and invoked per task; conditional edges
-consume phase + action jointly via ``DiagnosisRouter``. Terminal DONE/FAILED
-assignment stays with the runner (execute batch, T13) except the in-graph
-explicit partial outcome.
+基于 pydantic ``DiagnosisState`` 载体的 StateGraph，采用节点增量合并
+（列表字段通过模型的 ``ReduceAppend`` reducer 合并）。图每个进程编译一次、
+按任务逐次调用；条件边通过 ``DiagnosisRouter`` 联合消费 phase + action。
+终态 DONE/FAILED 的赋值保留在运行器中（执行批次，T13），图内的显式
+部分结果除外。
 """
 
 from __future__ import annotations
@@ -32,7 +31,7 @@ _LOOP_TARGETS = {
 def build_diagnosis_graph(
     nodes: DiagnosisNodes, router: DiagnosisRouter
 ) -> CompiledStateGraph:
-    """Compile the constrained diagnosis loop (LOAD/DECIDE/TOOL/WRITE)."""
+    """编译受限的诊断循环（LOAD/DECIDE/TOOL/WRITE）。"""
     graph = StateGraph(DiagnosisState)
     graph.add_node("load", nodes.load)
     graph.add_node("decide", nodes.decide)

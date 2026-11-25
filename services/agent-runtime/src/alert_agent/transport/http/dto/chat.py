@@ -1,5 +1,5 @@
-"""Chat surface DTOs (7.4.8, CR-RAG-20): validation rules live at the DTO
-layer; the chat handler itself wires with T23 (SSE)."""
+"""Chat 接口 DTO（7.4.8，CR-RAG-20）：校验规则位于 DTO 层；chat 处理器
+本身与 T23（SSE）对接。"""
 
 from __future__ import annotations
 
@@ -14,12 +14,12 @@ _HISTORY_MAX = 6  # 7.4.8
 class ChatTurnDto(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
-    role: Literal["user", "assistant"]  # CR-RAG-20: only user/assistant
+    role: Literal["user", "assistant"]  # CR-RAG-20：仅允许 user/assistant
     content: str = Field(min_length=1)
 
 
 class ChatRequestDto(BaseModel):
-    """message non-empty, history <= 6 turns, roles restricted (7.4.8)."""
+    """message 非空，history 不超过 6 轮，role 受限（7.4.8）。"""
 
     model_config = ConfigDict(populate_by_name=True)
 

@@ -1,4 +1,4 @@
-"""HTTP mapper package: the single DTO <-> domain conversion point."""
+"""HTTP 映射器包：DTO 与领域模型互相转换的唯一入口。"""
 
 from alert_agent.transport.http.mapper.ingest import (
     accepted_from,

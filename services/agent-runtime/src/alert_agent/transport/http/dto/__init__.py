@@ -1,4 +1,4 @@
-"""HTTP DTO package: camelCase wire contracts for the RAG protocol surface."""
+"""HTTP DTO 包：RAG 协议对外接口的 camelCase 线上契约。"""
 
 from alert_agent.transport.http.dto.chat import ChatRequestDto, ChatTurnDto
 from alert_agent.transport.http.dto.search import (

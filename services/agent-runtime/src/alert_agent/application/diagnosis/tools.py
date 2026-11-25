@@ -1,11 +1,10 @@
-"""Diagnosis tool executors for the five action types (design 3.1, T13).
+"""五种动作类型的诊断工具执行器（design 3.1，T13）。
 
-Implements the ``ToolExecutor`` port: timeline reads stay strictly inside the
-frozen boundary via GetTaskContext (CR-DIAG-10), fault retrieval goes through
-the ``FaultDocSearcher`` port (CR-DIAG-12), knowledge failures are recorded in
-the state instead of being raised (CR-DIAG-16), and MCP calls validate the
-tool name against the live directory first (CR-DIAG-06). Unwired optional
-ports fail explicitly -- never with fabricated results (CR-DISC-05).
+实现 ``ToolExecutor`` 端口：时间轴读取严格限制在冻结边界之内、经由
+GetTaskContext（CR-DIAG-10），故障检索经由 ``FaultDocSearcher`` 端口
+（CR-DIAG-12），知识调用失败记录在状态中而不是抛出（CR-DIAG-16），
+MCP 调用先用实时目录校验工具名（CR-DIAG-06）。未接线的可选端口显式
+失败——绝不使用编造的结果（CR-DISC-05）。
 """
 
 from __future__ import annotations
@@ -31,7 +30,7 @@ LOGGER = logging.getLogger(__name__)
 
 
 class DiagnosisToolExecutor:
-    """Five-action executor over gateway/knowledge/MCP/fault-search ports."""
+    """基于网关/知识/MCP/故障检索端口的五动作执行器。"""
 
     def __init__(
         self,
@@ -55,17 +54,16 @@ class DiagnosisToolExecutor:
             return await self._invoke_knowledge(state, action)
         if action.type == "call_mcp_tool":
             return await self._call_mcp_tool(state, action)
-        # finish is handled by routing (write boundary); reaching this point
-        # with any other/unknown type is a deterministic input error.
+        # finish 由路由处理（写入边界）；以其他/未知类型到达此处的
+        # 属于确定性的输入错误。
         raise FatalError(ErrorCode.INPUT_INVALID, f"action type is not executable here: {action.type}")
 
     async def _query_timeline(self, state: DiagnosisState) -> dict[str, Any]:
-        """CR-DIAG-10: the range comes only from the frozen boundary carried
-        by the task identity; GetTaskContext validates it on the Go side
-        (OUT_OF_RANGE). The current task_gateway contract returns boundary
-        fields only -- no record channel exists yet, so the timeline stays
-        explicitly empty ("no records" is a visible decision fact, 6.3.3.2);
-        see the T13 contract-gap disclosure."""
+        """CR-DIAG-10：范围只来自任务身份携带的冻结边界；GetTaskContext
+        在 Go 侧校验它（OUT_OF_RANGE）。当前 task_gateway 契约只返回
+        boundary 字段——尚无记录通道，因此时间轴保持显式为空
+        （"无记录"是可见的决策事实，6.3.3.2）；
+        参见 T13 契约缺口披露。"""
         context = await self._gateway.get_task_context(state.identity)
         boundary = state.boundary
         diverges = (
@@ -109,8 +107,8 @@ class DiagnosisToolExecutor:
         try:
             hits = await self._knowledge.invoke(invocation)
         except (RetryableError, FatalError) as exc:
-            # CR-DIAG-16: a knowledge failure is state, not a task failure --
-            # it stays visible in the next decision prompt and in unknowns.
+            # CR-DIAG-16：知识调用失败是状态而非任务失败——
+            # 它在下一次决策提示词和 unknowns 中保持可见。
             error = f"{exc.code.value}: {exc.message}"
             LOGGER.warning("knowledge invocation failed: %s", error)
             record = KnowledgeCallRecord(results=(), error=error, called=True)
@@ -138,7 +136,7 @@ class DiagnosisToolExecutor:
 
     @staticmethod
     def _invocation_id(state: DiagnosisState, query: str) -> str:
-        """Idempotency key carrier: task_id + generation + query_hash
-        (CR-KNOW-04) packed into the InvocationV1 identifier."""
+        """幂等键载体：task_id + generation + query_hash
+        （CR-KNOW-04）打包进 InvocationV1 标识符。"""
         query_hash = hashlib.sha256(query.encode("utf-8")).hexdigest()[:16]
         return f"{state.identity.task_id}-{state.identity.generation}-{query_hash}"

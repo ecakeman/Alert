@@ -1,12 +1,12 @@
-"""RetrievalState: the single langgraph state carrier for the RAG loop
-(design 3.2.1, CR-RAG-01/02/03).
+"""RetrievalState：RAG 循环唯一的 langgraph 状态载体
+（design 3.2.1，CR-RAG-01/02/03）。
 
-All decision-chain objects are first-class fields (rewrite trace, grade
-decision, sufficiency) -- never buried in dicts (CR-RAG-01). ``hits``
-accumulates deduplicated chunks by chunk_id (dedup happens in nodes, T17);
-``zero_new_hits`` tracks consecutive no-new-hit hops for the termination
-gate; ``verify_attempts`` is incremented by the verify node itself and only
-read by routing (CR-RAG-14).
+所有决策链对象均为一等字段（重写轨迹、评分
+决策、充分性判断）——绝不埋在字典中（CR-RAG-01）。``hits``
+ 按 chunk_id 累积去重后的 chunk（去重在节点中完成，T17）；
+``zero_new_hits`` 追踪连续无新命中的跳数，供终止
+门控使用；``verify_attempts`` 由 verify 节点自身递增，仅由
+路由读取（CR-RAG-14）。
 """
 
 from __future__ import annotations
@@ -35,7 +35,7 @@ VerifyVerdict = Literal["PASS", "FAIL", "SKIPPED"]
 class RetrievalState(BaseModel):
     model_config = ConfigDict(validate_assignment=True)
 
-    # session and question
+    # 会话与问题
     session_id: str = Field(min_length=1)
     question: str = Field(min_length=1)
     history: tuple[ChatTurn, ...] = ()
@@ -44,7 +44,7 @@ class RetrievalState(BaseModel):
     qtype: QType | None = None
     sub_questions: tuple[str, ...] = ()
 
-    # retrieval progress (single-hop tracking)
+    # 检索进度（单跳跟踪）
     hop: int = Field(default=0, ge=0)
     llm_calls: int = Field(default=0, ge=0)
     zero_new_hits: int = Field(default=0, ge=0)
@@ -52,17 +52,17 @@ class RetrievalState(BaseModel):
     hits: Annotated[list[RetrievedChunk], ReduceAppend] = Field(default_factory=list)
     new_hit_count: int = 0
 
-    # decision chain
+    # 决策链
     rewrite_trace: RewriteTrace | None = None
     grade_decision: GradeDecision | None = None
     sufficiency: SufficiencyDecision | None = None
 
-    # synthesis and verification
+    # 合成与核验
     answer: str = ""
     citations: tuple[Citation, ...] = ()
     verified: VerifyVerdict | None = None
     verify_attempts: int = Field(default=0, ge=0)
 
-    # observation and budget
+    # 观测与预算
     trace: Annotated[list[TraceNode], ReduceAppend] = Field(default_factory=list)
     budget: RetrievalBudget

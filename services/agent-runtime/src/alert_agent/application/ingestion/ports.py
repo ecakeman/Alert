@@ -1,10 +1,9 @@
-"""Ingestion ports (T19/T20, CR-ING-02~07).
+"""摄取端口（T19/T20，CR-ING-02~07）。
 
-``IngestJobStore`` is the persisted authority: create/get/mark/delete with
-doc-id idempotency (CR-ING-03/07). The execution-side ports (``Chunker``/
-``ContentLoader``/``IngestionWriter``/``CallbackSender``) keep the use case
-free of technology imports (CR-LAY-02); implementations land in
-infrastructure (T20).
+``IngestJobStore`` 是持久化的权威来源：以 doc-id 幂等的方式执行
+create/get/mark/delete（CR-ING-03/07）。执行侧端口（``Chunker``/
+``ContentLoader``/``IngestionWriter``/``CallbackSender``）使用例层
+不依赖任何技术导入（CR-LAY-02）；具体实现位于基础设施层（T20）。
 """
 
 from __future__ import annotations
@@ -18,8 +17,8 @@ from alert_agent.domain.ingestion.job import IngestJob, IngestStatus
 
 class IngestJobStore(Protocol):
     async def create(self, job: IngestJob) -> bool:
-        """Insert QUEUED; False when doc_id already exists (idempotent
-        acceptance, CR-ING-03)."""
+        """插入 QUEUED 状态的作业；doc_id 已存在时返回 False（幂等接入，
+        CR-ING-03）。"""
         ...
 
     async def get(self, doc_id: str) -> IngestJob | None: ...
@@ -34,16 +33,16 @@ class IngestJobStore(Protocol):
     ) -> bool: ...
 
     async def delete(self, doc_id: str) -> bool:
-        """Idempotent removal of the job row (CR-ING-07)."""
+        """幂等删除作业行（CR-ING-07）。"""
         ...
 
     async def list_queued(self, limit: int = 10) -> list[IngestJob]:
-        """Oldest QUEUED jobs for the ingestion worker (T20)."""
+        """供摄取 worker 使用的最早 QUEUED 作业列表（T20）。"""
         ...
 
 
 class DocumentChunk(BaseModel):
-    """One chunk of the ingestion pipeline; parents carry full sections."""
+    """摄取流水线中的一个分块；父分块携带完整章节。"""
 
     model_config = ConfigDict(frozen=True)
 
@@ -56,20 +55,20 @@ class DocumentChunk(BaseModel):
 
 
 class Chunker(Protocol):
-    """Deterministic parent/child chunking (no LLM in the chunking path)."""
+    """确定性的父/子分块（分块路径中不使用 LLM）。"""
 
     def chunk(self, content: str) -> list[DocumentChunk]: ...
 
 
 class ContentLoader(Protocol):
-    """Reads one document body from the ingest root (path rules enforced)."""
+    """从摄取根目录读取单个文档正文（强制执行路径规则）。"""
 
     async def load(self, file_path: str) -> str: ...
 
 
 class IngestionWriter(Protocol):
-    """Single-transaction write of the document + parent/child chunks with
-    embeddings; pre-cleaned for idempotent re-runs (CR-ING-03/04)."""
+    """将文档 + 父/子分块及向量写入单个事务；预先清理以支持幂等重跑
+    （CR-ING-03/04）。"""
 
     async def write(
         self,
@@ -84,8 +83,8 @@ class IngestionWriter(Protocol):
 
 
 class CallbackSender(Protocol):
-    """Three-state callback with the internal token (CR-ING-05); bounded
-    retries inside, the job table stays the reconciliation authority."""
+    """携带内部 token 的三态回调（CR-ING-05）；内部含有限次重试，
+    作业表仍是对账的权威来源。"""
 
     async def send(
         self,

@@ -1,4 +1,4 @@
-"""Artifact file store: atomic writes under the storage root (design 4.6, D5)."""
+"""产物文件存储：存储根目录下的原子写入（design 4.6，D5）。"""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""SSE transport package (T23): five-event frame encoding."""
+"""SSE 传输包（T23）：五类事件的帧编码。"""
 
 from alert_agent.transport.sse.encoder import (
     citations_frame,

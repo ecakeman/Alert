@@ -1,1 +1,1 @@
-"""Ingestion application package (M8, batches T19~T20)."""
+"""摄取应用包（M8，批次 T19~T20）。"""

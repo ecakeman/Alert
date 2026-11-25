@@ -1,13 +1,11 @@
-"""In-process BM25 index (T16, design 5.1, CR-RAG-08, CR-REG-24, D9).
+"""进程内 BM25 索引（T16，design 5.1，CR-RAG-08，CR-REG-24，D9）。
 
-Single-instance contract (D9): one index per process, assembled by wiring;
-it is NOT a distributed store. The asyncio lock protects only the snapshot
-swap and the lazy warm-up; tokenization and scoring run outside the lock
-(CR-REG-24). Updates mark the snapshot dirty and the rebuild happens once
-before the next search -- never a full rebuild per ingested chunk (CR-RAG-08).
-Parent chunks are excluded explicitly (``is_parent`` false, CR-REG-24); the
-lazy warm-up loads READY documents' chunks from Postgres once. An empty
-index is a real, distinguishable state (leg_status carries it, CR-RAG-06).
+单实例契约（D9）：每个进程一个索引，由装配层组装；它不是分布式存储。
+asyncio 锁只保护快照交换与惰性预热；分词与打分在锁外运行（CR-REG-24）。
+更新将快照标记为脏，重建在下一次搜索前仅执行一次——绝不按每个摄取的
+块全量重建（CR-RAG-08）。父块被显式排除（``is_parent`` 为假，CR-REG-24）；
+惰性预热一次性从 Postgres 加载 READY 文档的块。空索引是真实且可区分的
+状态（由 leg_status 承载，CR-RAG-06）。
 """
 
 from __future__ import annotations
@@ -23,7 +21,7 @@ LOGGER = logging.getLogger(__name__)
 
 
 def tokenize(text: str) -> list[str]:
-    """jieba tokenization for BM25 (runs outside the snapshot lock)."""
+    """BM25 的 jieba 分词（在快照锁之外运行）。"""
     return [token.strip() for token in jieba.cut_for_search(text) if token.strip()]
 
 
@@ -31,7 +29,7 @@ import jieba
 
 
 class _Snapshot:
-    """Immutable index snapshot; swapping it is the only locked operation."""
+    """不可变的索引快照；交换快照是唯一加锁的操作。"""
 
     __slots__ = ("bm25", "chunks", "tokenized")
 
@@ -47,7 +45,7 @@ class _Snapshot:
 
 
 class InProcessBm25Index:
-    """``Bm25Index`` port implementation (T16); single instance per process."""
+    """``Bm25Index`` 端口实现（T16）；每个进程单实例。"""
 
     def __init__(self, pool) -> None:
         self._pool = pool
@@ -61,7 +59,7 @@ class InProcessBm25Index:
     ) -> list[RetrievedChunk]:
         await self._ensure_ready()
         tokens = tokenize(query)
-        snapshot = self._snapshot  # snapshot read: scoring runs lock-free
+        snapshot = self._snapshot  # 快照读取：打分在无锁状态下运行
         if snapshot.bm25 is None or not tokens:
             return []
         scores = snapshot.bm25.get_scores(tokens)
@@ -80,8 +78,8 @@ class InProcessBm25Index:
         return results
 
     async def update(self, chunks: list[RetrievedChunk]) -> None:
-        """Incremental update: append non-parent chunks and mark dirty; the
-        rebuild happens once before the next search (CR-RAG-08)."""
+        """增量更新：追加非父块并标记脏状态；重建在下一次搜索前
+        执行一次（CR-RAG-08）。"""
         fresh = [chunk for chunk in chunks if chunk.parent_id is None]
         if not fresh:
             return
@@ -107,7 +105,7 @@ class InProcessBm25Index:
             self._dirty = False
 
     async def _load_chunks(self) -> list[RetrievedChunk]:
-        """Warm-up: READY documents' non-parent chunks (single load)."""
+        """预热：READY 文档的非父块（仅加载一次）。"""
         query = """
         SELECT c.chunk_id, c.doc_id, c.parent_id, c.content, c.section_path, c.page
         FROM cognitive.retrieval_chunks c
@@ -139,7 +137,7 @@ class InProcessBm25Index:
 
 
 class _ChunkRow:
-    """Warm-up projection row (infrastructure only)."""
+    """预热投影行（仅基础设施层使用）。"""
 
     chunk_id: str
     doc_id: str

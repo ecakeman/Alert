@@ -1,4 +1,4 @@
-"""gRPC transport: AgentTaskService servicer (thin protocol adaptation, CR-GW-02/03)."""
+"""gRPC 传输层：AgentTaskService servicer（薄协议适配，CR-GW-02/03）。"""
 
 from __future__ import annotations
 

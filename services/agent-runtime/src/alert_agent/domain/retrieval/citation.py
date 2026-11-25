@@ -1,7 +1,7 @@
-"""Citation model (design 3.2.1, CR-RAG-19).
+"""引用模型（design 3.2.1，CR-RAG-19）。
 
-Numbers are consecutive from 1 in answer order; ``text_excerpt`` is capped at
-200 characters; unverifiable citations are dropped by the verify node (T17).
+编号在答案中从 1 起连续递增；``text_excerpt`` 上限为
+200 字符；无法核实的引用由 verify 节点丢弃（T17）。
 """
 
 from __future__ import annotations

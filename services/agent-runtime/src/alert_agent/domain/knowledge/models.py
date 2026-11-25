@@ -1,10 +1,10 @@
-"""Knowledge invocation domain models (design 4.5.2, CR-KNOW-01~03).
+"""知识调用领域模型（design 4.5.2，CR-KNOW-01~03）。
 
-``InvocationV1`` is the only way a knowledge request is built (CR-KNOW-01);
-camelCase wire aliases are declared once here and serialization later uses
-``model_dump(by_alias=True)`` so no hand-written camelCase payload strings
-appear elsewhere (CR-REG-30). ``knownFacts`` is JSON-serialized with
-``ensure_ascii=False`` downstream (CR-KNOW-02).
+``InvocationV1`` 是构建知识请求的唯一方式（CR-KNOW-01）；
+camelCase 线上别名仅在此声明一次，后续序列化使用
+``model_dump(by_alias=True)``，因此其他地方不会出现手写的
+camelCase 负载字符串（CR-REG-30）。``knownFacts`` 在下游以
+``ensure_ascii=False`` 进行 JSON 序列化（CR-KNOW-02）。
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class InvocationConstraints(BaseModel):
-    """Explicit topK / requireCitations expression (CR-KNOW-03)."""
+    """显式的 topK / requireCitations 表达（CR-KNOW-03）。"""
 
     model_config = ConfigDict(frozen=True, populate_by_name=True)
 
@@ -24,8 +24,8 @@ class InvocationConstraints(BaseModel):
 
 
 class InvocationContext(BaseModel):
-    """Caller context attached to one invocation; ``knownFacts`` entries are
-    plain strings so downstream serialization stays deterministic."""
+    """附着在一次调用上的调用方上下文；``knownFacts`` 条目为
+    纯字符串，使下游序列化保持确定性。"""
 
     model_config = ConfigDict(frozen=True, populate_by_name=True)
 
@@ -49,9 +49,9 @@ class InvocationV1(BaseModel):
 
 
 class KnowledgeHit(BaseModel):
-    """One knowledge result; must carry a referenceable id and content
-    (CR-DIAG-17, CR-KNOW-07) -- malformed hits fail validation instead of
-    raising deep AttributeErrors."""
+    """单条知识结果；必须携带可引用的 id 与内容
+    （CR-DIAG-17，CR-KNOW-07）——格式错误的命中在
+    校验阶段即失败，而不是在深处抛出 AttributeError。"""
 
     model_config = ConfigDict(frozen=True, populate_by_name=True)
 

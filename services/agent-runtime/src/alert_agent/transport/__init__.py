@@ -1,6 +1,5 @@
-"""Transport layer: protocol bindings (HTTP routes, gRPC servicer, SSE).
+"""传输层：协议绑定（HTTP 路由、gRPC servicer、SSE）。
 
-Transport performs binding, basic validation, use-case calls, DTO mapping
-and response writing only; business rules and SQL stay in application
-(CR-LAY-04). It must not import infrastructure implementations or bootstrap.
+传输层只负责绑定、基础校验、用例调用、DTO 映射与响应写出；业务规则和 SQL 留在
+应用层（CR-LAY-04）。禁止导入基础设施实现或 bootstrap。
 """

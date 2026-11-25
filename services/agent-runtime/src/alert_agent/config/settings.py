@@ -1,15 +1,15 @@
-"""Centralised runtime settings with fail-fast validation.
+"""集中式运行时配置，带快速失败校验。
 
-Single pydantic-settings entry (CR-BOOT-01): grouped frozen models assembled
-into ``Settings``; every key, default, range and timeout is declared exactly
-once (CR-BOOT-02, CR-REG-29, CR-REG-32 -- no duplicate names, no ``or
-default`` swallowing of ``0``). ``load_settings`` is the only supported entry
-point: it rejects placeholder values for required keys with a desensitised
-error that lists variable names but never values (CR-BOOT-03, 6.9.2.1) and
-enforces cross-group consistency (grpc/http listen-port clash 6.9.2.2,
-heartbeat vs lease/ownership, recovery scan period). All instances are
-frozen: runtime code must never mutate configuration after startup
-(CR-BOOT-02).
+唯一的 pydantic-settings 入口（CR-BOOT-01）：分组的冻结模型组装为
+``Settings``；每个键、默认值、取值范围与超时仅声明
+一次（CR-BOOT-02，CR-REG-29，CR-REG-32——无重复命名，无 ``or
+default`` 吞掉 ``0`` 的情况）。``load_settings`` 是唯一受支持的入口
+点：对必填键的占位值予以拒绝，并给出脱敏后的
+错误——只列出变量名而绝不显示值（CR-BOOT-03，6.9.2.1），
+同时强制跨组一致性（grpc/http 监听端口冲突 6.9.2.2、
+heartbeat 与 lease/ownership 的关系、恢复扫描周期）。所有实例均为
+冻结：启动之后运行时代码绝不变更配置
+（CR-BOOT-02）。
 """
 
 from __future__ import annotations
@@ -39,7 +39,7 @@ _PLACEHOLDER_CHECKS: tuple[tuple[str, tuple[str, ...]], ...] = (
 
 
 class ConfigError(Exception):
-    """Startup configuration failure; the message names variables, never values."""
+    """启动配置失败；消息只点名变量，绝不显示值。"""
 
 
 class _FrozenModel(BaseModel):
@@ -303,9 +303,9 @@ def _desensitise(group_name: str, exc: ValidationError) -> list[str]:
 
 
 def load_settings(env_file: str | Path = _ENV_FILE) -> Settings:
-    """Build and validate the settings tree; raise ConfigError on any failure.
+    """构建并校验配置树；任何失败都抛出 ConfigError。
 
-    Errors list variable names and reasons only -- never secret values.
+    错误只列出变量名与原因——绝不显示敏感值。
     """
     built: dict[str, BaseSettings] = {}
     failures: list[str] = []

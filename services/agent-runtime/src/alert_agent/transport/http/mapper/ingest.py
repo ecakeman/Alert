@@ -1,4 +1,4 @@
-"""Ingest DTO <-> domain mapping: the single conversion point (CR-LAY-10)."""
+"""Ingest DTO 与领域模型映射：唯一转换点（CR-LAY-10）。"""
 
 from __future__ import annotations
 

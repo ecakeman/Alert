@@ -1,12 +1,11 @@
-"""Single-process dual-server lifespan (D4, design 4.1, CR-BOOT-05~07).
+"""单进程双服务器 lifespan（D4，design 4.1，CR-BOOT-05~07）。
 
-Startup order: settings fail-fast (done by the entrypoint) -> Postgres pool ->
-worker role -> grpc.aio server with the SubmitTask servicer (T07) -> ready
-checks registered. Shutdown runs in reverse within the configured budget
-(<= 20 s): /ready gates off first, gRPC stops with grace, worker loops drain,
-then the pool and channel close. Signals stay with uvicorn's native lifespan
-handling plus the standard library -- no private-API hacks (CR-BOOT-07).
-Worker loop registration lands with the worker batch (T08).
+启动顺序：settings 快速失败（由入口完成）-> Postgres 连接池 ->
+worker 角色 -> 带 SubmitTask servicer 的 grpc.aio 服务器（T07）-> 注册就绪
+检查。关闭按相反顺序在配置的预算内（<= 20 秒）执行：/ready 先行关闭，
+gRPC 优雅停止，worker 循环清空，随后关闭连接池与 channel。信号处理保持在
+uvicorn 原生 lifespan 机制和标准库之内——不使用私有 API 的 hack
+（CR-BOOT-07）。worker 循环注册随 worker 批次落地（T08）。
 """
 
 from __future__ import annotations
@@ -45,33 +44,30 @@ def build_lifespan(settings: Settings) -> Callable[[FastAPI], AbstractAsyncConte
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         pool = build_pool(settings)
         await pool.open()
-        # T18: the /search handler resolves its searcher from app.state; the
-        # dependency is assembled here where the pool lives (disclosed
-        # whitelist-external line, CR-DISC-03).
+        # T18：/search 处理器从 app.state 解析其检索器；该依赖在持有
+        # 连接池的此处装配（已披露的白名单外行，CR-DISC-03）。
         app.state.retrieval_searcher = build_retrieval_searcher(settings, pool)
-        # T19: the ingest handlers resolve their acceptance use case from
-        # app.state as well (disclosed whitelist-external line, CR-DISC-03).
+        # T19：ingest 处理器同样从 app.state 解析其受理用例
+        # （已披露的白名单外行，CR-DISC-03）。
         app.state.ingestion_accept = build_ingestion_acceptance(settings, pool)
-        # T23: the /chat handler resolves its chat use case from app.state
-        # (disclosed whitelist-external line, CR-DISC-03).
+        # T23：/chat 处理器从 app.state 解析其 chat 用例
+        # （已披露的白名单外行，CR-DISC-03）。
         app.state.chat_answer = build_chat_answer(settings, pool)
 
-        # One bounded queue shared by the submit path and the consumers
-        # (CR-TASK-08); queue-full keeps the receipt as the awaiting-recovery
-        # fact and reports accepted=false (6.1.3.1).
+        # 提交路径与消费方共用一个有界队列（CR-TASK-08）；队列已满时
+        # 保持回执作为"待恢复"事实并报告 accepted=false（6.1.3.1）。
         queue = BoundedTaskQueue(settings.gateway.queue_capacity)
         submit = EnqueueingSubmit(build_submit_use_case(pool), queue)
         worker_role = build_worker_role(settings)
         grpc_channel = build_gateway_channel(settings)
-        # T13/T14 wiring: the task-type dispatcher (DIAGNOSIS + ARCHIVE) is
-        # registered before the worker runtime so the loops stop idling;
-        # knowledge/MCP stay unwired until T22/T21 and their actions fail
-        # explicitly then.
+        # T13/T14 装配：任务类型分发器（DIAGNOSIS + ARCHIVE）在 worker
+        # 运行时启动之前注册，使各循环不再空转；knowledge/MCP 在 T22/T21
+        # 之前保持未接线，届时其动作将显式失败。
         register_task_executor(build_task_executor(settings, pool, grpc_channel))
         worker_runtime = build_task_worker_runtime(settings, pool, grpc_channel, queue)
         worker_role.tasks.extend(await worker_runtime.start())
-        # T20: the ingestion worker loop polls QUEUED jobs until READY/FAILED
-        # (disclosed whitelist-external registration, CR-DISC-03).
+        # T20：ingestion worker 循环持续轮询 QUEUED 状态的 job 直至
+        # READY/FAILED（已披露的白名单外注册，CR-DISC-03）。
         ingest_worker = build_ingestion_worker(settings, pool)
         worker_role.tasks.append(
             asyncio.create_task(ingest_worker.run_forever(), name="ingest-worker")

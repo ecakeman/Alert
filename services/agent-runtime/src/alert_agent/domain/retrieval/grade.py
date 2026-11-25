@@ -1,10 +1,10 @@
-"""Grade decision models (design 3.2.1, CR-RAG-09).
+"""评分决策模型（design 3.2.1，CR-RAG-09）。
 
-Per-candidate scores are 0..10 integers; ``threshold`` defaults to 6 and is
-configuration-overridable; ``accepted_ids`` must cover the candidate set and
-out-of-range ids are dropped by the grade node (T17). ``degraded`` marks the
-fallback path whose default scores stay at/above the threshold so a degraded
-grade still allows answering (CR-RAG-11, no semantic contradiction).
+每个候选的分数为 0..10 的整数；``threshold`` 默认为 6，且可
+通过配置覆盖；``accepted_ids`` 必须覆盖候选集合，
+超出范围的 id 由评分节点丢弃（T17）。``degraded`` 标记
+降级回退路径，其默认分数保持在阈值或以上，因此降级
+评分仍允许给出答案（CR-RAG-11，无语义矛盾）。
 """
 
 from __future__ import annotations

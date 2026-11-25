@@ -1,8 +1,7 @@
-"""DeleteIngestion use case (T20, CR-ING-07).
+"""DeleteIngestion 用例（T20，CR-ING-07）。
 
-Idempotent removal: deleting a non-existent docId is still a success. The
-document (with its chunks, cascaded by the migration FK) and the job row are
-removed together; the job row deletion is the acceptance-side truth.
+幂等删除：删除不存在的 docId 仍然视为成功。文档（连同其分块，由迁移外键级联删除）
+与作业行一并移除；作业行的删除是接入侧的最终事实。
 """
 
 from __future__ import annotations

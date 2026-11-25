@@ -1,1 +1,1 @@
-"""MCP session application package (M5, wired by T21)."""
+"""MCP 会话应用包（M5，由 T21 接线）。"""

@@ -1,4 +1,4 @@
-"""Shared application ports: clock and identifier generation."""
+"""共享的应用端口：时钟与标识符生成。"""
 
 from __future__ import annotations
 

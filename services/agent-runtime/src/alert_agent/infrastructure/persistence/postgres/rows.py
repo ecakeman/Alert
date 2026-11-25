@@ -1,7 +1,7 @@
-"""Row models for Postgres persistence (infrastructure-only, CR-LAY-07).
+"""Postgres 持久化的行模型（仅基础设施层使用，CR-LAY-07）。
 
-Row shapes live here and never leak into application/domain types; the
-repositories map rows to port models at the boundary.
+行结构只存放在此，绝不泄漏到应用/领域类型；仓储在边界处把行映射为
+端口模型。
 """
 
 from __future__ import annotations
@@ -11,7 +11,7 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True, slots=True)
 class ReceiptRow:
-    """Projection of cognitive.agent_task_receipts used by the receipt repo."""
+    """回执仓储使用的 cognitive.agent_task_receipts 投影。"""
 
     task_id: str
     generation: int

@@ -1,9 +1,8 @@
-"""Ingestion HTTP callback client (T20, CR-ING-05).
+"""摄取 HTTP 回调客户端（T20，CR-ING-05）。
 
-Three-state callbacks carry the internal token; failures get bounded retries
-with backoff and are surfaced as a False return -- the persisted job table
-stays the reconciliation authority, so a permanently failed callback is never
-silent at the status-query layer (CR-ING-06).
+三态回调携带内部令牌；失败做有界退避重试，并以 False 返回值暴露——
+持久化的任务表始终是对账权威，因此永久失败的回调在状态查询层绝不静默
+（CR-ING-06）。
 """
 
 from __future__ import annotations
@@ -17,7 +16,7 @@ LOGGER = logging.getLogger(__name__)
 
 
 class HttpCallbackSender:
-    """``CallbackSender`` port implementation (T20)."""
+    """``CallbackSender`` 端口实现（T20）。"""
 
     def __init__(
         self,

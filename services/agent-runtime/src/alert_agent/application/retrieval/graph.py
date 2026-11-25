@@ -1,11 +1,10 @@
-"""RAG loop graph compilation as a module-level singleton (T17, design 3.2.2,
-CR-RAG-15, CR-REG-11).
+"""RAG 循环图编译为模块级单例（T17，design 3.2.2，
+CR-RAG-15，CR-REG-11）。
 
-The graph is compiled exactly once per process behind a double-checked lock;
-it holds NO emit binding -- ``emit`` and ``started_at`` travel through the
-runnable config on every invocation, so ``id(emit)`` style caching cannot
-happen. The recursion cap is derived from the budget and the node count
-(CR-RAG-13), not an independent magic constant.
+图在每个进程中仅通过双重检查锁编译一次；它不持有任何 emit 绑定——
+``emit`` 与 ``started_at`` 在每次调用时通过 runnable config 传递，
+因此不会发生 ``id(emit)`` 式的缓存。递归上限由预算与节点数推导
+（CR-RAG-13），而不是一个独立的魔法常量。
 """
 
 from __future__ import annotations
@@ -68,7 +67,7 @@ def _build(nodes: RetrievalNodes, router: RetrievalRouter) -> CompiledStateGraph
 async def get_compiled_graph(
     build_nodes: Callable[[], RetrievalNodes],
 ) -> CompiledStateGraph:
-    """Compile once per process; ``build_nodes`` runs only on the first call."""
+    """每个进程仅编译一次；``build_nodes`` 只在首次调用时执行。"""
     global _GRAPH
     if _GRAPH is None:
         async with _GRAPH_LOCK:

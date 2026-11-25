@@ -1,19 +1,17 @@
-"""Worker runtime: bounded-queue consumers, heartbeat renewal, recovery scan
-(design 4.1/4.2, CR-TASK-06~11).
+"""Worker 运行时：有界队列消费方、心跳续租、恢复扫描
+（design 4.1/4.2，CR-TASK-06~11）。
 
-Role split stays narrow (CR-REG-27, avoiding the god-object): ``TaskRunner``
-owns one task's lifecycle -- receipt RUNNING, heartbeat monitor with
-failure-threshold cancellation, deadline enforcement, terminal receipt write;
-``TaskWorkerRuntime`` owns the loops; ``EnqueueingSubmit`` bridges the submit
-use case and the bounded queue. In-flight cleanup happens in the innermost
-finally of the per-task run (CR-TASK-09, CR-REG-45). Heartbeat failures are
-logged with ``LOGGER.exception`` and counted, never swallowed (CR-REG-47);
-reaching the threshold cancels the executor task and the receipt records the
-termination (CR-TASK-06/07).
+角色拆分保持狭窄（CR-REG-27，规避上帝对象）：``TaskRunner`` 掌管单个任务
+的生命周期——回执置 RUNNING、带失败阈值取消的心跳监控、deadline 强制执行、
+终态回执写入；``TaskWorkerRuntime`` 掌管各循环；``EnqueueingSubmit`` 在提交
+用例与有界队列之间架桥。执行中的清理发生在单任务运行最内层的 finally 中
+（CR-TASK-09，CR-REG-45）。心跳失败以 ``LOGGER.exception`` 记录并计数，
+绝不吞掉（CR-REG-47）；达到阈值会取消执行器任务，回执记录该终止
+（CR-TASK-06/07）。
 
-The executor is late-bound from bootstrap wiring: diagnosis/archive executors
-land with T13/T14. Until then ``start()`` keeps every loop idle with an
-explicit warning -- no fake execution (CR-DISC-05).
+执行器由 bootstrap 装配延迟绑定：diagnosis/archive 执行器随 T13/T14 落地。
+在此之前 ``start()`` 使所有循环保持空闲并输出显式警告——不做虚假执行
+（CR-DISC-05）。
 """
 
 from __future__ import annotations
@@ -54,7 +52,7 @@ _TASK_KEY = tuple[str, int]
 
 @dataclass
 class TaskRunner:
-    """One task's lifecycle: RUNNING -> executor -> terminal receipt."""
+    """单个任务的生命周期：RUNNING -> 执行器 -> 终态回执。"""
 
     store: ReceiptStore
     gateway: TaskGateway
@@ -67,12 +65,12 @@ class TaskRunner:
         self._in_flight: set[_TASK_KEY] = set()
 
     async def run(self, run: QueuedTask) -> None:
-        """Execute one queued task with full exception isolation (CR-TASK-09)."""
+        """以完整的异常隔离执行一个排队任务（CR-TASK-09）。"""
         if run.submission is not None:
             key: _TASK_KEY = (run.submission.identity.task_id, run.submission.identity.generation)
         elif run.receipt is not None:
             key = (run.receipt.task_id, run.receipt.generation)
-        else:  # unreachable: QueuedTask validates exactly one source
+        else:  # 不可达：QueuedTask 校验恰好有一个来源
             return
         self._in_flight.add(key)
         stop = asyncio.Event()
@@ -80,7 +78,7 @@ class TaskRunner:
         exec_task: asyncio.Task[None] | None = None
         try:
             if not await self._store.mark_running(key[0], key[1], started_at=self._clock.now()):
-                # Older generation or already advanced (CR-REG-41 generation condition).
+                # 更旧 generation 或已推进（CR-REG-41 generation 条件）。
                 LOGGER.info("receipt %s gen %d no longer ACCEPTED; skip run", *key)
                 return
             if run.submission is None:
@@ -94,7 +92,7 @@ class TaskRunner:
             remaining = (submission.boundary.deadline_at - self._clock.now()).total_seconds()
             done, _pending = await asyncio.wait({exec_task}, timeout=max(remaining, 0.0))
             if exec_task not in done:
-                # Total-duration deadline (5.1.5, CR-REG-38): stop and record.
+                # 总时长 deadline（5.1.5，CR-REG-38）：停止并记录。
                 exec_task.cancel()
                 await asyncio.wait({exec_task})
                 await self._finish(
@@ -105,7 +103,7 @@ class TaskRunner:
                     CallbackState.NOT_SENT,
                 )
             elif exec_task.cancelled():
-                # Heartbeat threshold cancellation (CR-TASK-06/07, CR-REG-44).
+                # 心跳阈值取消（CR-TASK-06/07，CR-REG-44）。
                 await self._finish(
                     key,
                     ReceiptStatus.FAILED,
@@ -143,7 +141,8 @@ class TaskRunner:
     async def _heartbeat_loop(
         self, identity: TaskIdentity, exec_task: asyncio.Task[None], stop: asyncio.Event
     ) -> None:
-        """Renew at <= lease/3; count failures, cancel at threshold (CR-TASK-06/07)."""
+        """以 <= lease/3 的间隔续租；失败计数，达到阈值即取消
+        （CR-TASK-06/07）。"""
         failures = 0
         while not stop.is_set():
             try:
@@ -164,8 +163,8 @@ class TaskRunner:
                         self.heartbeat_failure_threshold,
                     )
             except Exception:
-                # CancelledError propagates (not an Exception); every renewal
-                # failure is logged, never swallowed (CR-REG-47).
+                # CancelledError 会向上传播（不继承 Exception）；每次续租
+                # 失败都被记录，绝不吞掉（CR-REG-47）。
                 failures += 1
                 LOGGER.exception(
                     "heartbeat renewal failed for task %s gen %d (%d/%d)",
@@ -184,9 +183,9 @@ class TaskRunner:
                 return
 
     async def _finish_unrenewable(self, receipt: UnfinishedReceipt) -> None:
-        """Recovered run without a persisted lease/boundary (migration 0001):
-        advance to a retryable terminal state so Go re-dispatches a fresh
-        generation with a new lease (5.2.2 "executable or retryable state")."""
+        """缺少持久化 lease/boundary 的恢复运行（migration 0001）：
+        推进到可重试的终态，使 Go 以新 lease 重新分发新的 generation
+        （5.2.2 "executable or retryable state"）。"""
         LOGGER.warning(
             "recovered task %s gen %d cannot renew: lease token is not persisted; needs re-dispatch",
             receipt.task_id,
@@ -224,18 +223,18 @@ class TaskRunner:
 
 
 def _classify(exc: BaseException) -> tuple[str, str]:
-    """Short error code + readable message; only domain failures carry codes (CR-TASK-12/13)."""
+    """短错误码 + 可读消息；仅领域失败携带错误码（CR-TASK-12/13）。"""
     if isinstance(exc, (RetryableError, FatalError)):
         return exc.code.value, exc.message
     return "EXECUTOR_ERROR", str(exc)[:500]
 
 
 class EnqueueingSubmit:
-    """Submit use case + bounded-queue enqueue (design 4.2, CR-TASK-08).
+    """提交用例 + 有界队列入队（design 4.2，CR-TASK-08）。
 
-    Receipt persistence is the acceptance fact. Enqueue failure keeps the
-    "awaiting recovery" fact and reports ``accepted=false`` (6.1.3.1) instead
-    of a fake success; duplicates never re-enqueue (CR-TASK-01).
+    回执持久化即受理事实。入队失败保持"待恢复"事实并报告
+    ``accepted=false``（6.1.3.1），而非虚假成功；重复任务绝不重新入队
+    （CR-TASK-01）。
     """
 
     def __init__(self, submit: SubmitTask, queue: TaskQueue) -> None:
@@ -259,7 +258,7 @@ class EnqueueingSubmit:
 
 
 class TaskWorkerRuntime:
-    """Owns the queue-consumer and recovery-scan loops (CR-REG-27 role split)."""
+    """掌管队列消费与恢复扫描循环（CR-REG-27 角色拆分）。"""
 
     def __init__(
         self,
@@ -279,7 +278,7 @@ class TaskWorkerRuntime:
         self._observation_sink = observation_sink
 
     async def start(self) -> list[asyncio.Task[None]]:
-        """Create the loop tasks; idle when the executor is not wired yet (T13/T14)."""
+        """创建循环任务；执行器尚未接线时保持空闲（T13/T14）。"""
         if self._runner.executor is None:
             LOGGER.warning(
                 "task executor is not wired yet (T13/T14 wiring); worker loops stay idle"
@@ -291,7 +290,7 @@ class TaskWorkerRuntime:
         ]
         tasks.append(asyncio.create_task(self._recovery_loop(), name="task-recovery-scan"))
         if self._observation_sink is not None:
-            # T23: background batched flush for cognitive.llm_calls (CR-REG-19).
+            # T23：面向 cognitive.llm_calls 的后台批量刷写（CR-REG-19）。
             tasks.append(
                 asyncio.create_task(
                     self._observation_sink.flush_forever(), name="observe-flush"
@@ -305,8 +304,8 @@ class TaskWorkerRuntime:
             try:
                 await self._runner.run(run)
             except Exception:
-                # Isolation belt: TaskRunner.run already guards; this keeps the
-                # consumer alive no matter what (CR-TASK-09).
+                # 隔离保险：TaskRunner.run 已有防护；这里保证无论如何
+                # 消费方都存活（CR-TASK-09）。
                 LOGGER.exception("consumer %d: task run escaped the runner guard", index)
 
     async def _recovery_loop(self) -> None:
@@ -318,7 +317,7 @@ class TaskWorkerRuntime:
             except asyncio.CancelledError:
                 raise
             except Exception:
-                LOGGER.exception("recovery scan failed")  # CR-REG-47: never silent
+                LOGGER.exception("recovery scan failed")  # CR-REG-47：绝不静默
             await asyncio.sleep(self._recovery_interval)
 
 
@@ -328,12 +327,11 @@ def build_task_worker_runtime(
     channel: grpc.aio.Channel,
     queue: BoundedTaskQueue,
 ) -> TaskWorkerRuntime:
-    """Assemble queue/runner/recovery with the wired gateway client and store.
+    """使用已接线的 gateway 客户端与存储装配队列/runner/恢复。
 
-    ``queue`` is passed in by the lifespan so the submit path and the
-    consumers share one bounded instance (CR-TASK-08). The executor is
-    late-bound from wiring (``resolve_task_executor``) and is None until
-    T13/T14 land; loops stay idle meanwhile (CR-DISC-05).
+    ``queue`` 由 lifespan 传入，使提交路径与消费方共用同一个有界实例
+    （CR-TASK-08）。执行器由装配侧延迟绑定（``resolve_task_executor``），
+    在 T13/T14 落地之前为 None；期间各循环保持空闲（CR-DISC-05）。
     """
     executor = _resolve_task_executor()
     store = build_receipt_store(pool)
@@ -359,9 +357,9 @@ def build_task_worker_runtime(
 
 
 def _resolve_task_executor() -> TaskExecutor | None:
-    """Late-bind the executor from wiring (T13/T14); None keeps loops idle.
+    """从装配侧延迟绑定执行器（T13/T14）；为 None 时循环保持空闲。
 
-    Late import keeps T08 static-verifiable before the executor modules exist.
+    延迟导入使 T08 在执行器模块存在之前即可静态验证。
     """
     try:
         from alert_agent.bootstrap.wiring import resolve_task_executor

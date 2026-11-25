@@ -1,4 +1,4 @@
-"""Cognitive schema migration adapters: forward-only runner (D6, CR-REG-37/49)."""
+"""cognitive schema 迁移适配器：仅向前执行器（D6，CR-REG-37/49）。"""
 
 from __future__ import annotations
 

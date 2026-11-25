@@ -1,10 +1,10 @@
-"""Reciprocal Rank Fusion as a pure function (design 5.1, CR-RAG-04).
+"""倒数排名融合（RRF），以纯函数实现（design 5.1，CR-RAG-04）。
 
-Every rank list contributes ``1 / (k + rank)`` for each position; fused
-scores order the final candidates. Multi-query expansion works naturally:
-each expanded query forms its own vector-leg ranking list that participates
-in the same fusion, and rank positions stay per-list (no concatenated-position
-semantics, CR-REG-20). Pure, no IO.
+每个排名列表为每个位置贡献 ``1 / (k + rank)``；融合后的
+分数决定最终候选的顺序。多查询扩展可自然适配：
+每个扩展查询形成自己的向量路排名列表并参与
+同一融合，且排名位置按列表各自独立（不存在拼接位置的
+语义，CR-REG-20）。纯函数，无 IO。
 """
 
 from __future__ import annotations
@@ -15,11 +15,11 @@ _RRF_K = 60
 def rrf_fuse(
     rankings: list[list[str]], *, k: int = _RRF_K, top_k: int = 10
 ) -> list[tuple[str, float]]:
-    """Fuse per-leg chunk-id rankings into one fused top-K.
+    """将各路的 chunk-id 排名融合为一个 top-K。
 
-    Returns ``[(chunk_id, fused_score)]`` ordered by descending score,
-    truncated to ``top_k``. Duplicate ids across legs accumulate scores --
-    that is the RRF semantics, not a bug.
+    返回 ``[(chunk_id, fused_score)]``，按分数降序排列，
+    截断至 ``top_k``。跨路重复的 id 会累加分数——
+    这正是 RRF 的语义，而非缺陷。
     """
     scores: dict[str, float] = {}
     for ranking in rankings:

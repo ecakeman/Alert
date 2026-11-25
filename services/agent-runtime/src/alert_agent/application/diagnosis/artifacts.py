@@ -1,13 +1,13 @@
-"""Dual-artifact write/registration orchestration (design 4.6, CR-DIAG-18~20).
+"""双产物写入/注册编排（design 4.6，CR-DIAG-18~20）。
 
-INVESTIGATION is deterministic Markdown assembled from the collected evidence
-with a single round marker per task+generation (7.2.7); DIAGNOSIS_REPORT is
-the structured model JSON. Content lives only in files (D5): both artifacts
-flow through ``build_storage_key`` -> ``ArtifactWriter.write`` (sha-256) ->
-``ArtifactStore.register`` (version-monotonic optimistic lock, CR-DIAG-19) ->
-``RegisterTaskArtifact`` to Go (CR-DIAG-20). A rejected registration fails the
-task -- a task must never claim success without its registration (CR-ARCH-09
-discipline applied to diagnosis artifacts too).
+INVESTIGATION 是由收集到的证据组装而成的确定性 Markdown，每个
+task+generation 仅有一个轮次标记（7.2.7）；DIAGNOSIS_REPORT 是结构化的
+模型 JSON。内容只存在于文件中（D5）：两个产物都经由
+``build_storage_key`` -> ``ArtifactWriter.write``（sha-256）->
+``ArtifactStore.register``（版本单调的乐观锁，CR-DIAG-19）->
+``RegisterTaskArtifact`` 上报至 Go（CR-DIAG-20）。注册被拒绝则任务失败——
+任务绝不能在没有注册的情况下声称成功（CR-ARCH-09 纪律同样适用于
+诊断产物）。
 """
 
 from __future__ import annotations
@@ -27,8 +27,8 @@ from alert_agent.domain.shared.storage_key import build_storage_key, content_typ
 
 
 def render_investigation_markdown(state: DiagnosisState) -> str:
-    """Deterministic investigation record; the round marker appears exactly
-    once per task+generation because each WRITE creates a new version file."""
+    """确定性调查记录；由于每次 WRITE 都会创建新的版本文件，轮次标记在
+    每个 task+generation 中恰好出现一次。"""
     lines: list[str] = [
         f"# Investigation - episode {state.identity.episode_id}",
         "",
@@ -79,8 +79,8 @@ def render_investigation_markdown(state: DiagnosisState) -> str:
 
 
 def artifact_source_refs(state: DiagnosisState) -> tuple[str, ...]:
-    """Traceable references carried by RegisterTaskArtifact (fd ids, knowledge
-    hits, MCP tools); empty when nothing was consumed."""
+    """由 RegisterTaskArtifact 携带的可追溯引用（fd id、知识命中、
+    MCP 工具）；未消费任何内容时为空。"""
     refs = [hit.fd_id for hit in state.search_hits]
     refs += [hit.hit_id for hit in state.knowledge.results]
     refs += [result.name for result in state.mcp_results]
@@ -88,7 +88,7 @@ def artifact_source_refs(state: DiagnosisState) -> tuple[str, ...]:
 
 
 class DiagnosisArtifactOrchestrator:
-    """load_existing_versions / write callbacks injected into the loop nodes."""
+    """注入循环节点的 load_existing_versions / write 回调。"""
 
     def __init__(
         self,
@@ -102,8 +102,8 @@ class DiagnosisArtifactOrchestrator:
         self._gateway = gateway
 
     async def load_existing_versions(self, state: DiagnosisState) -> dict[str, Any]:
-        """LOAD data: highest registered version per artifact type; None when
-        absent so re-dispatched generations reuse/idempotently extend (Q7)."""
+        """LOAD 数据：每种产物类型的最高已注册版本；缺失时为 None，
+        使重新派发的 generation 可以复用/幂等续写（Q7）。"""
         episode_id = state.identity.episode_id
         investigation = await self._store.latest_version(episode_id, "INVESTIGATION")
         report = await self._store.latest_version(episode_id, "DIAGNOSIS_REPORT")
@@ -113,8 +113,8 @@ class DiagnosisArtifactOrchestrator:
         }
 
     async def write(self, state: DiagnosisState) -> dict[str, Any]:
-        """WRITE: persist + register + callback both artifacts; any rejection
-        propagates as a domain error (task fails, never fake-successes)."""
+        """WRITE：持久化 + 注册 + 回调两个产物；任何拒绝都以领域错误的
+        形式向上传播（任务失败，绝不伪成功）。"""
         if state.report is None:
             raise FatalError(
                 ErrorCode.ARTIFACT_MISSING,

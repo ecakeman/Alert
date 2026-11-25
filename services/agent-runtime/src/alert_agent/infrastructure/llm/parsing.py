@@ -1,9 +1,8 @@
-"""Response parsing for the OpenAI-compatible client (design 5.2 #2, CR-REG-13).
+"""OpenAI 兼容客户端的响应解析（design 5.2 #2，CR-REG-13）。
 
-Pipeline: strip code fences -> empty-choices guard -> JSON object extraction;
-schema/pydantic validation happens through ``validator`` callbacks so a
-failure message can be fed back to the model for one re-ask (the re-ask never
-consumes the API retry budget, avoiding RAG L4).
+流水线：剥离代码围栏 -> 空选项守卫 -> JSON 对象提取；schema/pydantic
+校验经由 ``validator`` 回调完成，因此失败消息可以回传给模型追问一次
+（追问不占用 API 重试预算，规避 RAG L4）。
 """
 
 from __future__ import annotations
@@ -13,12 +12,12 @@ from typing import Any
 
 
 class ModelParseFailure(Exception):
-    """Internal signal: the reply could not be parsed/validated; triggers the
-    single re-ask path in the client before any fatal outcome."""
+    """内部信号：回复无法解析/校验；在任何致命结局之前触发客户端的
+    单次追问路径。"""
 
 
 def strip_fences(raw: str) -> str:
-    """Remove surrounding Markdown code fences (any language tag)."""
+    """移除包裹的 Markdown 代码围栏（任意语言标签）。"""
     text = raw.strip()
     if text.startswith("```"):
         first_newline = text.find("\n")
@@ -28,7 +27,7 @@ def strip_fences(raw: str) -> str:
 
 
 def parse_json_object(raw: str) -> dict[str, Any]:
-    """Fence stripping + ``json.loads`` + object shape guard."""
+    """去围栏 + ``json.loads`` + 对象形状守卫。"""
     text = strip_fences(raw)
     try:
         value = json.loads(text)
@@ -40,8 +39,8 @@ def parse_json_object(raw: str) -> dict[str, Any]:
 
 
 def extract_choice_content(payload: dict[str, Any]) -> str:
-    """Chat-completions body -> first choice content, tolerant of empty
-    choices/content (never raises deep KeyErrors, CR-REG-13)."""
+    """chat-completions 响应体 -> 首个 choice 的 content，容忍空的
+    choices/content（绝不抛出深层 KeyError，CR-REG-13）。"""
     choices = payload.get("choices")
     if not isinstance(choices, list) or not choices:
         raise ModelParseFailure("chat response carries no choices")
@@ -53,7 +52,7 @@ def extract_choice_content(payload: dict[str, Any]) -> str:
 
 
 def extract_stream_delta(chunk: dict[str, Any]) -> str:
-    """One SSE stream chunk -> incremental token text ('' when absent)."""
+    """一个 SSE 流块 -> 增量 token 文本（缺失时返回 ''）。"""
     choices = chunk.get("choices")
     if not isinstance(choices, list) or not choices:
         return ""

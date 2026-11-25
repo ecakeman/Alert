@@ -1,4 +1,4 @@
-"""Task application: idempotent acceptance use case and its ports (design 4.2)."""
+"""任务应用层：幂等接入用例及其端口（design 4.2）。"""
 
 from __future__ import annotations
 

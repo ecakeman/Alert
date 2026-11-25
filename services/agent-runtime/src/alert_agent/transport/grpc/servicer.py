@@ -1,10 +1,9 @@
-"""AgentTaskService.SubmitTask servicer: thin protocol adaptation (CR-GW-02, CR-LAY-04).
+"""AgentTaskService.SubmitTask servicer：薄协议适配（CR-GW-02，CR-LAY-04）。
 
-Only protocol mapping and the submit use case call live here -- no queue, DB,
-heartbeat or workflow orchestration. gRPC status codes mirror the Go mapping in
-``system-core/internal/transport/grpc/errcode.go``: STALE_GENERATION -> FAILED_
-PRECONDITION with the stable code as details prefix (6.1.3.2), payload
-validation failures -> INVALID_ARGUMENT, transient failures -> UNAVAILABLE.
+这里只承载协议映射和提交用例调用——不含队列、DB、心跳或工作流编排。
+gRPC 状态码与 ``system-core/internal/transport/grpc/errcode.go`` 中的 Go
+映射保持一致：STALE_GENERATION -> FAILED_PRECONDITION，稳定码作为 details
+前缀（6.1.3.2）；载荷校验失败 -> INVALID_ARGUMENT；瞬时失败 -> UNAVAILABLE。
 """
 
 from __future__ import annotations
@@ -26,7 +25,7 @@ LOGGER = logging.getLogger(__name__)
 
 
 class AgentTaskServicer(agent_task_pb2_grpc.AgentTaskServiceServicer):
-    """Serve AgentTaskService.SubmitTask for the Go control plane (design 4.2)."""
+    """为 Go 控制面提供 AgentTaskService.SubmitTask 服务（design 4.2）。"""
 
     def __init__(self, submit: SubmitTask) -> None:
         self._submit = submit
@@ -62,5 +61,5 @@ class AgentTaskServicer(agent_task_pb2_grpc.AgentTaskServiceServicer):
     async def _abort(
         context: grpc.aio.ServicerContext, code: StatusCode, exc: FatalError | RetryableError
     ) -> None:
-        """Stable code stays as the details prefix (Go errcode.go convention)."""
+        """稳定码保留为 details 前缀（遵循 Go errcode.go 约定）。"""
         await context.abort(code, f"{exc.code.value}: {exc.message}")

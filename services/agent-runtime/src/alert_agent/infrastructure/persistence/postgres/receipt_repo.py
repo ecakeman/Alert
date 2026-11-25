@@ -1,13 +1,11 @@
-"""Postgres implementation of the ReceiptStore port (design 4.2, CR-TASK-01~05).
+"""ReceiptStore 端口的 Postgres 实现（design 4.2，CR-TASK-01~05）。
 
-Acceptance is atomic: INSERT ... ON CONFLICT (task_id, generation) DO NOTHING
-first (Q1: never select-then-insert). Only on conflict does it read the
-existing row FOR SHARE -- that read waits for a concurrent insert to commit
-and is a branch decision, not the idempotency mechanism. A submission older
-than the recorded generation is rejected with ``STALE_GENERATION`` and zero
-writes (6.1.3.2); a FAILED receipt of the same generation is re-accepted with
-the original failure record kept (CR-TASK-03); every status update carries
-the generation (and where required the status) condition (CR-REG-41, Q2).
+受理是原子的：先执行 INSERT ... ON CONFLICT (task_id, generation) DO NOTHING
+（Q1：绝不先查后插）。只有在冲突时才读取已存在的行 FOR SHARE——该读取
+等待并发插入提交，且它是分支判定，不是幂等机制。提交的 generation 低于
+已记录的 generation 时以 ``STALE_GENERATION`` 拒绝且零写入（6.1.3.2）；
+同 generation 的 FAILED 回执被重新受理并保留原始失败记录（CR-TASK-03）；
+每次状态更新都携带 generation（以及需要时的 status）条件（CR-REG-41，Q2）。
 """
 
 from __future__ import annotations
@@ -89,7 +87,7 @@ WHERE status = %s AND callback_state = %s
 
 
 class PostgresReceiptStore:
-    """ReceiptStore port implementation on cognitive.agent_task_receipts."""
+    """cognitive.agent_task_receipts 上的 ReceiptStore 端口实现。"""
 
     def __init__(self, pool: AsyncConnectionPool) -> None:
         self._pool = pool
@@ -118,8 +116,8 @@ class PostgresReceiptStore:
                 return AcceptOutcome(accepted=True, duplicate=False)
             existing = await _fetch_existing_row(connection, identity.task_id, identity.generation)
             if existing is None:
-                # Unreachable unless the concurrent insert that won the PK race
-                # aborted between ON CONFLICT and this read; retrying is safe.
+                # 正常情况下不可达：除非在 PK 竞争中胜出的并发插入
+                # 在 ON CONFLICT 与本次读取之间回滚；此时重试是安全的。
                 raise RetryableError(
                     ErrorCode.INPUT_INVALID,
                     "concurrent receipt insert rolled back; retry the submission",

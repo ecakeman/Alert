@@ -1,4 +1,4 @@
-"""LLM adapter (T11): OpenAI-compatible client shared by diagnosis and RAG."""
+"""LLM 适配器（T11）：诊断与 RAG 共享的 OpenAI 兼容客户端。"""
 
 from alert_agent.infrastructure.llm.client import OpenAiCompatibleLlmClient
 from alert_agent.infrastructure.llm.prompts import (

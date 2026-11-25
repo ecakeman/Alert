@@ -1,4 +1,4 @@
-"""Knowledge invocation models shared by diagnosis and the A2A client (M5)."""
+"""由诊断与 A2A 客户端共享的知识调用模型（M5）。"""
 
 from alert_agent.domain.knowledge.models import (
     InvocationConstraints,

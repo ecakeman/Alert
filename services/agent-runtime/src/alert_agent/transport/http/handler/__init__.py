@@ -1,6 +1,5 @@
-"""HTTP handlers: binding + basic validation + use-case calls + response write.
+"""HTTP 处理器：绑定 + 基础校验 + 用例调用 + 响应写出。
 
-Handlers carry no business rules and no SQL (CR-LAY-04); they reach runtime
-state (e.g. readiness checks) through the injected application state, never
-by importing bootstrap.
+处理器不携带业务规则和 SQL（CR-LAY-04）；它们通过注入的应用状态访问运行时
+状态（如就绪检查），绝不导入 bootstrap。
 """

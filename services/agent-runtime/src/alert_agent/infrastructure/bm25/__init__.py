@@ -1,4 +1,4 @@
-"""BM25 adapter (T16): in-process single-instance index (D9)."""
+"""BM25 适配器（T16）：进程内单实例索引（D9）。"""
 
 from alert_agent.infrastructure.bm25.index import InProcessBm25Index, tokenize
 

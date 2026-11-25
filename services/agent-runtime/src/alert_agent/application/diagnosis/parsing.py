@@ -1,10 +1,9 @@
-"""Unified action parsing path (design 3.1.2, CR-REG-13).
+"""统一的动作解析路径（design 3.1.2，CR-REG-13）。
 
-The LLM client already unwraps fences and JSON (decide returns a dict); this
-module performs the remaining steps: envelope-compatible extraction (a
-{"action": {...}} wrapper is accepted) then discriminated-union validation.
-Failures return a readable error string so the decide node can re-ask once
-with the error before falling back (never silent, never raising deep).
+LLM 客户端已经解开代码围栏与 JSON（decide 返回 dict）；本模块执行剩余
+步骤：信封兼容的提取（接受 {"action": {...}} 包装）然后是可辨识联合的
+校验。失败时返回可读的错误字符串，使 decide 节点可以在回退之前携带该
+错误追问一次（绝不静默，绝不在深层抛出）。
 """
 
 from __future__ import annotations
@@ -19,10 +18,10 @@ _ACTION_ADAPTER = TypeAdapter(Action)
 
 
 def parse_action(payload: dict[str, Any]) -> tuple[Action | None, str | None]:
-    """Validate one decision payload.
+    """校验单个决策载荷。
 
-    Returns ``(action, None)`` on success or ``(None, error)`` so the caller
-    feeds the error back to the model once before routing to fallback.
+    成功返回 ``(action, None)``，失败返回 ``(None, error)``，
+    调用方在路由到 fallback 之前将错误回喂给模型一次。
     """
     inner = payload.get("action")
     if not isinstance(inner, dict):

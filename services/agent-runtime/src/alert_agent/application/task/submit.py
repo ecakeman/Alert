@@ -1,9 +1,8 @@
-"""Submit use case: single-transaction receipt acceptance (design 4.2, 5.1.1).
+"""提交用例：单事务的回执接入（design 4.2，5.1.1）。
 
-The acceptance path persists the receipt and returns immediately -- task
-execution is fully asynchronous downstream, keeping SubmitTask acceptance
-within the P95 <= 100 ms budget. ``thread_id`` comes from the single shared
-rule (CR-REG-43) so receipt locking and recovery never drift.
+接入路径持久化回执后立即返回——任务执行在下游完全异步，使 SubmitTask
+的接入保持在 P95 <= 100 ms 预算之内。``thread_id`` 来自唯一的共享规则
+（CR-REG-43），因此回执锁定与恢复永远不会漂移。
 """
 
 from __future__ import annotations
@@ -14,7 +13,7 @@ from alert_agent.domain.task import thread_id_of
 
 
 class SubmitTask:
-    """Accept a task submission idempotently; queueing happens downstream."""
+    """幂等地接受任务提交；排队发生在下游。"""
 
     def __init__(self, store: ReceiptStore, clock: Clock) -> None:
         self._store = store

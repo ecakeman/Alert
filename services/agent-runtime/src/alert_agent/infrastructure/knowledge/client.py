@@ -1,15 +1,13 @@
-"""A2A knowledge-invocation client (T22, design 4.5.2, CR-KNOW-01~09).
+"""A2A 知识调用客户端（T22，design 4.5.2，CR-KNOW-01~09）。
 
-Implements the ``KnowledgeInvoker`` port over A2A HTTP: ``InvocationV1`` is
-validated once and serialized with ``model_dump(by_alias=True)`` (no
-hand-written camelCase strings, CR-REG-30); ``knownFacts`` is JSON-serialized
-with ``ensure_ascii=False`` (CR-KNOW-02); constraints express topK and
-requireCitations explicitly (CR-KNOW-03). ``status != COMPLETED`` raises a
-diagnosable error carrying error_code and safe_message (CR-KNOW-08); results
-validate as ``list[KnowledgeHit]`` before entering diagnosis state
-(CR-KNOW-07). Transport failures get bounded retries; deterministic business
-rejections never retry (CR-KNOW-08). A W3C ``traceparent`` is forwarded only
-when the caller supplies one -- never fabricated (CR-KNOW-06).
+基于 A2A HTTP 实现 ``KnowledgeInvoker`` 端口：``InvocationV1`` 先校验一次，
+再以 ``model_dump(by_alias=True)`` 序列化（不手写 camelCase 字符串，
+CR-REG-30）；``knownFacts`` 以 ``ensure_ascii=False`` 做 JSON 序列化
+（CR-KNOW-02）；constraints 显式表达 topK 与 requireCitations（CR-KNOW-03）。
+``status != COMPLETED`` 抛出携带 error_code 与 safe_message 的可诊断错误
+（CR-KNOW-08）；结果在进入诊断状态前校验为 ``list[KnowledgeHit]``
+（CR-KNOW-07）。传输失败做有界重试；确定性业务拒绝绝不重试（CR-KNOW-08）。
+仅当调用方提供 W3C ``traceparent`` 时才转发——绝不伪造（CR-KNOW-06）。
 """
 
 from __future__ import annotations
@@ -27,7 +25,7 @@ LOGGER = logging.getLogger(__name__)
 
 
 class A2aKnowledgeClient:
-    """``KnowledgeInvoker`` port implementation (T22)."""
+    """``KnowledgeInvoker`` 端口实现（T22）。"""
 
     def __init__(
         self,
@@ -49,13 +47,13 @@ class A2aKnowledgeClient:
         )
         self._max_retries = max_retries
         self._backoff = backoff_seconds
-        self._transport = transport  # test seam; None uses the default stack
+        self._transport = transport  # 测试接缝；为 None 时使用默认协议栈
 
     async def invoke(
         self, invocation: InvocationV1, *, traceparent: str | None = None
     ) -> list[KnowledgeHit]:
-        # CR-KNOW-01/02: the validated model serializes once, by alias;
-        # knownFacts is JSON text with ensure_ascii=False, never repr().
+        # CR-KNOW-01/02：已校验的模型按别名一次性序列化；
+        # knownFacts 是 ensure_ascii=False 的 JSON 文本，绝不用 repr()。
         payload = invocation.model_dump(by_alias=True)
         payload["context"] = dict(payload.get("context") or {})
         known_facts = payload["context"].get("knownFacts") or []
@@ -66,7 +64,7 @@ class A2aKnowledgeClient:
             "Accept": "application/json",
         }
         if traceparent:
-            headers["traceparent"] = traceparent  # forward-only, never fabricated
+            headers["traceparent"] = traceparent  # 仅转发，绝不伪造
         message = {
             "role": "user",
             "parts": [{"kind": "data", "data": payload}],
@@ -94,7 +92,7 @@ class A2aKnowledgeClient:
                     await asyncio.sleep(self._backoff * (attempt + 1))
                 continue
             if response.status_code >= 400:
-                # Deterministic business rejection: no retry (CR-KNOW-08).
+                # 确定性业务拒绝：不重试（CR-KNOW-08）。
                 raise FatalError(
                     ErrorCode.KNOWLEDGE_INVOCATION_FAILED,
                     f"knowledge agent rejected the invocation ({response.status_code})",

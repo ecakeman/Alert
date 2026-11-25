@@ -1,9 +1,9 @@
-"""SSE event protocol, five event classes (design 3.2.3, CR-RAG-17, 7.4.7).
+"""SSE 事件协议，共五类事件（design 3.2.3，CR-RAG-17，7.4.7）。
 
-Wire field names are camelCase (tsMs/latencyMs) declared once as pydantic
-aliases; the T23 encoder serializes with ``by_alias=True`` so no hand-written
-camelCase strings appear elsewhere (CR-REG-30). Event payloads never carry
-stack traces or credentials (5.3.6, CR-REG-52).
+线上字段名为 camelCase（tsMs/latencyMs），仅以 pydantic
+别名声明的形式定义一次；T23 编码器以 ``by_alias=True`` 序列化，因此其他地方
+不会出现手写的 camelCase 字符串（CR-REG-30）。事件负载绝不包含
+堆栈跟踪或凭据（5.3.6，CR-REG-52）。
 """
 
 from __future__ import annotations

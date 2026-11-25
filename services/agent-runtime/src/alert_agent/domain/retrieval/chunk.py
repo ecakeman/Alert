@@ -1,9 +1,9 @@
-"""RetrievedChunk: the single representation of one retrieval result
-(design 3.2.1, CR-RAG-02, CR-REG-04).
+"""RetrievedChunk：单条检索结果的唯一表示
+（design 3.2.1，CR-RAG-02，CR-REG-04）。
 
-Internal models are snake_case; the HTTP DTO/mapper converts to camelCase at
-exactly one place (5.5.3, CR-LAY-10). ``leg`` records which retrieval leg
-produced the chunk so single-leg failures stay distinguishable (CR-RAG-06).
+内部模型使用 snake_case；HTTP DTO/映射器在
+恰好一处（5.5.3，CR-LAY-10）转换为 camelCase。``leg`` 记录产生该 chunk 的检索
+路，因此单路失败仍可区分（CR-RAG-06）。
 """
 
 from __future__ import annotations
@@ -29,8 +29,8 @@ class RetrievedChunk(BaseModel):
 
 
 class RetrievalResult(BaseModel):
-    """One dual-leg retrieval outcome; ``leg_status`` reports failed legs
-    (CR-RAG-06, CR-REG-25) so empty-index and real-no-hit stay distinguishable."""
+    """一次双路检索的结果；``leg_status`` 报告失败的路
+    （CR-RAG-06，CR-REG-25），使索引为空与真实无命中保持可区分。"""
 
     model_config = ConfigDict(frozen=True)
 

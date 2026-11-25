@@ -1,9 +1,8 @@
-"""Ingest acceptance and status handlers (T19, CR-LAY-04, CR-REG-52).
+"""Ingest 受理与状态查询处理器（T19，CR-LAY-04，CR-REG-52）。
 
-Thin handlers only: bind, validate, call the acceptance use case, map DTOs,
-write the response. Rule violations map to standard 4xx with the stable code
-in the body; unknown docs map to 404 (status query reads the persisted job as
-the authority, CR-ING-06).
+仅做薄处理器：绑定、校验、调用受理用例、映射 DTO、写出响应。规则违规映射
+为标准 4xx，并在响应体中携带稳定码；未知文档映射为 404（状态查询以持久化
+的 job 为准，CR-ING-06）。
 """
 
 from __future__ import annotations

@@ -1,9 +1,9 @@
-"""Diagnosis loop routing (design 3.1.4, CR-DIAG-05, CR-REG-07).
+"""诊断循环路由（design 3.1.4，CR-DIAG-05，CR-REG-07）。
 
-Routing consumes phase + action jointly: every router first checks budget
-exhaustion, then dispatches by ``action.type``; unknown/absent actions always
-reach the explicit fallback (never an implicit continue, never a whole-task
-failure). The no-progress ceiling routes to the explicit partial outcome.
+路由联合消费 phase + action：每个路由器先检查预算耗尽，再按
+``action.type`` 分发；未知/缺失的动作总是到达显式 fallback
+（绝不隐式继续，也绝不导致整个任务失败）。无进展上限路由到显式的
+部分结果。
 """
 
 from __future__ import annotations
@@ -17,8 +17,8 @@ from alert_agent.domain.diagnosis.state import DiagnosisState
 def budget_exhausted(
     state: DiagnosisState, *, now: datetime, started_at: datetime
 ) -> bool:
-    """Unified termination entry (CR-REG-07): rounds, calls and the wall-clock
-    ratio of the frozen deadline."""
+    """统一的终止入口（CR-REG-07）：轮次、调用次数与冻结期限的
+    挂钟时间比例。"""
     if state.tool_rounds >= state.budget.max_tool_rounds:
         return True
     if state.llm_calls >= state.budget.max_llm_calls:
@@ -31,7 +31,7 @@ def budget_exhausted(
 
 
 class DiagnosisRouter:
-    """Conditional-edge closures over one task's clock and start time."""
+    """基于单个任务的时钟与开始时间的条件边闭包。"""
 
     def __init__(self, clock: Clock, started_at: datetime) -> None:
         self._clock = clock

@@ -1,10 +1,10 @@
-"""Ingestion acceptance use case (T19, CR-ING-01/03).
+"""摄取接入用例（T19，CR-ING-01/03）。
 
-Validation order: docId/fileName/title presence -> callback URL rules ->
-file-path containment -> persisted QUEUED job. Any rule violation raises
-``PathRuleError``/``ValueError`` which the transport maps to a standard 4xx
-(CR-REG-52). Duplicate docIds return the existing job without creating a new
-one (CR-ING-03); the persisted job is the authority (CR-ING-02).
+校验顺序：docId/fileName/title 非空 -> 回调 URL 规则 ->
+文件路径包含关系 -> 持久化 QUEUED 状态的作业。任何规则违反都会抛出
+``PathRuleError``/``ValueError``，由传输层映射为标准 4xx
+（CR-REG-52）。重复的 docId 返回既有作业而不创建新作业
+（CR-ING-03）；持久化的作业是权威来源（CR-ING-02）。
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ from alert_agent.domain.ingestion.path_rules import (
 
 
 class AcceptIngestion:
-    """POST /ingest acceptance; no file content is read here."""
+    """POST /ingest 接入处理；此处不读取任何文件内容。"""
 
     def __init__(
         self,
@@ -50,7 +50,7 @@ class AcceptIngestion:
 
         existing = await self._store.get(doc_id)
         if existing is not None:
-            return existing  # idempotent acceptance (CR-ING-03)
+            return existing  # 幂等接入（CR-ING-03）
         job = IngestJob(
             doc_id=doc_id,
             status="QUEUED",
@@ -66,5 +66,5 @@ class AcceptIngestion:
         return job
 
     async def status_of(self, doc_id: str) -> IngestJob | None:
-        """Status query reads the persisted job as the authority (CR-ING-06)."""
+        """状态查询读取持久化作业作为权威来源（CR-ING-06）。"""
         return await self._store.get(doc_id)

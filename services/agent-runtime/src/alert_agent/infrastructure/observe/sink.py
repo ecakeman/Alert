@@ -1,10 +1,8 @@
-"""Bounded-queue observability sink (T23, design 5.1 observe, CR-REG-19).
+"""有界队列可观测性 sink（T23，design 5.1 observe，CR-REG-19）。
 
-The main path only enqueues into an in-memory bounded queue -- a full queue
-increments a drop counter and never blocks the business flow; a background
-task batches rows into cognitive.llm_calls (scene/model/latency_ms/tokens/
-degraded/ts). Flush failures are logged and retried on the next cycle, never
-propagated into the main path.
+主路径仅向内存中有界队列入队——队列满时递增丢弃计数器，绝不阻塞业务流程；
+后台任务将行批量写入 cognitive.llm_calls（scene/model/latency_ms/tokens/
+degraded/ts）。落库失败仅记录日志并在下一轮重试，绝不传播到主路径。
 """
 
 from __future__ import annotations
@@ -25,7 +23,7 @@ VALUES (%s, %s, %s, %s, %s, %s, %s)
 
 
 class BoundedObservationSink:
-    """In-memory bounded queue + background batched flush (CR-REG-19)."""
+    """内存中有界队列 + 后台批量落库（CR-REG-19）。"""
 
     def __init__(
         self,

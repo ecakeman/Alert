@@ -1,11 +1,9 @@
-"""TaskExecutor port: the M3 -> M4/M6 contract anchor (design 7.3).
+"""TaskExecutor 端口：M3 -> M4/M6 的契约锚点（design 7.3）。
 
-The executor receives the frozen ``TaskSubmission`` and drives progress,
-artifacts and result/failure callbacks through the ``TaskGateway`` port it
-holds. The worker (bootstrap/worker.py) only orchestrates lifecycle around
-this call: receipt RUNNING, heartbeat renewal, deadline enforcement and the
-terminal receipt write. Real implementations are the diagnosis and archive
-use cases (T13/T14); the port is intentionally the only coupling point.
+执行器接收冻结的 ``TaskSubmission``，并通过其持有的 ``TaskGateway`` 端口
+驱动进度、产物与结果/失败回调。worker（bootstrap/worker.py）只围绕此调用
+编排生命周期：回执 RUNNING、心跳续期、截止期限强制与终态回执写入。
+真正的实现是诊断与归档用例（T13/T14）；该端口被有意设计为唯一的耦合点。
 """
 
 from __future__ import annotations
@@ -17,9 +15,9 @@ from alert_agent.application.task.ports import TaskSubmission
 
 class TaskExecutor(Protocol):
     async def execute(self, submission: TaskSubmission) -> None:
-        """Run one task to its terminal state; raise on failure.
+        """将一个任务运行至其终态；失败时抛出异常。
 
-        Failures must surface as domain errors (RetryableError/FatalError)
-        with stable short codes (CR-TASK-12/13); the caller classifies them.
+        失败必须以领域错误（RetryableError/FatalError）的形式浮出，
+        并携带稳定的短错误码（CR-TASK-12/13）；由调用方对它们进行分类。
         """
         ...

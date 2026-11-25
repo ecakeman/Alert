@@ -1,14 +1,12 @@
-"""ExecuteArchive use case: the TaskExecutor port implementation for ARCHIVE
-tasks (T14, design M6, CR-ARCH-01~09).
+"""ExecuteArchive 用例：ARCHIVE 任务对应的 TaskExecutor 端口实现
+（T14，design M6，CR-ARCH-01~09）。
 
-Flow: started callback -> dual-artifact precondition (CR-ARCH-01: both
-artifacts exist and are readable within this generation, CR-ARCH-02) ->
-BUILDING upsert (CR-ARCH-06) -> index extraction through the configured
-strategy -> READY (or FAILED with a retained index_error) -> result callback.
-The fd registration channel to Go does not exist in the current contract
-(system.episode_artifact_refs CHECK accepts INVESTIGATION/DIAGNOSIS_REPORT
-only), so the fault-document registration is carried by the cognitive
-fault_documents row itself; see the T14 disclosure.
+流程：started 回调 -> 双产物前置条件（CR-ARCH-01：两个产物都存在且在本
+generation 内可读，CR-ARCH-02）-> BUILDING upsert（CR-ARCH-06）-> 通过
+配置的策略提取索引 -> READY（或 FAILED 并保留 index_error）-> 结果回调。
+当前契约中不存在向 Go 注册 fd 的通道（system.episode_artifact_refs CHECK
+仅接受 INVESTIGATION/DIAGNOSIS_REPORT），因此故障文档注册由认知层的
+fault_documents 行本身承载；参见 T14 披露。
 """
 
 from __future__ import annotations
@@ -36,7 +34,7 @@ LOGGER = logging.getLogger(__name__)
 
 
 class ExecuteArchive(TaskExecutor):
-    """ARCHIVE task runner over the artifact store, reader and fault-doc store."""
+    """基于产物存储、读取器与故障文档存储的 ARCHIVE 任务执行器。"""
 
     def __init__(
         self,
@@ -128,14 +126,14 @@ class ExecuteArchive(TaskExecutor):
             episode_id,
             extraction.strategy,
         )
-        # CR-ARCH-09: the fault-document registration to Go has no contract
-        # channel (system.episode_artifact_refs CHECK constraint); the ARCHIVE
-        # completion is carried by report_result. See the T14 disclosure.
+        # CR-ARCH-09：向 Go 注册故障文档没有契约通道
+        # （system.episode_artifact_refs CHECK 约束）；ARCHIVE 的完成由
+        # report_result 承载。参见 T14 披露。
         await self._gateway.report_result(identity)
 
     @staticmethod
     def _require_generation(storage_key: str, generation: int) -> None:
-        """CR-ARCH-02: only artifact versions inside this task's generation."""
+        """CR-ARCH-02：只允许本任务 generation 内的产物版本。"""
         ref = parse_storage_key(storage_key)
         if ref.generation != generation:
             raise FatalError(

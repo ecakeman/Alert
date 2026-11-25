@@ -1,7 +1,7 @@
-"""Search DTO <-> domain mapping: the single conversion point (CR-LAY-10).
+"""Search DTO 与领域模型映射：唯一转换点（CR-LAY-10）。
 
-camelCase wire format lives only in DTOs; this mapper is the only place that
-converts between the wire and the snake_case internal models (5.5.3).
+camelCase 线上格式只存在于 DTO 中；本映射器是线上格式与 snake_case 内部
+模型之间唯一的转换位置（5.5.3）。
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ from alert_agent.transport.http.dto.search import (
 
 
 def to_search_params(dto: SearchRequestDto) -> dict:
-    """Wire DTO -> searcher keyword arguments (snake_case)."""
+    """线上 DTO -> 检索器关键字参数（snake_case）。"""
     doc_ids = tuple(dto.doc_ids) if dto.doc_ids else None
     return {
         "query": dto.query,
@@ -26,7 +26,7 @@ def to_search_params(dto: SearchRequestDto) -> dict:
 
 
 def chunk_to_hit(chunk) -> SearchHitDto:
-    """RetrievedChunk -> wire hit DTO (no dict shuffling in between)."""
+    """RetrievedChunk -> 线上命中 DTO（中间不做字典搬运）。"""
     return SearchHitDto(
         chunkId=chunk.chunk_id,
         docId=chunk.doc_id,

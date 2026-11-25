@@ -1,8 +1,8 @@
-"""Ingest-job store on cognitive.ingest_jobs (T19, CR-ING-02/03/06).
+"""cognitive.ingest_jobs 上的摄取任务存储（T19，CR-ING-02/03/06）。
 
-The persisted job is the authority; doc-id idempotency via INSERT ... ON
-CONFLICT DO NOTHING (CR-ING-03); status transitions write the generation-free
-job row (status CHECK lives in the migration, CR-REG-37).
+持久化的任务行是权威；doc-id 幂等通过 INSERT ... ON CONFLICT DO NOTHING
+实现（CR-ING-03）；状态迁移写入不带 generation 条件的任务行（status CHECK
+约束在迁移中定义，CR-REG-37）。
 """
 
 from __future__ import annotations
@@ -57,7 +57,7 @@ class _JobRow:
 
 
 class PostgresIngestJobStore:
-    """``IngestJobStore`` port implementation (T19)."""
+    """``IngestJobStore`` 端口实现（T19）。"""
 
     def __init__(self, pool: AsyncConnectionPool) -> None:
         self._pool = pool

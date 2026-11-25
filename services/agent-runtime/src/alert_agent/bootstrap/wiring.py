@@ -1,10 +1,9 @@
-"""Bootstrap wiring for the persistence batch (T05).
+"""持久化批次的 bootstrap 装配（T05）。
 
-Assembles the async pool, the Postgres receipt store, the submit use case and
-the Postgres readiness probe; provides the runtime Clock/IdGen implementations.
-Registering the probe into ``app.state.ready_checks`` is scheduled with the
-gateway/worker batches (T07/T08) per the task plan -- this module only defines
-the wiring and never touches lifespan directly.
+装配异步连接池、Postgres 回执存储、提交用例和 Postgres 就绪探针；提供
+运行时的 Clock/IdGen 实现。按任务计划，将探针注册进
+``app.state.ready_checks`` 安排在网关/worker 批次（T07/T08）——本模块只做
+装配定义，绝不直接触碰 lifespan。
 """
 
 from __future__ import annotations
@@ -93,14 +92,14 @@ __all__ = [
 
 
 class SystemClock:
-    """Timezone-aware UTC clock (application ``Clock`` port)."""
+    """带时区的 UTC 时钟（application ``Clock`` 端口）。"""
 
     def now(self) -> datetime:
         return datetime.now(UTC)
 
 
 class UuidIdGen:
-    """UUID4-based identifier generator (application ``IdGen`` port)."""
+    """基于 UUID4 的标识符生成器（application ``IdGen`` 端口）。"""
 
     def new_id(self, prefix: str) -> str:
         return f"{prefix}_{uuid4().hex}"
@@ -115,21 +114,20 @@ def build_submit_use_case(pool: AsyncConnectionPool) -> SubmitTask:
 
 
 async def postgres_ready_check(pool: AsyncConnectionPool) -> None:
-    """Real Postgres probe for /ready (CR-BOOT-08); raises on any failure."""
+    """供 /ready 使用的真实 Postgres 探针（CR-BOOT-08）；任何失败都会抛出。"""
     async with pool.connection() as connection:
         await connection.execute("SELECT 1")
 
 
 def build_gateway_channel(settings: Settings) -> grpc.aio.Channel:
-    """Lazy-connecting aio channel to the Go control-plane gateway (AGENT_GRPC_TARGET)."""
+    """连接 Go 控制面网关的惰性连接 aio channel（AGENT_GRPC_TARGET）。"""
     return grpc.aio.insecure_channel(settings.gateway.agent_grpc_target)
 
 
 def build_gateway_client(channel: grpc.aio.Channel, settings: Settings) -> TaskGateway:
-    """SystemTaskGateway client; the timeout derives from the single
-    GATEWAY_RPC_TIMEOUT_MS setting (CR-REG-32) and retries from
-    GATEWAY_RPC_MAX_RETRIES. Wired into the lifespan with the servicer batch
-    (T07); worker/heartbeat consumers land with T08."""
+    """SystemTaskGateway 客户端；超时取自唯一的 GATEWAY_RPC_TIMEOUT_MS
+    设置（CR-REG-32），重试次数取自 GATEWAY_RPC_MAX_RETRIES。随 servicer
+    批次（T07）接入 lifespan；worker/心跳消费方随 T08 落地。"""
     return SystemTaskGatewayClient(
         channel,
         timeout_seconds=settings.gateway.gateway_rpc_timeout_ms / 1000.0,
@@ -137,23 +135,22 @@ def build_gateway_client(channel: grpc.aio.Channel, settings: Settings) -> TaskG
     )
 
 def build_artifact_writer(settings: Settings) -> ArtifactWriter:
-    """Filesystem artifact writer rooted at ARTIFACT_STORAGE_ROOT (D5, design 4.6)."""
+    """以 ARTIFACT_STORAGE_ROOT 为根的文件系统工件写入器（D5，design 4.6）。"""
     return FileSystemArtifactWriter(Path(settings.storage.artifact_storage_root))
 
 
 def build_artifact_store(pool: AsyncConnectionPool) -> ArtifactStore:
-    """Episode-artifact version registry on cognitive.episode_artifacts (CR-REG-46)."""
+    """cognitive.episode_artifacts 上的剧集工件版本注册表（CR-REG-46）。"""
     return PostgresArtifactStore(pool, UuidIdGen())
 
 def build_llm_client(settings: Settings) -> OpenAiCompatibleLlmClient:
-    """OpenAI-compatible client implementing the LlmDecider port (T11);
-    complete_json/stream serve the RAG side once its ports land (T15~T17)."""
+    """实现 LlmDecider 端口的 OpenAI 兼容客户端（T11）；
+    待 RAG 侧端口落地后，complete_json/stream 随之服务 RAG（T15~T17）。"""
     return OpenAiCompatibleLlmClient(settings.llm)
 
 def build_mcp_session(settings: Settings) -> McpSessionManager:
-    """Assemble the MCP singleton session (T21); the per-call timeout derives
-    from the single gateway RPC setting (CR-REG-32), and the endpoint/token
-    come from the diagnosis group."""
+    """装配 MCP 单例会话（T21）；单次调用超时取自唯一的 gateway RPC
+    设置（CR-REG-32），endpoint/token 来自 diagnosis 配置组。"""
     return McpSessionManager(
         endpoint=settings.diagnosis.mcp_endpoint,
         token=settings.diagnosis.mcp_token,
@@ -162,9 +159,8 @@ def build_mcp_session(settings: Settings) -> McpSessionManager:
 
 
 def build_knowledge_client(settings: Settings) -> A2aKnowledgeClient:
-    """Assemble the A2A knowledge client (T22, CR-KNOW-05): the timeout
-    derives from the single gateway RPC setting; the internal token
-    authenticates the knowledge agent endpoint."""
+    """装配 A2A knowledge 客户端（T22，CR-KNOW-05）：超时取自唯一的
+    gateway RPC 设置；内部令牌用于对 knowledge agent 端点鉴权。"""
     return A2aKnowledgeClient(
         endpoint=settings.diagnosis.knowledge_a2a_endpoint,
         token=settings.gateway.internal_token,
@@ -173,13 +169,13 @@ def build_knowledge_client(settings: Settings) -> A2aKnowledgeClient:
 
 
 def build_agent_card_endpoint() -> dict:
-    """AgentCard payload for the discovery endpoint (T22)."""
+    """发现端点使用的 AgentCard 载荷（T22）。"""
     return build_agent_card().model_dump()
 
 
 def build_observation_sink(pool: AsyncConnectionPool) -> BoundedObservationSink:
-    """Assemble the bounded observation sink (T23, CR-REG-19): the main path
-    only enqueues; a background task flushes batches into llm_calls."""
+    """装配有界观测池（T23，CR-REG-19）：主路径只做入队；后台任务将
+    批量数据刷写进 llm_calls。"""
     return BoundedObservationSink(pool)
 
 
@@ -192,9 +188,9 @@ def build_diagnosis_executor(
     mcp: McpSession | None = None,
     fault_searcher: FaultDocSearcher | None = None,
 ) -> ExecuteDiagnosis:
-    """Assemble the DIAGNOSIS TaskExecutor (T13). knowledge stays unwired
-    until T22; MCP is wired by default since T21 (CR-GW-05); fault-search
-    fails explicitly until T14 lands its store (CR-DISC-05)."""
+    """装配 DIAGNOSIS TaskExecutor（T13）。knowledge 在 T22 之前保持
+    未接线；MCP 自 T21 起默认接线（CR-GW-05）；fault-search 在 T14 落地
+    其存储之前显式失败（CR-DISC-05）。"""
     gateway = build_gateway_client(channel, settings)
     return ExecuteDiagnosis(
         gateway=gateway,
@@ -216,19 +212,19 @@ _EXECUTOR: TaskExecutor | None = None
 
 
 def register_task_executor(executor: TaskExecutor) -> None:
-    """Register the task executor before the worker runtime is built (T13);
-    the worker's late binding (T08) reads it exactly once at startup."""
+    """在构建 worker 运行时之前注册任务执行器（T13）；
+    worker 的延迟绑定（T08）在启动时恰好读取一次。"""
     global _EXECUTOR
     _EXECUTOR = executor
 
 
 def resolve_task_executor() -> TaskExecutor | None:
-    """Late-bound lookup consumed by worker.build_task_worker_runtime (T08)."""
+    """供 worker.build_task_worker_runtime（T08）消费的延迟绑定查询。"""
     return _EXECUTOR
 
 class TaskTypeDispatcher(TaskExecutor):
-    """Dispatches by task_type to the wired diagnosis/archive executors;
-    an unwired type fails deterministically instead of executing (CR-DISC-05)."""
+    """按 task_type 分发到已接线的 diagnosis/archive 执行器；
+    未接线的类型将确定性地失败而非执行（CR-DISC-05）。"""
 
     def __init__(self, executors: dict[str, TaskExecutor]) -> None:
         self._executors = executors
@@ -246,9 +242,8 @@ class TaskTypeDispatcher(TaskExecutor):
 def build_archive_executor(
     settings: Settings, pool: AsyncConnectionPool, channel: grpc.aio.Channel
 ) -> ExecuteArchive:
-    """Assemble the ARCHIVE TaskExecutor (T14): LLM-structured extraction
-    (CR-ARCH-04 llm_structured strategy), artifact body reading and the
-    fault-document store."""
+    """装配 ARCHIVE TaskExecutor（T14）：LLM 结构化抽取
+    （CR-ARCH-04 llm_structured 策略）、工件正文读取以及故障文档存储。"""
     gateway = build_gateway_client(channel, settings)
     return ExecuteArchive(
         gateway=gateway,
@@ -263,7 +258,7 @@ def build_archive_executor(
 def build_task_executor(
     settings: Settings, pool: AsyncConnectionPool, channel: grpc.aio.Channel
 ) -> TaskExecutor:
-    """DIAGNOSIS + ARCHIVE dispatcher registered into the worker (T13/T14)."""
+    """注册进 worker 的 DIAGNOSIS + ARCHIVE 分发器（T13/T14）。"""
     return TaskTypeDispatcher(
         {
             "DIAGNOSIS": build_diagnosis_executor(settings, pool, channel),
@@ -272,9 +267,9 @@ def build_task_executor(
     )
 
 def build_retrieval_searcher(settings: Settings, pool: AsyncConnectionPool) -> DualLegSearcher:
-    """Assemble the dual-leg searcher (T16). The BM25 index is the single
-    in-process instance per process (D9); disabled embedding leaves the
-    vector leg unconfigured and reported in leg_status (CR-RAG-06)."""
+    """装配双路检索器（T16）。BM25 索引为每进程唯一的进程内实例（D9）；
+    embedding 被禁用时向量路保持未配置，并在 leg_status 中报告
+    （CR-RAG-06）。"""
     embedder = (
         OpenAiCompatibleEmbedder(settings.llm) if settings.llm.enable_embedding else None
     )
@@ -293,8 +288,8 @@ def build_retrieval_searcher(settings: Settings, pool: AsyncConnectionPool) -> D
     )
 
 def build_chat_answer(settings: Settings, pool: AsyncConnectionPool) -> ChatAnswer:
-    """Assemble the RAG chat use case (T17); the graph itself compiles once
-    behind the module-level singleton in application/retrieval/graph.py."""
+    """装配 RAG chat 用例（T17）；图本身在
+    application/retrieval/graph.py 的模块级单例后只编译一次。"""
     budget = RetrievalBudget(
         max_hops=settings.retrieval.retrieval_max_hops,
         max_llm_calls=settings.retrieval.retrieval_max_llm_calls,
@@ -315,8 +310,8 @@ def build_chat_answer(settings: Settings, pool: AsyncConnectionPool) -> ChatAnsw
 
 
 def build_ingestion_acceptance(settings: Settings, pool: AsyncConnectionPool):
-    """Assemble POST /ingest acceptance (T19): persisted job store + path/
-    callback rules rooted at INGEST_FILE_ROOT (CR-ING-01/02, CR-REG-36)."""
+    """装配 POST /ingest 受理（T19）：持久化 job 存储 + 以
+    INGEST_FILE_ROOT 为根的路径/回调规则（CR-ING-01/02，CR-REG-36）。"""
     allowlist = tuple(
         entry.strip()
         for entry in settings.ingestion.callback_host_allowlist.split(",")
@@ -329,8 +324,8 @@ def build_ingestion_acceptance(settings: Settings, pool: AsyncConnectionPool):
     )
 
 def build_ingestion_worker(settings: Settings, pool: AsyncConnectionPool):
-    """Assemble the ingestion execution stack (T20): loader/chunker/embedder/
-    single-transaction writer + three-state callback sender (CR-ING-03~05)."""
+    """装配 ingestion 执行栈（T20）：loader/chunker/embedder/
+    单事务写入器 + 三态回调发送器（CR-ING-03~05）。"""
     allowlist = tuple(
         entry.strip()
         for entry in settings.ingestion.callback_host_allowlist.split(",")

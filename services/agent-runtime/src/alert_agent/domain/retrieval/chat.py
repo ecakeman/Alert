@@ -1,8 +1,8 @@
-"""Chat session models (design 3.2.1, CR-RAG-20, 7.4.8).
+"""聊天会话模型（design 3.2.1，CR-RAG-20，7.4.8）。
 
-Roles are restricted to user/assistant; history is capped at six turns; the
-message itself must be non-empty. Validation lives here so the HTTP DTO layer
-reuses it instead of duplicating rules.
+角色仅限 user/assistant；历史最多保留六轮；消息
+本身必须非空。校验集中在此处，HTTP DTO 层
+直接复用而非重复定义规则。
 """
 
 from __future__ import annotations

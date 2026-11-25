@@ -1,17 +1,15 @@
-"""Minimal offline eval (T24, D8, R9, CR-DISC-07).
+"""最小化离线评测（T24，D8，R9，CR-DISC-07）。
 
-Standalone tool: reads a small CSV dataset, runs the retrieval chain (same
-T16/T17 wiring as production -- no second implementation), and judges each
-retrieval against the gold answer with the structured LlmJson path (CR-REG-13).
-The dataset columns must match exactly what this script consumes; a missing
-column aborts at startup (R9). No coverage targets, no claims about
-unexecuted evaluations (CR-DISC-07): the script reports only what it ran.
+独立工具：读取小型 CSV 数据集，运行检索链路（与生产环境相同的 T16/T17
+装配——不做第二套实现），并通过结构化的 LlmJson 路径（CR-REG-13）将每次
+检索结果与标准答案对比评判。数据集列必须与本脚本消费的列完全一致；缺失
+列会在启动时中止（R9）。没有覆盖率目标，不对未执行的评测做任何声明
+（CR-DISC-07）：本脚本只报告它实际运行的内容。
 
-Usage:
+用法：
     python eval/run.py --dataset eval/datasets/simple_qa.csv
 
-Requires the real Postgres/LLM environment (not part of the smoke-free build
-phase; see T25).
+需要真实的 Postgres/LLM 环境（不属于免冒烟构建阶段；见 T25）。
 """
 
 from __future__ import annotations
@@ -45,7 +43,7 @@ class JudgeScore(BaseModel):
 
 
 def load_dataset(path: Path) -> list[dict[str, str]]:
-    """Read the CSV and abort on missing required columns (R9)."""
+    """读取 CSV，缺失必需列时中止（R9）。"""
     if not path.is_file():
         print(f"dataset not found: {path}", file=sys.stderr)
         raise SystemExit(2)
@@ -96,7 +94,7 @@ async def evaluate(dataset_path: Path) -> int:
                     ),
                 )
                 score, reason = verdict.score, verdict.reason
-            except Exception as exc:  # noqa: BLE001 -- one row failing must not stop the run
+            except Exception as exc:  # noqa: BLE001 -- 单行失败不应中断整个运行
                 score, reason = 0, f"judge failed: {type(exc).__name__}"
             results.append(
                 {

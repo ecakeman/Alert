@@ -1,9 +1,9 @@
-"""RAG retrieval domain models (design 3.2, batches T15~T18).
+"""RAG 检索领域模型（design 3.2，批次 T15~T18）。
 
-Single pydantic state carrier with first-class decision-chain objects; nodes
-return incremental dicts and list fields merge via ``ReduceAppend`` reducers
-(CR-REG-01/02). No IO in this package (CR-LAY-03); the only third-party
-dependency is pydantic.
+唯一的 pydantic 状态载体，决策链对象为一等字段；节点
+返回增量字典，列表字段通过 ``ReduceAppend`` 归并
+（CR-REG-01/02）。本包无 IO（CR-LAY-03）；唯一的第三方
+依赖是 pydantic。
 """
 
 from alert_agent.domain.retrieval.budget import RetrievalBudget

@@ -1,1 +1,1 @@
-"""Archive application package (M6, batch T14)."""
+"""归档应用包（M6，批次 T14）。"""

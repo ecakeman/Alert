@@ -1,13 +1,11 @@
-"""Ingestion pipeline infrastructure (T20, CR-ING-03/04).
+"""摄取流水线基础设施（T20，CR-ING-03/04）。
 
-``DeterministicChunker``: rule-based parent/child chunking (two-pass: sections
-aggregate into parents capped at ~900 tokens, children split at
-chunk_size_tokens with overlap; parents carry the full section). No LLM in
-the chunking path (CR-DISC-05 discipline for ingestion). ``IngestFileLoader``
-reads document bodies inside the ingest root (T19 path rules reused).
-``PostgresIngestionWriter``: pre-cleans the previous version and writes the
-document plus parent/child chunks with embeddings in ONE transaction --
-failures leave no half-ingested searchable data (CR-ING-04).
+``DeterministicChunker``：基于规则的父/子分块（两遍式：小节聚合为上限约
+900 token 的父块，子块按 chunk_size_tokens 带重叠切分；父块承载完整小节）。
+分块路径中无 LLM（CR-DISC-05 对摄取的纪律）。``IngestFileLoader`` 读取
+摄取根目录内的文档正文（复用 T19 路径规则）。``PostgresIngestionWriter``：
+先清理上一版本，再在单个事务中写入文档及带嵌入的父/子块——失败不会留下
+半摄取的可检索数据（CR-ING-04）。
 """
 
 from __future__ import annotations
@@ -25,7 +23,7 @@ _CHARS_PER_TOKEN = 4
 
 
 class DeterministicChunker:
-    """``Chunker`` port implementation (T20)."""
+    """``Chunker`` 端口实现（T20）。"""
 
     def __init__(self, *, chunk_size_tokens: int = 500, overlap_tokens: int = 50) -> None:
         self._chunk_chars = max(1, chunk_size_tokens * _CHARS_PER_TOKEN)
@@ -49,7 +47,7 @@ class DeterministicChunker:
                     section_path=f"section-{parent_index}",
                 )
             )
-            # children within the parent's char budget
+            # 父块字符预算内的子块
             step = max(1, self._chunk_chars - self._overlap_chars)
             position = 0
             while position < len(section):
@@ -72,13 +70,13 @@ class DeterministicChunker:
 
 
 class IngestFileLoader:
-    """``ContentLoader`` port implementation (T20): path rules enforced."""
+    """``ContentLoader`` 端口实现（T20）：强制执行路径规则。"""
 
     def __init__(self, root: Path) -> None:
         self._root = root.resolve()
 
     async def load(self, file_path: str) -> str:
-        # PathRuleError propagates as-is (transport maps it to 400).
+        # PathRuleError 原样传播（传输层将其映射为 400）。
         target = resolve_within_root(self._root, file_path)
         if not target.is_file():
             raise FileNotFoundError(f"ingest file missing: {file_path}")
@@ -106,7 +104,7 @@ def _vector_literal(embedding: list[float] | None) -> str | None:
 
 
 class PostgresIngestionWriter:
-    """``IngestionWriter`` port implementation (T20)."""
+    """``IngestionWriter`` 端口实现（T20）。"""
 
     def __init__(
         self,
@@ -115,7 +113,7 @@ class PostgresIngestionWriter:
         embedder: OpenAiCompatibleEmbedder | OpenAiCompatibleLlmClient | None = None,
     ) -> None:
         self._pool = pool
-        self._embedder = embedder  # unused placeholder for symmetric wiring
+        self._embedder = embedder  # 为对称装配保留的未使用占位
 
     async def write(
         self,
@@ -128,7 +126,7 @@ class PostgresIngestionWriter:
         if len(embeddings) != len(chunks):
             raise ValueError("embeddings and chunks must align 1:1")
         async with self._pool.connection() as connection, connection.transaction():
-            # Idempotent re-run: clean previous data first (CR-ING-03).
+            # 幂等重跑：先清理上一版数据（CR-ING-03）。
             await connection.execute(_DELETE_DOC, (doc_id,))
             await connection.execute(_DELETE_DOC_ROW, (doc_id,))
             await connection.execute(_UPSERT_DOC, (doc_id, title[:500]))

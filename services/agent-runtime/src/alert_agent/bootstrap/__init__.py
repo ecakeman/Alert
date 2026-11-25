@@ -1,10 +1,9 @@
-"""Bootstrap layer: assembly, lifecycle, run roles and entrypoints (CR-BOOT-04~07).
+"""Bootstrap 层：装配、生命周期、运行角色与入口（CR-BOOT-04~07）。
 
-Role wiring is split across ``roles`` (grpc/http/worker), the single lifespan
-orchestrates startup/shutdown order (``lifespan``), ``app`` exposes the
-FastAPI application factory and the process entrypoint, and ``migrate`` is
-the cognitive-migration command entry. Nothing in this package may be
-imported by application/transport upward (CR-LAY-05).
+角色装配拆分在 ``roles`` 中（grpc/http/worker），唯一的 lifespan 统筹启动/
+关闭顺序（``lifespan``），``app`` 暴露 FastAPI 应用工厂和进程入口，
+``migrate`` 是认知迁移命令入口。application/transport 不得向上导入本包的
+任何内容（CR-LAY-05）。
 """
 
 from alert_agent.bootstrap.app import create_app, main

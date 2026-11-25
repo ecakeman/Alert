@@ -1,5 +1,5 @@
-"""AgentCard (T22, design 4.5.1, CR-GW-08): three skills with ids,
-descriptions and input/output examples; published at ``/.well-known/agent.json``.
+"""AgentCard（T22，design 4.5.1，CR-GW-08）：三个 skill，含 id、描述与
+输入/输出示例；发布在 ``/.well-known/agent.json``。
 """
 
 from __future__ import annotations
@@ -26,7 +26,7 @@ class AgentCard(BaseModel):
 
 
 def build_agent_card() -> AgentCard:
-    """The fixed three-skill card (diagnosis / archive / retrieval)."""
+    """固定的三 skill 卡片（诊断 / 归档 / 检索）。"""
     return AgentCard(
         name="alert-agent-runtime",
         description="Alert cognitive runtime: diagnosis, archive and RAG retrieval skills.",

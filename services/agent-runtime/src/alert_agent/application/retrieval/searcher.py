@@ -1,13 +1,12 @@
-"""Dual-leg retrieval orchestration (T16, design 5.1, CR-RAG-04~08, CR-REG-20~26).
+"""双路检索编排（T16，design 5.1，CR-RAG-04~08，CR-REG-20~26）。
 
-Pipeline: per-query vector legs (multi-query expansion is real -- each
-expanded query embeds and searches independently, CR-RAG-05) + one BM25 leg ->
-RRF fusion (pure function) -> unified content fetch from the union pool
-(first-leg setdefault overriding is impossible by construction, CR-REG-21) ->
-rerank with honest degradation (failure keeps the fused top-K=10 and reports
-``leg_status["rerank"] = "degraded"``, CR-RAG-07/CR-REG-22) -> parent-chunk
-expansion implemented exactly once (CR-RAG-18). Single-leg failures keep the
-other leg running and are reported (CR-RAG-06, CR-REG-25).
+流水线：每个查询独立的向量路（多查询扩展是真实的——每个扩展查询独立
+向量化并检索，CR-RAG-05）+ 一条 BM25 路 -> RRF 融合（纯函数）-> 从并集池
+统一取回内容（按构造保证不会出现第一路 setdefault 覆盖，CR-REG-21）->
+带诚实降级的重排（失败时保留融合后的 top-K=10 并报告
+``leg_status["rerank"] = "degraded"``，CR-RAG-07/CR-REG-22）-> 父分块
+扩展仅实现一次（CR-RAG-18）。单路失败时另一路继续运行并上报
+（CR-RAG-06，CR-REG-25）。
 """
 
 from __future__ import annotations
@@ -22,11 +21,11 @@ from alert_agent.domain.shared import ErrorCode, FatalError
 LOGGER = logging.getLogger(__name__)
 
 _PARENT_MAX_CHUNKS = 8
-_PARENT_MAX_CHARS = 3600  # ~900 tokens; truncation is visible, never silent
+_PARENT_MAX_CHARS = 3600  # 约 900 token；截断可见，绝不静默
 
 
 class ParentFetcher:
-    """Fetches parent-chunk bodies for expansion (infrastructure: T16 repo)."""
+    """为扩展获取父分块正文（基础设施：T16 仓库）。"""
 
     async def fetch_parents(
         self, parent_ids: tuple[str, ...]
@@ -38,9 +37,8 @@ def expand_to_parents(
     chunks: list[RetrievedChunk],
     fetcher: ParentFetcher | None,
 ) -> list[RetrievedChunk]:
-    """Single parent-expansion implementation (CR-RAG-18): deduplicated
-    parent ids, at most 8 chunks, each truncated at ~900 tokens with a visible
-    marker. Chunks without a parent pass through unchanged."""
+    """唯一的父分块扩展实现（CR-RAG-18）：父 id 去重，最多 8 个分块，
+    每个截断至约 900 token 并附带可见标记。无父分块的块原样通过。"""
     if fetcher is None:
         return chunks
     parent_ids: list[str] = []
@@ -54,7 +52,7 @@ def expand_to_parents(
             fetcher.fetch_parents(tuple(parent_ids[:_PARENT_MAX_CHUNKS]))
         )
     except RuntimeError:
-        return chunks  # no running loop: caller must expand asynchronously
+        return chunks  # 无运行中的事件循环：调用方必须异步扩展
     expanded: list[RetrievedChunk] = list(chunks)
     for parent in parents[:_PARENT_MAX_CHUNKS]:
         content = parent.content
@@ -78,7 +76,7 @@ def expand_to_parents(
 async def expand_parents_async(
     chunks: list[RetrievedChunk], fetcher: ParentFetcher
 ) -> list[RetrievedChunk]:
-    """Async variant used by the RAG loop (event-loop safe, CR-REG-38)."""
+    """供 RAG 循环使用的异步变体（事件循环安全，CR-REG-38）。"""
     parent_ids: list[str] = []
     for chunk in chunks:
         if chunk.parent_id and chunk.parent_id not in parent_ids:
@@ -107,7 +105,7 @@ async def expand_parents_async(
 
 
 class DualLegSearcher:
-    """``Searcher`` port implementation (T16)."""
+    """``Searcher`` 端口的实现（T16）。"""
 
     def __init__(
         self,
@@ -148,8 +146,8 @@ class DualLegSearcher:
         queries = (query, *extra_queries)
         for index, leg_query in enumerate(queries):
             if self._embedder is None or self._vector_store is None:
-                # Embedding disabled in settings: the vector leg stays
-                # unconfigured while BM25 keeps working (CR-RAG-06).
+                # 设置中已禁用嵌入：向量路保持未配置状态，
+                # 而 BM25 继续工作（CR-RAG-06）。
                 leg_status.setdefault("vector", "not configured")
                 break
             try:
@@ -185,7 +183,7 @@ class DualLegSearcher:
             rankings.append([chunk.chunk_id for chunk in bm25_chunks])
 
         fused = rrf_fuse(rankings, top_k=fusion_top_k)
-        # Unified fetch from the union pool: no first-leg bias (CR-REG-21).
+        # 从并集池统一取回：无第一路偏置（CR-REG-21）。
         fused_chunks = [pool[chunk_id] for chunk_id, _score in fused if chunk_id in pool]
 
         if self._reranker is not None and fused_chunks:

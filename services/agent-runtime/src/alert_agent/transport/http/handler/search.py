@@ -1,9 +1,8 @@
-"""POST /search handler (T18, CR-LAY-04).
+"""POST /search 处理器（T18，CR-LAY-04）。
 
-Binding + basic validation + use-case call + DTO mapping + response writing
-only: no business rules, no SQL, no orchestration branches. Domain errors map
-to standard HTTP status codes with the business code in the body (CR-REG-52):
-FatalError -> 400, RetryableError -> 503.
+只做绑定 + 基础校验 + 用例调用 + DTO 映射 + 响应写出：无业务规则、无 SQL、
+无编排分支。领域错误映射为标准 HTTP 状态码，并在响应体中携带业务码
+（CR-REG-52）：FatalError -> 400，RetryableError -> 503。
 """
 
 from __future__ import annotations

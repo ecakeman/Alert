@@ -1,10 +1,10 @@
-"""DiagnosisReport value model (design 3.1.2, 7.2.6).
+"""DiagnosisReport 值模型（design 3.1.2，7.2.6）。
 
-Field set is strict (extra fields forbidden by pydantic default in this code
-base) while list-valued fields accept a loose scalar input and normalize it to
-a one-element list (7.2.6, CR-ARCH-05 discipline); ``summary`` is mandatory.
-``unknowns`` is where budget exhaustion and knowledge/MCP failures are
-recorded instead of fabricated conclusions (CR-DIAG-14, CR-DIAG-16).
+字段集合严格（在本代码库中 pydantic 默认禁止额外字段），
+而列表类型的字段接受松散的标量输入并规范化为
+单元素列表（7.2.6，CR-ARCH-05 纪律）；``summary`` 为必填。
+``unknowns`` 用于记录预算耗尽与知识/MCP 失败，
+而不是编造结论（CR-DIAG-14，CR-DIAG-16）。
 """
 
 from __future__ import annotations

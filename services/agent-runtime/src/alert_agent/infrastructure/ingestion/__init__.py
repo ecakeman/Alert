@@ -1,4 +1,4 @@
-"""Ingestion worker package (T20)."""
+"""摄取 worker 包（T20）。"""
 
 from alert_agent.infrastructure.ingestion.callback import HttpCallbackSender
 from alert_agent.infrastructure.ingestion.pipeline import (

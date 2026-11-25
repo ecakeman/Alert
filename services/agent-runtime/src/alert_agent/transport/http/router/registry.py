@@ -1,9 +1,8 @@
-"""Single route-registration entry for the HTTP transport (CR-LAY-04).
+"""HTTP 传输层唯一的路由注册入口（CR-LAY-04）。
 
-All HTTP routes of the runtime are registered here and only here; handlers
-stay thin (binding + basic validation + use-case call + DTO mapping). RAG
-protocol routes declare the standalone internal-token dependency themselves
-(CR-REG-51).
+运行时的所有 HTTP 路由都在此处且仅在此处注册；处理器保持薄层
+（绑定 + 基础校验 + 用例调用 + DTO 映射）。RAG 协议路由自行声明独立的
+内部令牌依赖（CR-REG-51）。
 """
 
 from fastapi import APIRouter, Depends

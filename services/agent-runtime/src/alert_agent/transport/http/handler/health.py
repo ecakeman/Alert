@@ -1,9 +1,8 @@
-"""Health and readiness probes (CR-BOOT-08).
+"""健康与就绪探针（CR-BOOT-08）。
 
-``/health`` reflects process liveness only. ``/ready`` executes the
-readiness checks injected into ``app.state`` (gRPC server state now; Postgres
-and worker checks land with T05/T08). LLM endpoints are never part of the
-readiness probes.
+``/health`` 仅反映进程存活状态。``/ready`` 执行注入到 ``app.state`` 的
+就绪检查（当前为 gRPC 服务器状态；Postgres 与 worker 检查随 T05/T08 落地）。
+LLM 端点绝不属于就绪探针。
 """
 
 from __future__ import annotations
@@ -26,7 +25,7 @@ async def ready(request: Request) -> JSONResponse:
     for check in checks:
         try:
             await check()
-        except Exception as exc:  # noqa: BLE001 -- probe boundary: collect failures, never swallow silently
+        except Exception as exc:  # noqa: BLE001 -- 探针边界：收集失败项，绝不静默吞掉
             failures.append(str(exc) or type(exc).__name__)
     if failures:
         return JSONResponse(status_code=503, content={"status": "unready", "failures": failures})

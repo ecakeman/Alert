@@ -1,16 +1,13 @@
-"""MCP Streamable HTTP session client (T21, design 4.4, CR-GW-05/06/07,
-CR-REG-35).
+"""MCP Streamable HTTP 会话客户端（T21，design 4.4，CR-GW-05/06/07，
+CR-REG-35）。
 
-Singleton long-lived session (CR-GW-06): initialize (capability negotiation,
-peer protocol version kept) -> initialized notification -> tools/list with a
-TTL cache -> tools/call reuses the session; never re-initializes per call.
-Streamable-HTTP discipline (CR-REG-35): dual Accept header, ``Mcp-Session-Id``
-response header stored and replayed, SSE responses parsed. Call discipline
-(CR-GW-07): per-call timeout derived from the single gateway RPC setting,
-JSON-RPC id validation, bounded retries on transport failures, and
-``McpToolError`` (code/message/data) for ``isError`` results and JSON-RPC
-errors -- never an empty-string result. The tools directory is returned
-without any name filtering (C6 lesson).
+单例长会话（CR-GW-06）：initialize（能力协商，保留对端协议版本）->
+initialized 通知 -> 带 TTL 缓存的 tools/list -> tools/call 复用会话；
+绝不逐次调用重新初始化。Streamable-HTTP 纪律（CR-REG-35）：双 Accept 头、
+存储并回放 ``Mcp-Session-Id`` 响应头、解析 SSE 响应。调用纪律（CR-GW-07）：
+每次调用超时由唯一的网关 RPC 配置推导、JSON-RPC id 校验、传输失败有界重试、
+``isError`` 结果与 JSON-RPC 错误抛 ``McpToolError``（code/message/data）——
+绝不返回空字符串结果。工具目录不做任何名称过滤即原样返回（C6 教训）。
 """
 
 from __future__ import annotations
@@ -33,7 +30,7 @@ _TOOLS_TTL_SECONDS = 60.0
 
 
 class McpToolError(Exception):
-    """Structured MCP failure (CR-GW-07): code, message and optional data."""
+    """结构化 MCP 失败（CR-GW-07）：code、message 与可选 data。"""
 
     def __init__(self, code: str, message: str, data: object = None) -> None:
         super().__init__(f"{code}: {message}")
@@ -43,7 +40,7 @@ class McpToolError(Exception):
 
 
 class McpSessionManager:
-    """``McpSession`` port implementation (T10 contract, T21 transport)."""
+    """``McpSession`` 端口实现（T10 契约，T21 传输）。"""
 
     def __init__(
         self,
@@ -65,7 +62,7 @@ class McpSessionManager:
         )
         self._max_retries = max_retries
         self._backoff = backoff_seconds
-        self._transport = transport  # test seam; None uses the default stack
+        self._transport = transport  # 测试接缝；为 None 时使用默认协议栈
         self._session_id: str | None = None
         self._initialized = False
         self._init_lock = asyncio.Lock()
@@ -141,7 +138,7 @@ class McpSessionManager:
         peer_version = payload.get("protocolVersion")
         if peer_version:
             LOGGER.info("mcp peer protocol version: %s", peer_version)
-        # notifications/initialized: no id, no response expected.
+        # notifications/initialized：无 id，不期待响应。
         await self._rpc("notifications/initialized", {}, notify=True)
 
     async def _rpc(
@@ -181,7 +178,7 @@ class McpSessionManager:
             if "text/event-stream" in content_type:
                 return self._parse_sse(response.text, request_id, notify)
             if notify:
-                # Notifications carry no response body (e.g. HTTP 202).
+                # 通知没有响应体（如 HTTP 202）。
                 return {}
             data = response.json()
             return self._unwrap(data, request_id, notify, method)
@@ -191,8 +188,8 @@ class McpSessionManager:
         )
 
     def _parse_sse(self, text: str, request_id: int, notify: bool, method: str = "") -> dict:
-        """Streamable-HTTP SSE response: yield the first matching JSON-RPC
-        response for our id (or the first data frame for notifications)."""
+        """Streamable-HTTP SSE 响应：取出与我们的 id 匹配的第一条
+        JSON-RPC 响应（通知场景则取第一帧数据）。"""
         for line in text.splitlines():
             line = line.strip()
             if not line.startswith("data:"):

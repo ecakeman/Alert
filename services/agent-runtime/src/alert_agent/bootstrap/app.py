@@ -1,10 +1,9 @@
-"""FastAPI application factory and process entrypoint (CR-GW-01, D4).
+"""FastAPI 应用工厂与进程入口（CR-GW-01，D4）。
 
-``create_app`` wires the route registry onto one FastAPI application; the
-same process hosts the gRPC server through the lifespan. ``main`` fails fast
-on configuration errors (non-zero exit, desensitised report, 6.9.2.1) and
-then hands the HTTP role to uvicorn's public ``Server.run`` so signals stay
-with uvicorn's native lifespan handling (CR-BOOT-07).
+``create_app`` 将路由注册表装配到一个 FastAPI 应用上；同一进程通过 lifespan
+承载 gRPC 服务器。``main`` 在配置错误时快速失败（非零退出码、脱敏报告、
+6.9.2.1），随后将 HTTP 角色交给 uvicorn 的公开 ``Server.run``，使信号处理
+保持在 uvicorn 原生的 lifespan 机制中（CR-BOOT-07）。
 """
 
 from __future__ import annotations

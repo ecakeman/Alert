@@ -1,4 +1,4 @@
-"""Postgres persistence adapters for the cognitive schema (psycopg_pool, all async)."""
+"""面向 cognitive schema 的 Postgres 持久化适配器（psycopg_pool，全异步）。"""
 
 from __future__ import annotations
 

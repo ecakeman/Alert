@@ -1,14 +1,13 @@
-"""Fault-document store on cognitive.fault_documents / fault_doc_chunks
-(T14, CR-ARCH-06~08).
+"""cognitive.fault_documents / fault_doc_chunks 上的故障文档存储
+（T14，CR-ARCH-06~08）。
 
-Lifecycle: ``upsert_building`` (episode idempotency key, CR-ARCH-06) ->
-``mark_ready`` (index fields + chunks with a 'simple'-config tsv full-text leg
-built from jieba tokens, the migration's application-layer fill point) ->
-``mark_failed`` keeps ``index_error`` for retries. ``search`` implements the
-``FaultDocSearcher`` port: READY records only, same service first with
-cross-service fallback, ts_rank ordered (CR-ARCH-07/08). The vector leg joins
-in once embeddings are populated (T16 Embedder integration); rows without a
-ready retrieval leg never surface (CR-ARCH-08).
+生命周期：``upsert_building``（episode 幂等键，CR-ARCH-06）->
+``mark_ready``（索引字段 + 各分块，含由 jieba 分词构建的 'simple' 配置
+tsv 全文腿，即迁移文件中的应用层填充点）-> ``mark_failed`` 保留
+``index_error`` 供重试。``search`` 实现 ``FaultDocSearcher`` 端口：仅
+READY 记录，同服务优先、跨服务兜底，按 ts_rank 排序（CR-ARCH-07/08）。
+嵌入填充后向量腿随之加入（T16 Embedder 集成）；没有就绪检索腿的行绝不
+出现（CR-ARCH-08）。
 """
 
 from __future__ import annotations
@@ -94,7 +93,7 @@ _CHUNK_FIELDS = ("summary", "symptoms", "observations", "diagnosis")
 
 
 def _tokens(text: str) -> str:
-    """jieba-tokenized text for the 'simple' tsv configuration (D9 fill point)."""
+    """面向 'simple' tsv 配置的 jieba 分词文本（D9 填充点）。"""
     return " ".join(token.strip() for token in jieba.cut_for_search(text) if token.strip())
 
 
@@ -103,7 +102,7 @@ def _json_list(value: object) -> str:
 
 
 class PostgresFaultDocStore:
-    """``FaultDocStore`` + ``FaultDocSearcher`` implementation (T14)."""
+    """``FaultDocStore`` + ``FaultDocSearcher`` 实现（T14）。"""
 
     def __init__(self, pool: AsyncConnectionPool, ids: IdGen) -> None:
         self._pool = pool
@@ -171,9 +170,8 @@ class PostgresFaultDocStore:
     async def search(
         self, service_id: str, query: str, *, top_k: int = 5
     ) -> list[FdHit]:
-        """CR-ARCH-07/08: READY records only, same service first, ts_rank
-        ordered; the vector leg joins via the embedding column when populated
-        (T16)."""
+        """CR-ARCH-07/08：仅 READY 记录，同服务优先，按 ts_rank 排序；
+        嵌入列填充后向量腿随之加入（T16）。"""
         tokens = _tokens(query)
         if not tokens:
             return []
@@ -198,7 +196,7 @@ class PostgresFaultDocStore:
 
 
 class _SearchRow:
-    """Projection row for the fault-document search (infrastructure only)."""
+    """故障文档搜索的投影行（仅基础设施层使用）。"""
 
     fd_id: str
     episode_id: str

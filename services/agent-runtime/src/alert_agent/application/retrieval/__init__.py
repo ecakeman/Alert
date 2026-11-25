@@ -1,1 +1,1 @@
-"""RAG retrieval application package (M7, batches T15~T18)."""
+"""RAG 检索应用包（M7，批次 T15~T18）。"""

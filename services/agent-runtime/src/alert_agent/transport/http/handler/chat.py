@@ -1,13 +1,11 @@
-"""POST /chat true-streaming SSE handler (T23, design 3.2.3, CR-RAG-15~19,
-CR-REG-18/38/52).
+"""POST /chat 真流式 SSE 处理器（T23，design 3.2.3，CR-RAG-15~19、
+CR-REG-18/38/52）。
 
-Tokens stream out the moment the model produces them (T17 synthesize node
-emits through the per-request channel -- no batching, no
-"collect-then-replay"); trace frames flow when each node finishes; citations
-and done frames land after the graph terminates. Citations whose number never
-appears in the answer are dropped (CR-RAG-19). Domain failures become an
-error frame with a stable business code (CR-REG-52); the whole path is async
-(CR-REG-38).
+模型一产出 token 就立即流出（T17 synthesize 节点通过每请求专属通道发出
+——不批量化、不"先收集再回放"）；每个节点完成时发出 trace 帧；citations
+和 done 帧在图终止后发出。答案中未出现的引用编号会被剔除（CR-RAG-19）。
+领域失败转换为带稳定业务码的 error 帧（CR-REG-52）；整条路径均为异步
+（CR-REG-38）。
 """
 
 from __future__ import annotations
@@ -50,14 +48,14 @@ async def chat(request: Request, dto: ChatRequestDto) -> StreamingResponse:
     frames: asyncio.Queue[str] = asyncio.Queue()
 
     async def emit(event: str, data: dict) -> None:
-        # Per-request channel (T17): events never cross sessions (6.5.3.3).
+        # 每请求专属通道（T17）：事件绝不跨会话（6.5.3.3）。
         frames.put_nowait(encode_event(event, data))
 
     async def event_stream():
         try:
             task = asyncio.create_task(chat_case.chat(domain_request, emit))
-            # Forward frames as they appear; poll keeps the generator simple
-            # and fully async (CR-REG-38).
+            # 帧一旦出现即转发；轮询使生成器保持简单且完全异步
+            # （CR-REG-38）。
             while not (task.done() and frames.empty()):
                 try:
                     frame = await asyncio.wait_for(frames.get(), timeout=0.05)

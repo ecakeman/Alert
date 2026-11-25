@@ -1,13 +1,12 @@
-"""ReceiptStore port: idempotent task acceptance (design 4.2/6.2).
+"""ReceiptStore 端口：幂等的任务接入（design 4.2/6.2）。
 
-Port types speak business fields only (CR-LAY-07); row models stay in
-infrastructure. ``accept`` must be atomic via INSERT ... ON CONFLICT
-(task_id, generation) DO NOTHING -- never select-then-insert (CR-REG-40, Q1);
-FAILED receipts of the same generation are re-accepted with the original
-failure record kept (CR-TASK-03); a submission older than the recorded
-generation is rejected with ``STALE_GENERATION`` and zero writes (6.1.3.2).
-All status transitions carry the generation condition (CR-TASK-04, CR-REG-41).
-``mark_finished`` only accepts COMPLETED or FAILED (state machine CR-TASK-04).
+端口类型只涉及业务字段（CR-LAY-07）；行模型保留在基础设施层。``accept``
+必须通过 INSERT ... ON CONFLICT (task_id, generation) DO NOTHING 实现原子性
+——绝不使用先查后插（CR-REG-40，Q1）；同 generation 的 FAILED 回执会被
+重新接受并保留原始失败记录（CR-TASK-03）；早于已记录 generation 的提交
+以 ``STALE_GENERATION`` 拒绝且零写入（6.1.3.2）。
+所有状态转换都携带 generation 条件（CR-TASK-04，CR-REG-41）。
+``mark_finished`` 只接受 COMPLETED 或 FAILED（状态机 CR-TASK-04）。
 """
 
 from __future__ import annotations
@@ -22,7 +21,7 @@ from alert_agent.domain.task import CallbackState, ReceiptStatus
 
 
 class TaskSubmission(BaseModel):
-    """Application-level task input; mapped 1:1 from SubmitTaskRequest (CR-GW-03)."""
+    """应用层任务输入；与 SubmitTaskRequest 一一映射（CR-GW-03）。"""
 
     model_config = ConfigDict(frozen=True)
 
@@ -32,7 +31,7 @@ class TaskSubmission(BaseModel):
 
 
 class AcceptOutcome(BaseModel):
-    """Result of idempotent acceptance (CR-TASK-01)."""
+    """幂等接入的结果（CR-TASK-01）。"""
 
     model_config = ConfigDict(frozen=True)
 
@@ -41,7 +40,7 @@ class AcceptOutcome(BaseModel):
 
 
 class UnfinishedReceipt(BaseModel):
-    """Receipt projection consumed by the recovery use case (CR-TASK-10)."""
+    """供恢复用例消费的回执投影（CR-TASK-10）。"""
 
     model_config = ConfigDict(frozen=True)
 
@@ -89,10 +88,10 @@ class ReceiptStore(Protocol):
     async def list_unconfirmed_results(self) -> list[UnfinishedReceipt]: ...
 
 class GatewayAck(BaseModel):
-    """Protocol-level acknowledgement of one callback (design 4.3).
+    """一次回调的协议层确认（design 4.3）。
 
-    ``accepted`` mirrors ``TaskAck.accepted``; the client implementation reads
-    it as a precondition for every follow-up action (CR-TASK-06, Q5 lesson).
+    ``accepted`` 镜像 ``TaskAck.accepted``；客户端实现将其读取为每一个
+    后续动作的前置条件（CR-TASK-06，Q5 教训）。
     """
 
     model_config = ConfigDict(frozen=True)
@@ -101,7 +100,7 @@ class GatewayAck(BaseModel):
 
 
 class ArtifactCallback(BaseModel):
-    """RegisterTaskArtifact payload (design 4.3, CR-GW-09)."""
+    """RegisterTaskArtifact 载荷（design 4.3，CR-GW-09）。"""
 
     model_config = ConfigDict(frozen=True)
 
@@ -115,7 +114,7 @@ class ArtifactCallback(BaseModel):
 
 
 class TaskFailureReport(BaseModel):
-    """ReportTaskFailure payload; only RetryableError maps to retryable=true (CR-TASK-12/13)."""
+    """ReportTaskFailure 载荷；只有 RetryableError 映射为 retryable=true（CR-TASK-12/13）。"""
 
     model_config = ConfigDict(frozen=True)
 
@@ -126,10 +125,10 @@ class TaskFailureReport(BaseModel):
 
 
 class TaskContextView(BaseModel):
-    """GetTaskContext response as business fields (design 4.3).
+    """以业务字段表示的 GetTaskContext 响应（design 4.3）。
 
-    ``deadline_at`` is timezone-aware UTC, parsed from the proto int64 Unix
-    seconds; callers compare it with the SubmitTask boundary.
+    ``deadline_at`` 是带时区的 UTC 时间，从 proto int64 Unix 秒解析；
+    调用方将其与 SubmitTask 的边界进行比较。
     """
 
     model_config = ConfigDict(frozen=True)
@@ -143,13 +142,12 @@ class TaskContextView(BaseModel):
 
 
 class TaskGateway(Protocol):
-    """The seven SystemTaskGatewayService callbacks (design 4.3, CR-GW-04).
+    """七个 SystemTaskGatewayService 回调（design 4.3，CR-GW-04）。
 
-    Implementations must read ``TaskAck.accepted`` as a precondition for the
-    next action and never swallow exceptions: a single failed renewal surfaces
-    immediately so the worker can count failures and terminate at threshold
-    (CR-REG-44). Deterministic rejections (LEASE_LOST/STALE_GENERATION stable
-    codes) raise FatalError; transient ones surface after bounded retries.
+    实现必须把 ``TaskAck.accepted`` 读取为下一个动作的前置条件，绝不吞掉
+    异常：单次续期失败立即浮出，使 worker 可以统计失败次数并在达到阈值时
+    终止（CR-REG-44）。确定性拒绝（LEASE_LOST/STALE_GENERATION 稳定码）
+    抛出 FatalError；瞬态失败在有限次重试后浮出。
     """
 
     async def report_started(self, identity: TaskIdentity) -> GatewayAck: ...
@@ -167,11 +165,11 @@ class TaskGateway(Protocol):
     async def abandon_task(self, identity: TaskIdentity) -> GatewayAck: ...
 
 class ArtifactRegistration(BaseModel):
-    """Registration payload for cognitive.episode_artifacts (design 4.6).
+    """cognitive.episode_artifacts 的注册载荷（design 4.6）。
 
-    ``artifact_version`` is the expected version: the UNIQUE
-    (episode_id, artifact_type, artifact_version) constraint is the
-    optimistic-lock basis (CR-DIAG-19, CR-REG-46).
+    ``artifact_version`` 是期望版本：UNIQUE
+    (episode_id, artifact_type, artifact_version) 约束是乐观锁的基础
+    （CR-DIAG-19，CR-REG-46）。
     """
 
     model_config = ConfigDict(frozen=True)
@@ -187,7 +185,7 @@ class ArtifactRegistration(BaseModel):
 
 
 class ArtifactRecord(BaseModel):
-    """Registered artifact view as business fields (no content column, D5)."""
+    """以业务字段表示的已注册产物视图（无内容列，D5）。"""
 
     model_config = ConfigDict(frozen=True)
 
@@ -203,19 +201,18 @@ class ArtifactRecord(BaseModel):
 
 
 class ArtifactStore(Protocol):
-    """Version registry on cognitive.episode_artifacts (design 4.6, CR-REG-46).
+    """cognitive.episode_artifacts 上的版本注册表（design 4.6，CR-REG-46）。
 
-    ``register`` is idempotent for the same generation + same hash (Q7),
-    rejects an older generation with ``ARTIFACT_VERSION_CONFLICT`` (older
-    generations never overwrite) and treats any other version clash as a
-    conflict; ``latest_version`` drives monotonic version allocation
-    (CR-DIAG-19).
+    ``register`` 对同 generation + 同 hash 幂等（Q7），以
+    ``ARTIFACT_VERSION_CONFLICT`` 拒绝更旧的 generation（更旧的
+    generation 永远不会被覆盖），并把任何其他版本冲突视为冲突；
+    ``latest_version`` 驱动单调的版本分配（CR-DIAG-19）。
     """
 
     async def register(self, registration: ArtifactRegistration) -> ArtifactRecord: ...
 
     async def latest_version(self, episode_id: str, artifact_type: str) -> int:
-        """Highest registered version for one episode artifact type; 0 when none."""
+        """单个 episode 产物类型的最高已注册版本；无记录时为 0。"""
         ...
 
     async def find(

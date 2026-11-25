@@ -1,15 +1,13 @@
-"""SystemTaskGateway client: the seven callback RPCs (design 4.3, CR-GW-04).
+"""SystemTaskGateway 客户端：七个回调 RPC（design 4.3，CR-GW-04）。
 
-Every callback reads ``TaskAck.accepted`` as a precondition before any
-follow-up action (Q5 lesson); ``accepted=false`` and the Go stable rejection
-codes (``LEASE_LOST``/``STALE_GENERATION``, carried as the gRPC
-FAILED_PRECONDITION details prefix per ``transport/grpc/errcode.go``) surface
-as domain ``FatalError`` so upper layers can trigger threshold-based
-termination (CR-TASK-06). UNAVAILABLE and DEADLINE_EXCEEDED get bounded
-retries with backoff (CR-REG-14); deterministic rejections never retry. The
-call timeout derives from the single ``GATEWAY_RPC_TIMEOUT_MS`` setting
-(CR-REG-32). The client never swallows exceptions -- one failed renewal
-surfaces immediately and the worker (T08) owns failure counting (CR-REG-44).
+每个回调在执行任何后续动作前先读取 ``TaskAck.accepted`` 作为前置条件
+（Q5 教训）；``accepted=false`` 与 Go 端稳定拒绝码（``LEASE_LOST``/
+``STALE_GENERATION``，按 ``transport/grpc/errcode.go`` 作为 gRPC
+FAILED_PRECONDITION details 的前缀承载）以领域 ``FatalError`` 暴露，供
+上层触发基于阈值的终止（CR-TASK-06）。UNAVAILABLE 与 DEADLINE_EXCEEDED
+做有界退避重试（CR-REG-14）；确定性拒绝绝不重试。调用超时由唯一的
+``GATEWAY_RPC_TIMEOUT_MS`` 配置推导（CR-REG-32）。客户端绝不吞掉异常——
+一次续租失败立即暴露，由 worker（T08）负责失败计数（CR-REG-44）。
 """
 
 from __future__ import annotations
@@ -55,7 +53,7 @@ def _identity_message(identity: TaskIdentity) -> common_pb2.TaskIdentity:
 
 
 class SystemTaskGatewayClient:
-    """TaskGateway port implementation over SystemTaskGatewayService (design 4.3)."""
+    """基于 SystemTaskGatewayService 的 TaskGateway 端口实现（design 4.3）。"""
 
     def __init__(
         self,
@@ -79,7 +77,7 @@ class SystemTaskGatewayClient:
         return await self._ack("ReportTaskHeartbeat", request)
 
     async def register_artifact(self, artifact: ArtifactCallback) -> GatewayAck:
-        # Go decodes source_refs as a JSON string array (transport/grpc/mapper.go).
+        # Go 端将 source_refs 解码为 JSON 字符串数组（transport/grpc/mapper.go）。
         source_refs = json.dumps(list(artifact.source_refs), ensure_ascii=False).encode("utf-8")
         request = task_gateway_pb2.RegisterTaskArtifactRequest(
             identity=_identity_message(artifact.identity),
@@ -108,7 +106,7 @@ class SystemTaskGatewayClient:
     async def get_task_context(self, identity: TaskIdentity) -> TaskContextView:
         request = task_gateway_pb2.GetTaskContextRequest(identity=_identity_message(identity))
         response = await self._call("GetTaskContext", request)
-        # deadline_at is int64 Unix seconds (Go mapper.go uses time.Time.Unix()).
+        # deadline_at 是 int64 Unix 秒（Go mapper.go 使用 time.Time.Unix()）。
         deadline_at = datetime.fromtimestamp(response.deadline_at, tz=UTC)
         return TaskContextView(
             input_version_from=response.input_version_from,

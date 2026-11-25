@@ -1,1 +1,1 @@
-"""Knowledge invocation application package (M5, wired by T22)."""
+"""知识调用应用包（M5，由 T22 接线）。"""

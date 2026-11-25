@@ -1,9 +1,9 @@
-"""Action discriminated union (design 3.1.2, CR-DIAG-04/05/06).
+"""动作判别联合类型（design 3.1.2，CR-DIAG-04/05/06）。
 
-Five action types, ``extra="forbid"`` so malformed model output fails
-validation and routes to the explicit fallback node (CR-DIAG-05). The
-discriminator is ``type``; ``parse_action`` (application layer, T12) feeds raw
-JSON through ``Action.model_validate``/TypeAdapter after unwrapping.
+五种动作类型，``extra="forbid"`` 使格式错误的模型输出
+在校验阶段失败并路由到显式的回退节点（CR-DIAG-05）。
+判别符为 ``type``；``parse_action``（应用层，T12）在解包后将原始
+JSON 交给 ``Action.model_validate``/TypeAdapter 处理。
 """
 
 from __future__ import annotations
@@ -20,8 +20,8 @@ class ActionBase(BaseModel):
 
 
 class QueryTimelineAction(ActionBase):
-    """No parameters on purpose: the range always comes from the frozen
-    boundary and the Go side rejects out-of-range reads (CR-DIAG-10)."""
+    """有意不设参数：时间范围始终来自冻结边界，且 Go 侧
+    会拒绝越界的读取请求（CR-DIAG-10）。"""
 
     type: Literal["query_timeline"]
 
@@ -38,8 +38,8 @@ class InvokeKnowledgeAction(ActionBase):
 
 
 class CallMcpToolAction(ActionBase):
-    """``name`` is checked against the live tools/list directory before
-    execution; ``arguments`` must be an explicit JSON object (CR-DIAG-06)."""
+    """``name`` 在执行前会对照实时的 tools/list 目录进行
+    校验；``arguments`` 必须是显式的 JSON 对象（CR-DIAG-06）。"""
 
     type: Literal["call_mcp_tool"]
     name: str = Field(min_length=1)

@@ -1,11 +1,10 @@
-"""RAG retrieval ports (design 3.2/5.1, batches T15~T18).
+"""RAG 检索端口（design 3.2/5.1，批次 T15~T18）。
 
-Ports speak domain models only (CR-LAY-07): dual-leg data sources
-(``VectorStore``/``Bm25Index``), embedding and rerank clients, the structured
-and streaming LLM surfaces (``LlmJson``/``Streamer``) and the composed
-``Searcher`` contract whose result carries ``leg_status`` (CR-RAG-06).
-Implementations land in infrastructure (T16); no technology imports here
-(CR-LAY-02).
+端口只涉及领域模型（CR-LAY-07）：双路数据源
+（``VectorStore``/``Bm25Index``）、嵌入与重排客户端、结构化与流式
+LLM 接口（``LlmJson``/``Streamer``），以及结果携带 ``leg_status``
+的复合 ``Searcher`` 契约（CR-RAG-06）。实现位于基础设施层（T16）；
+此处不含任何技术导入（CR-LAY-02）。
 """
 
 from __future__ import annotations
@@ -19,7 +18,7 @@ from alert_agent.domain.retrieval.chunk import RetrievalResult, RetrievedChunk
 
 
 class VectorStore(Protocol):
-    """Vector leg over the pgvector-backed retrieval store (T16)."""
+    """基于 pgvector 检索存储的向量路（T16）。"""
 
     async def search_vector(
         self,
@@ -31,7 +30,7 @@ class VectorStore(Protocol):
 
 
 class Bm25Index(Protocol):
-    """In-process BM25 leg; tokenization and scoring happen inside (D9)."""
+    """进程内 BM25 路；分词与打分均在内部完成（D9）。"""
 
     async def search_bm25(
         self, query: str, *, doc_ids: tuple[str, ...] | None = None, top_k: int = 8
@@ -39,15 +38,14 @@ class Bm25Index(Protocol):
 
 
 class Embedder(Protocol):
-    """OpenAI-compatible batch embeddings; ``embed_dim`` consistency is
-    validated at startup (D7)."""
+    """OpenAI 兼容的批量嵌入；``embed_dim`` 一致性在启动时校验（D7）。"""
 
     async def embed(self, texts: list[str]) -> list[list[float]]: ...
 
 
 class Reranker(Protocol):
-    """Rerank client; failures degrade to fusion order with degraded=true
-    (CR-RAG-07, CR-REG-22) -- enforced by the caller."""
+    """重排客户端；失败时降级为融合顺序并置 degraded=true
+    （CR-RAG-07，CR-REG-22）——由调用方强制执行。"""
 
     async def rerank(
         self, query: str, chunks: list[RetrievedChunk], *, top_k: int = 5
@@ -55,8 +53,8 @@ class Reranker(Protocol):
 
 
 class Searcher(Protocol):
-    """Composed dual-leg retrieval: vector + BM25, RRF fusion, fetch of chunk
-    content and leg_status reporting (implemented by T16 ``searcher.py``)."""
+    """复合双路检索：向量 + BM25、RRF 融合、取回分块内容并报告
+    leg_status（由 T16 ``searcher.py`` 实现）。"""
 
     async def search(
         self,
@@ -69,8 +67,8 @@ class Searcher(Protocol):
 
 
 class LlmJson(Protocol):
-    """Structured JSON calls returning validated pydantic instances; parse
-    failures re-ask once inside the implementation (CR-REG-13)."""
+    """返回已校验 pydantic 实例的结构化 JSON 调用；解析失败时在实现内部
+    追问一次（CR-REG-13）。"""
 
     async def complete_json(
         self, model_cls: type[BaseModel], *, system: str, user: str
@@ -78,8 +76,8 @@ class LlmJson(Protocol):
 
 
 class Streamer(Protocol):
-    """Incremental token stream; streaming failure falls back to one
-    non-streaming attempt inside the implementation (CR-REG-18)."""
+    """增量 token 流；流式失败时在实现内部回退为一次非流式调用
+    （CR-REG-18）。"""
 
     def stream(self, *, system: str, user: str) -> AsyncIterator[str]: ...
 

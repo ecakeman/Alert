@@ -1,9 +1,8 @@
-"""Knowledge-agent invocation port (design 4.5.2, CR-KNOW-01~08).
+"""知识智能体调用端口（design 4.5.2，CR-KNOW-01~08）。
 
-The A2A client (T22) implements this port; the diagnosis loop (T13) depends
-only on the port. Results must validate as ``list[KnowledgeHit]`` before
-entering diagnosis state (CR-KNOW-07); non-COMPLETED outcomes raise a
-diagnosable error carrying code and safe message (CR-KNOW-08).
+A2A 客户端（T22）实现此端口；诊断循环（T13）只依赖该端口。结果在进入
+诊断状态前必须通过 ``list[KnowledgeHit]`` 校验（CR-KNOW-07）；非
+COMPLETED 的结果会抛出携带 code 与安全消息的可诊断错误（CR-KNOW-08）。
 """
 
 from __future__ import annotations
@@ -19,12 +18,11 @@ class KnowledgeInvoker(Protocol):
 
 
 class FaultDocSearcher(Protocol):
-    """Historical fault-document retrieval inside the cognitive store
-    (CR-DIAG-12, implemented by the archive batch T14).
+    """在认知存储内进行历史故障文档检索
+    （CR-DIAG-12，由归档批次 T14 实现）。
 
-    Implementations rank the same service first with a cross-service
-    fallback, fuse vector and full-text legs and return traceable ``fd_id``
-    hits validated as ``FdHit``.
+    实现优先对同一服务排序并提供跨服务回退，融合向量与全文两路，
+    返回通过 ``FdHit`` 校验的可追溯 ``fd_id`` 命中。
     """
 
     async def search(self, service_id: str, query: str, *, top_k: int = 5) -> list[FdHit]: ...

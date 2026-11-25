@@ -1,10 +1,9 @@
-"""Archive use-case ports (design M6, CR-ARCH-01~09).
+"""归档用例端口（design M6，CR-ARCH-01~09）。
 
-``IndexExtractor`` produces the four-field index with an explicit strategy
-marker (CR-ARCH-04: one clearly named strategy, never mixed semantics);
-``ArtifactContentReader`` reads registered artifact bodies through their
-storage_key; ``FaultDocStore`` owns the BUILDING -> READY/FAILED lifecycle
-(CR-ARCH-06). No technology imports here (CR-LAY-02).
+``IndexExtractor`` 通过显式的策略标记生成四字段索引（CR-ARCH-04：一个明确
+命名的策略，绝不混合语义）；``ArtifactContentReader`` 通过 storage_key
+读取已注册的产物正文；``FaultDocStore`` 负责 BUILDING -> READY/FAILED
+生命周期（CR-ARCH-06）。此处不包含任何技术导入（CR-LAY-02）。
 """
 
 from __future__ import annotations
@@ -17,13 +16,13 @@ from alert_agent.domain.archive.index import FaultDocument, FaultSearchIndex
 
 
 class ArtifactContentReader(Protocol):
-    """Reads one artifact body by storage_key (rooted at the storage root)."""
+    """按 storage_key 读取单个产物正文（以存储根目录为基准）。"""
 
     async def read(self, storage_key: str) -> str: ...
 
 
 class ArchiveExtraction(BaseModel):
-    """Extraction result with its strategy source (CR-ARCH-04)."""
+    """携带策略来源的提取结果（CR-ARCH-04）。"""
 
     model_config = ConfigDict(frozen=True)
 
@@ -38,7 +37,7 @@ class IndexExtractor(Protocol):
 
 
 class FaultDocStore(Protocol):
-    """fault_documents lifecycle: BUILDING -> READY / FAILED (CR-ARCH-06)."""
+    """fault_documents 生命周期：BUILDING -> READY / FAILED（CR-ARCH-06）。"""
 
     async def upsert_building(
         self,

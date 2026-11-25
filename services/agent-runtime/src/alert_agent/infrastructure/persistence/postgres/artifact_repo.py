@@ -1,12 +1,11 @@
-"""ArtifactStore implementation on cognitive.episode_artifacts (design 4.6,
-CR-DIAG-19, CR-REG-46).
+"""cognitive.episode_artifacts 上的 ArtifactStore 实现（design 4.6，
+CR-DIAG-19，CR-REG-46）。
 
-UNIQUE(episode_id, artifact_type, artifact_version) is the optimistic-lock
-basis: INSERT ... ON CONFLICT DO NOTHING first, then compare the existing row
--- same generation + same hash is an idempotent hit (Q7), an existing row of a
-newer generation is never overwritten (older generations cannot register,
-CR-REG-46), anything else is an ``ARTIFACT_VERSION_CONFLICT``. There is no
-artifact content column (D5); the storage_key addresses the file body.
+UNIQUE(episode_id, artifact_type, artifact_version) 是乐观锁的基础：
+先执行 INSERT ... ON CONFLICT DO NOTHING，再比对已存在的行——同 generation
+且同哈希即幂等命中（Q7）；较新 generation 的已有行绝不被覆盖（旧 generation
+不能注册，CR-REG-46）；其余情况抛 ``ARTIFACT_VERSION_CONFLICT``。没有
+artifact 内容列（D5）；storage_key 指向文件正文。
 """
 
 from __future__ import annotations
@@ -45,7 +44,7 @@ WHERE episode_id = %s AND artifact_type = %s
 
 @dataclass(frozen=True, slots=True)
 class ArtifactRow:
-    """Projection of cognitive.episode_artifacts used by the artifact repo."""
+    """产物仓储使用的 cognitive.episode_artifacts 投影。"""
 
     artifact_id: str
     task_id: str
@@ -73,7 +72,7 @@ def _to_record(row: ArtifactRow) -> ArtifactRecord:
 
 
 class PostgresArtifactStore:
-    """ArtifactStore port implementation on cognitive.episode_artifacts."""
+    """cognitive.episode_artifacts 上的 ArtifactStore 端口实现。"""
 
     def __init__(self, pool: AsyncConnectionPool, ids: IdGen) -> None:
         self._pool = pool
@@ -113,8 +112,8 @@ class PostgresArtifactStore:
                 connection, registration.episode_id, registration.artifact_type, registration.artifact_version
             )
             if existing is None:
-                # Unreachable unless the concurrent insert that won the UNIQUE
-                # race aborted between ON CONFLICT and this read; retrying is safe.
+                # 正常情况下不可达：除非在 UNIQUE 竞争中胜出的并发插入
+                # 在 ON CONFLICT 与本次读取之间回滚；此时重试是安全的。
                 raise RetryableError(
                     ErrorCode.ARTIFACT_VERSION_CONFLICT,
                     "concurrent artifact insert rolled back; retry the registration",
@@ -129,7 +128,7 @@ class PostgresArtifactStore:
                 existing.generation == registration.generation
                 and existing.content_hash == registration.content_hash
             ):
-                # Same version + same hash: idempotent reuse (CR-REG-46, Q7).
+                # 同版本 + 同哈希：幂等复用（CR-REG-46，Q7）。
                 return _to_record(existing)
             raise FatalError(
                 ErrorCode.ARTIFACT_VERSION_CONFLICT,

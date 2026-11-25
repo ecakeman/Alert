@@ -1,1 +1,1 @@
-"""Diagnosis application package: loop use case and ports (M4, batches T10~T13)."""
+"""诊断应用包：循环用例与端口（M4，批次 T10~T13）。"""

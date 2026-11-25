@@ -1,13 +1,13 @@
-"""DiagnosisState: the single langgraph state carrier (design 3.1.1,
-CR-DIAG-01/02/03).
+"""DiagnosisState：唯一的 langgraph 状态载体（design 3.1.1，
+CR-DIAG-01/02/03）。
 
-Nodes return incremental dicts and list fields merge through ``ReduceAppend``
-(operator.add) so checkpointed replays never duplicate entries. ``phase`` is
-assigned only at node boundaries (LOAD/DECIDE/TOOL/WRITE/DONE/FAILED); the
-"last action" stays implicit in ``executed_actions`` (CR-DIAG-03). The dead
-fields of the reference implementation (investigation_revision /
-report_revision / round_marker_hash / current_stage) are deliberately absent
-(CR-REG-03).
+节点返回增量字典，列表字段通过 ``ReduceAppend``
+（operator.add）归并，因此检查点重放不会产生重复条目。``phase``
+ 仅在节点边界处赋值（LOAD/DECIDE/TOOL/WRITE/DONE/FAILED）；
+"上一个动作" 隐式保留在 ``executed_actions`` 中（CR-DIAG-03）。参考实现中的
+无效字段（investigation_revision /
+report_revision / round_marker_hash / current_stage）被刻意移除
+（CR-REG-03）。
 """
 
 from __future__ import annotations

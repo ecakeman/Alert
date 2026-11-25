@@ -1,10 +1,10 @@
-"""IngestJob value model (design 4.7, CR-ING-02).
+"""IngestJob 值模型（design 4.7，CR-ING-02）。
 
-The persisted job is the single authority for ingestion status
-(QUEUED/PROCESSING/READY/FAILED); in-process dicts never hold state
-(CR-ING-02). ``error_msg`` is capped at 500 chars and never carries
-credentials or full paths (7.5.6); ``file_path`` stays relative to the
-ingest root for the same reason.
+持久化的 job 是摄入状态的唯一权威来源
+（QUEUED/PROCESSING/READY/FAILED）；进程内字典绝不持有状态
+（CR-ING-02）。``error_msg`` 上限为 500 字符，且绝不携带
+凭据或完整路径（7.5.6）；出于同样原因，``file_path`` 始终相对于
+摄入根目录。
 """
 
 from __future__ import annotations

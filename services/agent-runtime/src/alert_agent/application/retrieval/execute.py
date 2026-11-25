@@ -1,10 +1,10 @@
-"""RAG chat/retrieve use-case entry (T17, design 3.2.2, CR-RAG-15).
+"""RAG 问答/检索用例入口（T17，design 3.2.2，CR-RAG-15）。
 
-``ChatAnswer`` drives one POST /chat invocation (HTTP SSE wiring lands with
-T23): initial state from the validated ChatRequest, the compiled singleton
-graph, per-invocation ``emit`` and ``started_at`` through the runnable config,
-and the recursion cap derived from the budget (CR-RAG-13). The emit contract
-is an async callable receiving ``(event_name, payload_dict)``.
+``ChatAnswer`` 驱动一次 POST /chat 调用（HTTP SSE 接线随 T23 落地）：
+以校验后的 ChatRequest 作为初始状态，使用编译好的单例图，
+``emit`` 与 ``started_at`` 通过 runnable config 逐次传入，
+递归上限由预算推导（CR-RAG-13）。emit 契约是一个接收
+``(event_name, payload_dict)`` 的异步可调用对象。
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ EmitFn = Callable[[str, dict], Awaitable[None]]
 
 
 class ChatAnswer:
-    """One chat turn end to end; returns the terminal retrieval state."""
+    """端到端处理一轮问答；返回终态的检索状态。"""
 
     def __init__(self, *, nodes: RetrievalNodes, clock: Clock) -> None:
         self._nodes = nodes

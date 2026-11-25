@@ -1,20 +1,18 @@
-"""OpenAI-compatible async LLM client shared by diagnosis and RAG (design 5.2,
-D7, CR-DIAG-08/09, CR-REG-13~18).
+"""诊断与 RAG 共享的 OpenAI 兼容异步 LLM 客户端（design 5.2，D7，
+CR-DIAG-08/09，CR-REG-13~18）。
 
-- One lazily created ``httpx.AsyncClient`` behind a double-checked
-  ``asyncio.Lock`` (connection reuse; async-only interface, CR-REG-15).
-- Structured calls: ``response_format: json_object`` + schema injected into
-  the prompt + explicit low temperature (fast 0.1, CR-DIAG-08). Parse pipeline
-  (fences -> empty-choices guard -> schema validation) re-asks once with the
-  error text; a second failure raises ``MODEL_PARSE_ERROR`` (CR-REG-13).
-- Retries: connect/read timeouts and 429/5xx retry with linear backoff up to
-  the configured limit; deterministic 4xx never retries (CR-REG-14). API
-  failures surface as RetryableError/FatalError so node-level fallback covers
-  them (no scripted fallback inside the client, R3).
-- Streaming: incremental token passthrough; on any stream failure the client
-  falls back to one non-streaming attempt (CR-REG-18).
-- All timeouts derive from the single LlmSettings group (CR-REG-32); runtime
-  config stays frozen (RAG L14).
+- 一个惰性创建的 ``httpx.AsyncClient``，位于双重检查的 ``asyncio.Lock``
+  之后（连接复用；仅异步接口，CR-REG-15）。
+- 结构化调用：``response_format: json_object`` + 将 schema 注入提示词 +
+  显式低温度（fast 0.1，CR-DIAG-08）。解析流水线（去围栏 -> 空选项守卫 ->
+  schema 校验）在失败时携带错误文本追问一次；二次失败抛
+  ``MODEL_PARSE_ERROR``（CR-REG-13）。
+- 重试：连接/读取超时及 429/5xx 按线性退避重试，直至配置上限；确定性
+  4xx 绝不重试（CR-REG-14）。API 失败以 RetryableError/FatalError 暴露，
+  由节点级兜底接管（客户端内不做脚本化兜底，R3）。
+- 流式：增量 token 直通；任一流式失败则回退为一次非流式调用（CR-REG-18）。
+- 所有超时由单一 LlmSettings 配置组推导（CR-REG-32）；运行时配置保持
+  冻结（RAG L14）。
 """
 
 from __future__ import annotations
@@ -46,8 +44,8 @@ _Validator = Callable[[dict[str, Any]], Any]
 
 
 class OpenAiCompatibleLlmClient:
-    """Implements the ``LlmDecider`` port (T10) and the structured/streaming
-    surface consumed by the RAG side (T15~T17, T23)."""
+    """实现 ``LlmDecider`` 端口（T10），以及 RAG 侧消费的结构化/流式
+    接口（T15~T17，T23）。"""
 
     def __init__(self, settings: LlmSettings) -> None:
         self._base_url = settings.llm_api_base.rstrip("/")
@@ -68,7 +66,7 @@ class OpenAiCompatibleLlmClient:
 
     async def _ensure_client(self) -> httpx.AsyncClient:
         if self._client is None:
-            async with self._client_lock:  # double-checked lazy init (RAG L13)
+            async with self._client_lock:  # 双重检查的惰性初始化（RAG L13）
                 if self._client is None:
                     timeout = httpx.Timeout(
                         connect=self._connect_timeout,
@@ -94,8 +92,8 @@ class OpenAiCompatibleLlmClient:
         schema_name: str,
         schema: dict[str, Any],
     ) -> dict[str, Any]:
-        """``LlmDecider`` port: structured decision JSON (validated by the
-        caller's discriminated-union parsing in the application layer)."""
+        """``LlmDecider`` 端口：返回结构化决策 JSON（由应用层的
+        可辨识联合解析做校验）。"""
         return await self._complete_json(
             system=system, user=user, schema_name=schema_name, schema=schema
         )
@@ -103,8 +101,8 @@ class OpenAiCompatibleLlmClient:
     async def complete_json(
         self, model_cls: type[BaseModel], *, system: str, user: str
     ) -> BaseModel:
-        """Structured call returning a validated pydantic instance; schema
-        validation failures feed the same single re-ask path (CR-REG-13)."""
+        """结构化调用，返回校验通过的 pydantic 实例；schema 校验失败
+        进入同一条追问一次的路径（CR-REG-13）。"""
 
         def validator(payload: dict[str, Any]) -> BaseModel:
             try:
@@ -176,7 +174,7 @@ class OpenAiCompatibleLlmClient:
         return extract_choice_content(await self._post_chat(payload))
 
     async def _complete_text(self, system: str, user: str) -> str:
-        """Non-streaming plain-text completion (streaming fallback, CR-REG-18)."""
+        """非流式纯文本补全（流式回退，CR-REG-18）。"""
         payload = {
             "model": self._model,
             "messages": [
@@ -188,8 +186,8 @@ class OpenAiCompatibleLlmClient:
         return extract_choice_content(await self._post_chat(payload))
 
     async def stream(self, system: str, user: str) -> AsyncIterator[str]:
-        """Incremental token passthrough; any stream failure falls back to one
-        non-streaming attempt whose text is yielded at once (CR-REG-18)."""
+        """增量 token 直通；任一流式失败回退为一次非流式调用，
+        其文本一次性产出（CR-REG-18）。"""
         try:
             async for token in self._stream_once(system, user):
                 yield token
@@ -229,7 +227,7 @@ class OpenAiCompatibleLlmClient:
                 try:
                     chunk = json.loads(data)
                 except ValueError:
-                    continue  # malformed keep-alive/comment chunk: skip, never crash
+                    continue  # 格式错误的保活/注释块：跳过，绝不崩溃
                 token = extract_stream_delta(chunk)
                 if token:
                     yield token

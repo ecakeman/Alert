@@ -1,11 +1,10 @@
-"""Vector-leg store and parent fetcher on cognitive.retrieval_* (T16,
-CR-RAG-04, CR-REG-24).
+"""cognitive.retrieval_* 上的向量腿存储与父块获取器（T16，CR-RAG-04，
+CR-REG-24）。
 
-The vector leg ranks non-parent chunks with pgvector cosine distance
-(dimensionless vector column, no HNSW index -- sequential scan is the accepted
-trade-off, migration 0003); scores are converted to cosine similarity. The
-parent fetcher returns parent-chunk bodies for the single expansion
-implementation in ``application/retrieval/searcher.py`` (CR-RAG-18).
+向量腿用 pgvector 余弦距离对非父块排序（无维度 vector 列，无 HNSW 索引——
+顺序扫描是接受的取舍，迁移 0003）；分数转换为余弦相似度。父块获取器返回
+父块正文，供 ``application/retrieval/searcher.py`` 中的唯一扩展实现使用
+（CR-RAG-18）。
 """
 
 from __future__ import annotations
@@ -32,7 +31,7 @@ WHERE is_parent = true AND chunk_id = ANY(%s)
 
 
 def _vector_literal(embedding: list[float]) -> str:
-    """pgvector text literal for a dimensionless vector column (D7)."""
+    """面向无维度 vector 列的 pgvector 文本字面量（D7）。"""
     return "[" + ",".join(f"{component:.6f}" for component in embedding) + "]"
 
 
@@ -47,7 +46,7 @@ class _ChunkRow:
 
 
 class PostgresVectorStore:
-    """``VectorStore`` port implementation (T16)."""
+    """``VectorStore`` 端口实现（T16）。"""
 
     def __init__(self, pool: AsyncConnectionPool) -> None:
         self._pool = pool
@@ -86,7 +85,7 @@ class PostgresVectorStore:
 
 
 class PostgresParentFetcher:
-    """Parent-chunk bodies for the single expansion implementation."""
+    """为唯一的扩展实现提供父块正文。"""
 
     def __init__(self, pool: AsyncConnectionPool) -> None:
         self._pool = pool

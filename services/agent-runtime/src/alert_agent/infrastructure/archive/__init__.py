@@ -1,13 +1,11 @@
-"""Archive infrastructure: LLM index extraction and artifact body reading
-(T14, CR-ARCH-04/05).
+"""归档基础设施：LLM 索引提取与产物正文读取（T14，CR-ARCH-04/05）。
 
-``LlmFaultIndexExtractor`` is the single, explicitly named strategy
-(``llm_structured``): the four-field index is produced by a real model through
-the T11 structured client, validated by the strict ``FaultSearchIndex`` model
-(loose scalar->list normalization included). No deterministic fallback exists
-here -- an unavailable model fails the archive and it can be re-dispatched
-(CR-DISC-05). ``ArtifactFileReader`` resolves storage_keys inside the storage
-root with containment re-checks after ``resolve()`` (5.3.4 discipline).
+``LlmFaultIndexExtractor`` 是唯一且显式命名的策略（``llm_structured``）：
+四字段索引由真实模型经 T11 结构化客户端产出，并通过严格的
+``FaultSearchIndex`` 模型校验（含宽松的标量->列表归一化）。此处不存在
+确定性回退——模型不可用即归档失败，任务可重新派发（CR-DISC-05）。
+``ArtifactFileReader`` 在存储根目录内解析 storage_key，并在 ``resolve()``
+之后再次做包含性检查（5.3.4 纪律）。
 """
 
 from __future__ import annotations
@@ -37,7 +35,7 @@ _REPORT_CHARS = 6000
 
 
 class LlmFaultIndexExtractor:
-    """``IndexExtractor`` implementation via the shared OpenAI-compatible client."""
+    """通过共享的 OpenAI 兼容客户端实现 ``IndexExtractor``。"""
 
     def __init__(self, client: OpenAiCompatibleLlmClient) -> None:
         self._client = client
@@ -65,14 +63,14 @@ class LlmFaultIndexExtractor:
 
 
 class ArtifactFileReader:
-    """Reads artifact bodies by storage_key inside ARTIFACT_STORAGE_ROOT."""
+    """按 storage_key 读取 ARTIFACT_STORAGE_ROOT 内的产物正文。"""
 
     def __init__(self, root: Path) -> None:
         self._root = root.resolve()
 
     async def read(self, storage_key: str) -> str:
         try:
-            parse_storage_key(storage_key)  # format + traversal rejection
+            parse_storage_key(storage_key)  # 格式与路径穿越校验
         except StorageKeyError as exc:
             raise FatalError(
                 ErrorCode.INPUT_INVALID, f"invalid storage_key: {exc}"
@@ -80,7 +78,7 @@ class ArtifactFileReader:
         relative = storage_key[len("file:") :]
         target = (self._root / relative).resolve()
         if not target.is_relative_to(self._root):
-            # Symlink defence after resolve (5.3.4).
+            # resolve 之后的符号链接防御（5.3.4）。
             raise FatalError(
                 ErrorCode.INPUT_INVALID, "storage_key escapes the artifact root"
             )

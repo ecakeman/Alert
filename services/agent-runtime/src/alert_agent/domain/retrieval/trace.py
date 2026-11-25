@@ -1,8 +1,8 @@
-"""Trace and decision-chain models (design 3.2.1, CR-REG-12).
+"""轨迹与决策链模型（design 3.2.1，CR-REG-12）。
 
-``ts_ms`` fields carry real elapsed milliseconds -- never a constant zero.
-``SufficiencyDecision`` requires ``next_query`` exactly when the verdict is
-NEED_MORE so the next hop always has a concrete query.
+``ts_ms`` 字段承载真实的耗时毫秒数——绝不为恒定的零。
+``SufficiencyDecision`` 仅当判定为
+NEED_MORE 时才要求 ``next_query``，以确保下一跳始终有具体的查询。
 """
 
 from __future__ import annotations

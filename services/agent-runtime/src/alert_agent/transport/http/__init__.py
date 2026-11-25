@@ -1,1 +1,1 @@
-"""HTTP transport: router registry, handlers, DTOs, mappers and auth deps."""
+"""HTTP 传输层：路由注册表、处理器、DTO、映射器与鉴权依赖。"""

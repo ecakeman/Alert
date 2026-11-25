@@ -1,8 +1,8 @@
-"""Rerank client (T16, design 5.1, CR-RAG-07, CR-REG-22/23).
+"""重排序客户端（T16，design 5.1，CR-RAG-07，CR-REG-22/23）。
 
-Shared ``httpx.AsyncClient`` with single-source timeouts (CR-REG-23); failures
-surface to the caller, which keeps the fusion order and marks the rerank leg
-degraded (CR-REG-22) -- the client never silently truncates results.
+共享 ``httpx.AsyncClient``，超时单一来源（CR-REG-23）；失败直接暴露给
+调用方，由其保持融合顺序并将 rerank 腿标记为降级（CR-REG-22）——
+客户端绝不静默截断结果。
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ LOGGER = logging.getLogger(__name__)
 
 
 class OpenAiCompatibleReranker:
-    """``Reranker`` port implementation (T16)."""
+    """``Reranker`` 端口实现（T16）。"""
 
     def __init__(self, settings: LlmSettings) -> None:
         self._base_url = settings.rerank_api_base.rstrip("/")
@@ -83,7 +83,7 @@ class OpenAiCompatibleReranker:
         for entry in results[:top_k]:
             index = entry.get("index")
             if not isinstance(index, int) or index < 0 or index >= len(chunks):
-                continue  # out-of-range indexes are dropped, never crash
+                continue  # 越界索引直接丢弃，绝不崩溃
             score = entry.get("relevance_score")
             chunk = chunks[index]
             ordered.append(

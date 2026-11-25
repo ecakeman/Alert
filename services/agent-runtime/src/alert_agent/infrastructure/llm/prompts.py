@@ -1,10 +1,9 @@
-"""Prompt asset loading and rendering discipline (design 5.2 #6, 5.3.7, CR-REG-16).
+"""提示词资产加载与渲染纪律（design 5.2 #6，5.3.7，CR-REG-16）。
 
-Templates load lazily and read-only from an assets directory and are validated
-against a strict pydantic model once. Rendering escapes user/retrieval content
-into XML boundary tags with per-section character budgets so prompt injection
-payloads cannot cross section boundaries; suspected injection features are
-detectable via ``injection_risk`` so callers can emit a ``security`` trace.
+模板从资产目录惰性、只读加载，并经严格的 pydantic 模型一次性校验。
+渲染时将用户/检索内容转义进 XML 边界标签，并为每个小节设置字符预算，
+使提示词注入载荷无法跨越小节边界；可疑注入特征可通过 ``injection_risk``
+检测，供调用方发出 ``security`` 追踪。
 """
 
 from __future__ import annotations
@@ -33,21 +32,20 @@ _TAG_NAME = re.compile(r"^[a-z][a-z0-9_]*$")
 
 
 def escape_xml(value: str) -> str:
-    """Escape the three XML-significant characters (attribute quotes are not
-    used inside prompt sections)."""
+    """转义三个 XML 特殊字符（提示词小节内不使用属性引号）。"""
     return value.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
 def injection_risk(value: str) -> bool:
-    """True when the text hits a prompt-injection feature; callers translate
-    this into a ``security`` trace entry (5.3.7)."""
+    """当文本命中提示词注入特征时返回 True；调用方据此产出
+    ``security`` 追踪条目（5.3.7）。"""
     lowered = value.lower()
     return any(pattern in lowered for pattern in _INJECTION_PATTERNS)
 
 
 def render_section(tag: str, content: str, *, budget_chars: int) -> str:
-    """One escaped, boundary-marked prompt section with a hard character
-    budget; truncation is visible to the model, never silent."""
+    """生成一个转义、带边界标记且施加硬性字符预算的提示词小节；
+    截断对模型可见，绝不静默。"""
     if _TAG_NAME.match(tag) is None:
         raise ValueError(f"invalid prompt section tag: {tag!r}")
     text = escape_xml(content)
@@ -57,7 +55,7 @@ def render_section(tag: str, content: str, *, budget_chars: int) -> str:
 
 
 class TemplateAsset(BaseModel):
-    """A validated prompt template (CR-REG-16)."""
+    """一份通过校验的提示词模板（CR-REG-16）。"""
 
     model_config = ConfigDict(frozen=True)
 
@@ -66,8 +64,7 @@ class TemplateAsset(BaseModel):
 
 
 class TemplateLoader:
-    """Lazy read-only template loader; templates never come from user input
-    and are never written back."""
+    """惰性只读的模板加载器；模板绝不来自用户输入，也绝不回写。"""
 
     def __init__(self, directory: Path) -> None:
         self._directory = directory

@@ -1,9 +1,9 @@
-"""Tool-result records validated before entering DiagnosisState (design 3.1.1).
+"""工具结果记录，在进入 DiagnosisState 前完成校验（design 3.1.1）。
 
-Every record is a strict pydantic model: timeline entries must carry
-timezone-aware datetimes (CR-DIAG-11), fault-doc hits keep traceable ``fd_id``
-(CR-DIAG-12), knowledge calls aggregate results/error/called so failures stay
-visible in the next decision prompt and in report unknowns (CR-DIAG-16).
+每条记录都是严格的 pydantic 模型：timeline 条目必须携带
+带时区的 datetime（CR-DIAG-11），故障文档命中保留可追溯的 ``fd_id``
+（CR-DIAG-12），知识调用聚合 results/error/called，使失败在下一次
+决策提示与报告 unknowns 中保持可见（CR-DIAG-16）。
 """
 
 from __future__ import annotations
@@ -39,7 +39,7 @@ class TimelineRecord(BaseModel):
 
 
 class FdHit(BaseModel):
-    """One fault-document hit; ``fd_id`` keeps the hit traceable (CR-DIAG-12)."""
+    """单条故障文档命中；``fd_id`` 保持命中可追溯（CR-DIAG-12）。"""
 
     model_config = ConfigDict(frozen=True)
 
@@ -62,7 +62,7 @@ class FdHit(BaseModel):
 
 
 class KnowledgeCallRecord(BaseModel):
-    """Aggregate of one knowledge-agent round (CR-DIAG-16; failure is state)."""
+    """一轮知识代理调用的聚合记录（CR-DIAG-16；失败即状态）。"""
 
     model_config = ConfigDict(frozen=True)
 
@@ -72,7 +72,7 @@ class KnowledgeCallRecord(BaseModel):
 
 
 class ExecutedAction(BaseModel):
-    """Action-table entry rendered into the decision prompt (design 3.1.5)."""
+    """渲染进决策提示的动作表条目（design 3.1.5）。"""
 
     model_config = ConfigDict(frozen=True)
 
@@ -83,7 +83,7 @@ class ExecutedAction(BaseModel):
 
 
 class McpToolResult(BaseModel):
-    """Full content-block list returned by one MCP tools/call (CR-GW-07)."""
+    """一次 MCP tools/call 返回的完整 content-block 列表（CR-GW-07）。"""
 
     model_config = ConfigDict(frozen=True)
 

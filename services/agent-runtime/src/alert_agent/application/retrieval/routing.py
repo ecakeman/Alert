@@ -1,11 +1,10 @@
-"""RAG loop routing (T17, design 3.2.2, CR-RAG-10/12/13/14).
+"""RAG 循环路由（T17，design 3.2.2，CR-RAG-10/12/13/14）。
 
-Grade participates in routing: accepted ids drive synthesis; empty acceptance
-routes by qtype and remaining budget toward sufficiency or the explicit
-refusal. Budget exhaustion is the single termination gate (checked through
-``RetrievalBudget.exhausted`` with the per-invocation ``started_at`` from the
-runnable config). Verify self-counts and the router only reads the counter,
-retrying synthesis once (CR-RAG-14).
+评分参与路由：被接受的 id 驱动综合生成；空接受时依据 qtype 与剩余预算
+路由到充分性判断或显式拒答。预算耗尽是唯一的终止闸门（通过
+``RetrievalBudget.exhausted`` 并结合 runnable config 中每次调用的
+``started_at`` 检查）。Verify 自行计数，路由器只读取该计数器，
+综合生成最多重试一次（CR-RAG-14）。
 """
 
 from __future__ import annotations
@@ -19,7 +18,7 @@ from alert_agent.domain.retrieval.state import RetrievalState
 
 
 class RetrievalRouter:
-    """Conditional-edge closures; per-task state arrives via the config."""
+    """条件边闭包；每个任务的状态通过 config 传入。"""
 
     def __init__(self, clock: Clock) -> None:
         self._clock = clock
@@ -50,7 +49,7 @@ class RetrievalRouter:
         if decision is not None and decision.accepted_ids:
             return "synthesize"
         if state.qtype == "SIMPLE":
-            # No accepted chunks and a simple question: refuse now (CR-RAG-10).
+            # 没有被接受的分块且是简单问题：立即拒答（CR-RAG-10）。
             return "refuse"
         return "sufficiency"
 
@@ -59,14 +58,14 @@ class RetrievalRouter:
             return "refuse"
         decision = state.sufficiency
         if decision is not None and decision.verdict == "NEED_MORE":
-            # The next hop retrieves with decision.next_query (set by the
-            # retrieve node through current_query).
+            # 下一跳将使用 decision.next_query 检索（由 retrieve 节点
+            # 通过 current_query 设置）。
             return "retrieve"
-        # ENOUGH without accepted chunks: nothing more to try, refuse.
+        # ENOUGH 但没有可接受的分块：没有更多可尝试的，拒答。
         return "refuse"
 
     def after_verify(self, state: RetrievalState, config: RunnableConfig) -> str:
         if state.verified == "FAIL" and state.verify_attempts < 1:
-            # One retry maximum, self-counted by the verify node (CR-RAG-14).
+            # 最多重试一次，由 verify 节点自行计数（CR-RAG-14）。
             return "synthesize"
         return "done"

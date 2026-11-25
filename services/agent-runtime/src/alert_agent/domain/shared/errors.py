@@ -1,9 +1,9 @@
-"""Stable short error codes and failure classification (design 3.1.6, CR-TASK-12/13).
+"""稳定的短错误码与失败分类（design 3.1.6，CR-TASK-12/13）。
 
-Codes are short, stable strings (<= 100 chars); exception class names never act
-as error codes. Only ``RetryableError`` maps to ``retryable=true`` when
-reporting failures (CR-TASK-12); every failure carries a readable message
-alongside the code (CR-TASK-13).
+错误码是简短、稳定的字符串（<= 100 字符）；异常类名绝不能
+充当错误码。上报失败时仅 ``RetryableError`` 映射为
+``retryable=true``（CR-TASK-12）；每条失败在错误码之外
+都附带可读消息（CR-TASK-13）。
 """
 
 from __future__ import annotations
@@ -26,7 +26,7 @@ class ErrorCode(StrEnum):
 
 
 class RetryableError(Exception):
-    """Transient failure: network jitter, timeout, temporarily unavailable dependency."""
+    """瞬态失败：网络抖动、超时、依赖暂时不可用。"""
 
     def __init__(self, code: ErrorCode, message: str) -> None:
         super().__init__(f"{code.value}: {message}")
@@ -35,7 +35,7 @@ class RetryableError(Exception):
 
 
 class FatalError(Exception):
-    """Deterministic failure: invalid input, contract mismatch, failed validation."""
+    """确定性失败：无效输入、契约不匹配、校验失败。"""
 
     def __init__(self, code: ErrorCode, message: str) -> None:
         super().__init__(f"{code.value}: {message}")

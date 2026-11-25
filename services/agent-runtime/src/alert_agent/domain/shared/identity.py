@@ -1,10 +1,10 @@
-"""Task identity and frozen-boundary value objects (design 3.1.1, data constraints 7.1).
+"""任务身份与冻结边界值对象（design 3.1.1，数据约束 7.1）。
 
-Unknown task types are rejected by the ``TaskType`` literal (7.1.3); generation
-is a positive, monotonically increasing integer (7.1.4); the lease token is only
-carried through, never generated here (7.1.5); the deadline must carry an
-explicit timezone; the version range mirrors Go migration 0003 semantics. All
-models are frozen: task identity never mutates after acceptance.
+未知的任务类型会被 ``TaskType`` 字面量拒绝（7.1.3）；generation
+为正且单调递增的整数（7.1.4）；lease token 仅作透传，
+绝不在此生成（7.1.5）；deadline 必须携带
+显式时区；版本范围与 Go migration 0003 语义一致。所有
+模型均为冻结：任务身份在受理之后绝不变更。
 """
 
 from __future__ import annotations

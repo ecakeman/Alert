@@ -1,9 +1,9 @@
-"""Diagnosis domain models (design 3.1, CR-DIAG-01~06/11~14).
+"""诊断领域模型（design 3.1，CR-DIAG-01~06/11~14）。
 
-Single pydantic state carrier for the langgraph ``StateGraph(DiagnosisState)``;
-nodes return incremental dicts and list fields merge via ``ReduceAppend``
-(operator.add) reducers (CR-DIAG-02, CR-REG-02). No IO in this package
-(CR-LAY-03); the only third-party dependency is pydantic.
+langgraph ``StateGraph(DiagnosisState)`` 使用唯一的 pydantic 状态载体；
+节点返回增量字典，列表字段通过 ``ReduceAppend``
+（operator.add）归并（CR-DIAG-02，CR-REG-02）。本包无 IO
+（CR-LAY-03）；唯一的第三方依赖是 pydantic。
 """
 
 from alert_agent.domain.diagnosis.actions import (

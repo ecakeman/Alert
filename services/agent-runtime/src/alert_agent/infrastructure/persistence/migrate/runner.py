@@ -1,14 +1,11 @@
-"""Forward-only migration runner for the cognitive schema (design 6.1, D6).
+"""cognitive schema 的仅向前迁移执行器（design 6.1，D6）。
 
-Each migration file is executed WHOLE, in a single transaction, through the
-libpq simple query protocol (psycopg3 sends the script unsplit when no
-parameters are bound) -- splitting on ``;`` is forbidden (CR-REG-37, RAG D1).
-``version + name + SHA-256 checksum`` are recorded in
-``cognitive.schema_migrations``; replaying an applied version is a no-op, and
-a checksum mismatch fails loudly because the schema is forward-only (D6).
-The connection uses ``DATABASE_URL_COGNITIVE`` only (CR-DATA-01): the account
-is restricted to the cognitive schema and must hold no system-schema rights
-(CR-DATA-03).
+每个迁移文件整体执行，处于单个事务中，走 libpq 简单查询协议（psycopg3
+在未绑定参数时原样发送脚本）——禁止按 ``;`` 切分（CR-REG-37，RAG D1）。
+``version + name + SHA-256 校验和`` 记录在 ``cognitive.schema_migrations``；
+重放已应用的版本是无操作，校验和不一致则显式报错，因为 schema 是仅向前的
+（D6）。连接仅使用 ``DATABASE_URL_COGNITIVE``（CR-DATA-01）：账号限定于
+cognitive schema，且不得持有任何 system schema 权限（CR-DATA-03）。
 """
 
 from __future__ import annotations
@@ -20,9 +17,8 @@ from pathlib import Path
 
 import psycopg
 
-# Bootstrap statements run before any file: they guarantee the record table
-# exists so the first applied migration can be journaled. They mirror 0001/0005
-# and are idempotent.
+# 引导语句在任何迁移文件之前执行：保证记录表存在，以便第一条已应用的
+# 迁移可以被记账。它们与 0001/0005 一致且幂等。
 _BOOTSTRAP_STATEMENTS: tuple[str, ...] = (
     "CREATE SCHEMA IF NOT EXISTS cognitive",
     (
@@ -39,17 +35,17 @@ _MIGRATION_FILE = re.compile(r"^(\d{4})_([a-z0-9_]+)\.sql$")
 
 
 class MigrationError(Exception):
-    """Migration failure; the message names the file and reason, never DSN values."""
+    """迁移失败；消息中写明文件与原因，绝不包含 DSN 值。"""
 
 
 @dataclass(frozen=True)
 class MigrationRecord:
-    """Result of one migration file for this run."""
+    """本次运行中一个迁移文件的处理结果。"""
 
     version: int
     name: str
     checksum: str
-    applied: bool  # False = already applied and verified, skipped (no-op)
+    applied: bool  # False = 已应用且校验一致，跳过（无操作）
 
 
 def _discover(migrations_dir: Path) -> list[tuple[int, str, Path]]:
@@ -101,9 +97,9 @@ def _apply_whole_file(
 ) -> None:
     script = path.read_text(encoding="utf-8")
     try:
-        # Whole-file execution: no parameter binding -> simple query protocol ->
-        # every statement of the file runs inside this one transaction. The
-        # script is never split on ';' (CR-REG-37).
+        # 整文件执行：无参数绑定 -> 简单查询协议 ->
+        # 文件中的每条语句都在这一个事务内运行。
+        # 脚本绝不按 ';' 切分（CR-REG-37）。
         cursor.execute(script)
         cursor.execute(
             "INSERT INTO cognitive.schema_migrations (version, name, checksum)"
@@ -123,11 +119,10 @@ def _primary(exc: psycopg.Error) -> str:
 
 
 def run_migrations(dsn: str, migrations_dir: Path) -> list[MigrationRecord]:
-    """Apply pending cognitive migrations in filename order; return per-file results.
+    """按文件名顺序应用待执行的 cognitive 迁移；返回每个文件的结果。
 
-    Already-applied files with matching checksums are skipped; checksum drift
-    raises. Any failure rolls back the current file only (earlier files stay
-    committed) and raises ``MigrationError`` with a desensitised message.
+    已应用且校验和一致的文件被跳过；校验和不一致则报错。任何失败只回滚
+    当前文件（先前的文件保持已提交），并抛出脱敏后的 ``MigrationError``。
     """
     entries = _discover(migrations_dir)
     records: list[MigrationRecord] = []

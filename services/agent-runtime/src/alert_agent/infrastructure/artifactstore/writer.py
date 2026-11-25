@@ -1,11 +1,10 @@
-"""Filesystem implementation of the ArtifactWriter port (design 4.6, CR-GW-09/09a).
+"""ArtifactWriter 端口的文件系统实现（design 4.6，CR-GW-09/09a）。
 
-Content lives only in files (D5): the writer resolves the storage_key through
-the domain rules, re-checks containment after ``resolve()`` (symlink defence,
-5.3.4) and writes atomically with a temp file + ``os.replace``. The sha-256
-digest of the written bytes is returned so the cognitive registration and the
-RegisterTaskArtifact callback share one hash computation (CR-LAY-10) and the
-registered hash always matches the file body (CR-GW-09a).
+内容只存在于文件中（D5）：写入器经领域规则解析 storage_key，在
+``resolve()`` 之后复查包含性（符号链接防御，5.3.4），并以临时文件 +
+``os.replace`` 原子写入。返回写入字节的 sha-256 摘要，使认知注册与
+RegisterTaskArtifact 回调共享同一次哈希计算（CR-LAY-10），且注册的哈希
+始终与文件正文一致（CR-GW-09a）。
 """
 
 from __future__ import annotations
@@ -24,7 +23,7 @@ LOGGER = logging.getLogger(__name__)
 
 
 class FileSystemArtifactWriter:
-    """ArtifactWriter port implementation on ARTIFACT_STORAGE_ROOT (design 4.6)."""
+    """ARTIFACT_STORAGE_ROOT 上的 ArtifactWriter 端口实现（design 4.6）。"""
 
     def __init__(self, root: Path) -> None:
         self._root = root.resolve()
@@ -34,12 +33,12 @@ class FileSystemArtifactWriter:
         return self._root
 
     async def write(self, storage_key: str, content: bytes) -> str:
-        ref = parse_storage_key(storage_key)  # format + escape validation (design 4.6, 5.3.4)
+        ref = parse_storage_key(storage_key)  # 格式与越界校验（design 4.6，5.3.4）
         relative = storage_key[len("file:") :]
         target = (self._root / relative).resolve()
         if not target.is_relative_to(self._root):
-            # parse_storage_key already rejects traversal; this re-checks
-            # symlink-based escapes after resolve() (5.3.4).
+            # parse_storage_key 已拒绝路径穿越；此处复查 resolve() 之后
+            # 基于符号链接的越界（5.3.4）。
             raise FatalError(ErrorCode.INPUT_INVALID, "storage_key escapes the artifact root")
         digest = hashlib.sha256(content).hexdigest()
         await asyncio.to_thread(self._atomic_write, target, content)

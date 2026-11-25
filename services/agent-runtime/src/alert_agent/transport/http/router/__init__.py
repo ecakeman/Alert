@@ -1,1 +1,1 @@
-"""Router registration for the HTTP transport."""
+"""HTTP 传输层的路由注册。"""

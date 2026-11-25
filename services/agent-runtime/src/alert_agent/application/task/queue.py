@@ -1,12 +1,11 @@
-"""Bounded task queue (design 4.2, CR-TASK-08).
+"""有界任务队列（design 4.2，CR-TASK-08）。
 
-The bounded ``asyncio.Queue`` never drops an accepted task: enqueue failure
-keeps the persisted receipt as the "awaiting recovery" fact (the recovery scan
-re-enqueues) and the submit path reports ``accepted=false`` instead of a fake
-success (6.1.3.1). Queue elements carry the full frozen submission on the
-SubmitTask path and the receipt reference on the recovery path -- receipts do
-not persist the lease token or the frozen boundary (migration 0001), so a
-recovered task cannot rebuild a callable identity; see TaskRunner.
+有界的 ``asyncio.Queue`` 绝不丢弃已接受的任务：入队失败时保留持久化回执
+作为"等待恢复"的事实（由恢复扫描重新入队），提交路径报告
+``accepted=false`` 而不是伪成功（6.1.3.1）。SubmitTask 路径上的队列元素
+携带完整的冻结提交，恢复路径上携带回执引用——回执不持久化租约 token 或
+冻结边界（migration 0001），因此恢复的任务无法重建可调用的身份；
+参见 TaskRunner。
 """
 
 from __future__ import annotations
@@ -20,7 +19,7 @@ from alert_agent.application.task.ports import TaskSubmission, UnfinishedReceipt
 
 
 class QueuedTask(BaseModel):
-    """One executable unit flowing through the bounded queue."""
+    """流经有界队列的一个可执行单元。"""
 
     model_config = ConfigDict(frozen=True)
 
@@ -35,19 +34,19 @@ class QueuedTask(BaseModel):
 
 
 class TaskQueue(Protocol):
-    """Queue port consumed by the worker loops (design 4.2)."""
+    """供 worker 循环消费的队列端口（design 4.2）。"""
 
     def try_enqueue(self, task: QueuedTask) -> bool:
-        """Non-blocking enqueue; False when the queue is full (never drops)."""
+        """非阻塞入队；队列已满时返回 False（绝不丢弃）。"""
         ...
 
     async def dequeue(self) -> QueuedTask:
-        """Block until one task is available."""
+        """阻塞直到有一个任务可用。"""
         ...
 
 
 class BoundedTaskQueue:
-    """Fixed-capacity asyncio.Queue implementation of TaskQueue (CR-TASK-08)."""
+    """TaskQueue 的固定容量 asyncio.Queue 实现（CR-TASK-08）。"""
 
     def __init__(self, capacity: int) -> None:
         self._queue: asyncio.Queue[QueuedTask] = asyncio.Queue(maxsize=capacity)

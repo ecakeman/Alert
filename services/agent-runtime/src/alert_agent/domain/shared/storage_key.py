@@ -1,16 +1,16 @@
-"""storage_key addressing rules as pure functions (design 4.6, D5, CR-GW-09a).
+"""storage_key 寻址规则，以纯函数实现（design 4.6，D5，CR-GW-09a）。
 
-Format (verified against Go ``internal/infrastructure/artifacts/reader.go``):
-``file:{relative-path}`` with forward slashes. The Go reader strips the
-``file:`` prefix, cleans the relative path and rejects absolute paths,
-``..`` segments and anything escaping the reader root; keys generated here
-stay relative and slash-separated so they remain readable by that reader
-(when its root is pointed at the shared storage directory, design R4).
+格式（已对照 Go ``internal/infrastructure/artifacts/reader.go`` 核实）：
+``file:{relative-path}``，使用正斜杠。Go 读取器会剥离
+``file:`` 前缀，清理相对路径并拒绝绝对路径、
+``..`` 段以及任何逃逸出读取器根目录的内容；此处生成的 key
+保持相对且以斜杠分隔，因此仍可被该读取器读取
+（当其根目录指向共享存储目录时，design R4）。
 
-Keys embed episode, artifact type, generation and version --
+Key 内嵌 episode、artifact 类型、generation 与版本——
 ``file:episodes/{episode_id}/diagnosis/g{generation}_{stem}_v{version}{suffix}``
--- so an older generation can never overwrite a newer one's files
-(CR-GW-09a, CR-REG-46). No IO in this module (CR-LAY-03).
+——因此旧的 generation 永远无法覆盖新 generation 的文件
+（CR-GW-09a，CR-REG-46）。本模块无 IO（CR-LAY-03）。
 """
 
 from __future__ import annotations
@@ -22,7 +22,7 @@ from pydantic import BaseModel, ConfigDict, Field
 _FILE_PREFIX = "file:"
 _SEGMENT = "episodes"
 _STEM_BY_TYPE: dict[str, tuple[str, str, str, str]] = {
-    # artifact_type -> (path segment, file stem, suffix, content_type)
+    # artifact_type -> (路径段, 文件名主干, 后缀, content_type)
     "INVESTIGATION": ("diagnosis", "investigation", ".md", "text/markdown"),
     "DIAGNOSIS_REPORT": ("diagnosis", "diagnosis_report", ".json", "application/json"),
 }
@@ -34,11 +34,11 @@ _STEM_TO_TYPE = {stem: artifact_type for artifact_type, spec in _STEM_BY_TYPE.it
 
 
 class StorageKeyError(ValueError):
-    """A storage_key failed the addressing rules (stable semantics, 6.1.3.4)."""
+    """storage_key 未通过寻址规则校验（稳定语义，6.1.3.4）。"""
 
 
 class StorageKeyRef(BaseModel):
-    """Parsed storage_key identity (design 4.6)."""
+    """解析后的 storage_key 身份信息（design 4.6）。"""
 
     model_config = ConfigDict(frozen=True)
 
@@ -49,7 +49,7 @@ class StorageKeyRef(BaseModel):
 
 
 def content_type_of(artifact_type: str) -> str:
-    """The content_type registered alongside the artifact (D5)."""
+    """artifact 注册时登记的 content_type（D5）。"""
     spec = _STEM_BY_TYPE.get(artifact_type)
     if spec is None:
         raise StorageKeyError(f"unknown artifact_type: {artifact_type}")
@@ -57,10 +57,10 @@ def content_type_of(artifact_type: str) -> str:
 
 
 def validate_episode_id(value: str) -> str:
-    """Reject path-hostile episode ids before they enter a storage_key.
+    """在 episode id 进入 storage_key 之前，拒绝不适于路径的形式。
 
-    The Go reader's containment checks stay authoritative; this is the
-    generation-side first line of defence (5.3.4 discipline).
+    Go 读取器的包含性检查仍是权威；这里是
+    生成侧的第一道防线（5.3.4 纪律）。
     """
     if not value or value in {".", ".."} or value != value.strip():
         raise StorageKeyError(f"episode_id is not a usable single path segment: {value!r}")
@@ -71,7 +71,7 @@ def validate_episode_id(value: str) -> str:
 
 
 def build_storage_key(episode_id: str, artifact_type: str, generation: int, version: int) -> str:
-    """Build the storage_key for one artifact version (pure, no IO)."""
+    """为一个 artifact 版本构建 storage_key（纯函数，无 IO）。"""
     spec = _STEM_BY_TYPE.get(artifact_type)
     if spec is None:
         raise StorageKeyError(f"unknown artifact_type: {artifact_type}")
@@ -83,7 +83,7 @@ def build_storage_key(episode_id: str, artifact_type: str, generation: int, vers
 
 
 def parse_storage_key(key: str) -> StorageKeyRef:
-    """Parse a storage_key back to its identity; reject escapes (pure, no IO)."""
+    """将 storage_key 解析回其身份信息；拒绝逃逸形式（纯函数，无 IO）。"""
     if not key.startswith(_FILE_PREFIX):
         raise StorageKeyError("storage_key must carry the file: prefix")
     relative = key[len(_FILE_PREFIX) :]

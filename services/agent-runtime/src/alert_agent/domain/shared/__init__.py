@@ -1,4 +1,4 @@
-"""Shared domain value objects: task identity, frozen boundary, stable error codes."""
+"""共享领域值对象：任务身份、冻结边界、稳定错误码。"""
 
 from __future__ import annotations
 

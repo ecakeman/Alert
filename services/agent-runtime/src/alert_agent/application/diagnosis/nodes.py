@@ -1,10 +1,9 @@
-"""Diagnosis loop node implementations (design 3.1.4/3.1.5).
+"""诊断循环节点实现（design 3.1.4/3.1.5）。
 
-Nodes return incremental dicts only (CR-DIAG-02, CR-REG-02); phase is assigned
-exactly at its owning boundary (CR-DIAG-03). Existing-version reads and
-artifact writes are injected callables provided by the execution batch (T13)
-so this module stays free of IO (CR-LAY-02). Every failure path records a
-readable ``last_error``; nothing is swallowed (CR-REG-47).
+节点只返回增量字典（CR-DIAG-02，CR-REG-02）；phase 恰好在它所属的边界处
+被赋值（CR-DIAG-03）。既有版本读取与产物写入是由执行批次（T13）注入的
+可调用对象，因此本模块不包含任何 IO（CR-LAY-02）。每条失败路径都会记录
+可读的 ``last_error``；没有任何内容被吞掉（CR-REG-47）。
 """
 
 from __future__ import annotations
@@ -43,7 +42,7 @@ def _brief(action: Action) -> str:
 
 
 class DiagnosisNodes:
-    """Node bundle wired into the compiled state graph."""
+    """接入编译后状态图的节点集合。"""
 
     def __init__(
         self,
@@ -65,17 +64,17 @@ class DiagnosisNodes:
         self._started_at = started_at
 
     async def load(self, state: DiagnosisState) -> dict[str, Any]:
-        """LOAD boundary: read existing artifact versions for this episode
-        (idempotent reuse on re-dispatch, CR-REG-46); failures fail the task
-        at the runner (frozen-boundary violations are fatal, 3.1.4)."""
+        """LOAD 边界：读取该 episode 的既有产物版本
+        （重新派发时幂等复用，CR-REG-46）；失败则由运行器判定任务失败
+        （冻结边界违规是致命的，3.1.4）。"""
         update: dict[str, Any] = {"phase": "LOAD"}
         update.update(await self._load_existing_versions(state))
         return update
 
     async def decide(self, state: DiagnosisState) -> dict[str, Any]:
-        """DECIDE boundary: one structured decision; a parse failure re-asks
-        once with the error text (CR-REG-13), a second failure records
-        ``unknown_action`` and routes to fallback via ``action=None``."""
+        """DECIDE 边界：一次结构化决策；解析失败时携带错误文本追问一次
+        （CR-REG-13），第二次失败记录 ``unknown_action`` 并通过
+        ``action=None`` 路由到 fallback。"""
         messages = build_decision_messages(
             state, budgets=self._prompt_budgets, now=self._clock.now()
         )
@@ -112,11 +111,10 @@ class DiagnosisNodes:
         return update
 
     async def run_tool(self, state: DiagnosisState) -> dict[str, Any]:
-        """TOOL boundary: execute the current action through the executor
-        port; one action's failure isolates to ``last_error`` and the loop
-        continues (never crashes the graph, CR-TASK-09 discipline)."""
+        """TOOL 边界：通过执行器端口执行当前动作；单个动作的失败被隔离到
+        ``last_error`` 且循环继续（绝不使图崩溃，CR-TASK-09 纪律）。"""
         action = state.action
-        if action is None:  # routing guarantees an action; defensive only
+        if action is None:  # 路由保证存在动作；仅作防御
             return {"phase": "DECIDE", "action": None}
         update: dict[str, Any] = {
             "phase": "DECIDE",
@@ -140,19 +138,19 @@ class DiagnosisNodes:
         return update
 
     async def fallback(self, state: DiagnosisState) -> dict[str, Any]:
-        """Explicit fallback for unknown/malformed actions: count the miss;
-        the router decides between re-asking and the partial outcome."""
+        """未知/畸形动作的显式回退：计数该次失配；
+        由路由器决定追问还是输出部分结果。"""
         return {"no_progress": state.no_progress + 1}
 
     async def write(self, state: DiagnosisState) -> dict[str, Any]:
-        """WRITE boundary: dual-artifact write/registration orchestration
-        (T13); DONE is assigned by the runner after the graph ends."""
+        """WRITE 边界：双产物写入/注册编排（T13）；DONE 由运行器在图结束
+        之后赋值。"""
         update = await self._write_artifacts(state)
         return {"phase": "WRITE", **update}
 
     async def finalize_partial(self, state: DiagnosisState) -> dict[str, Any]:
-        """Budget/no-progress exhaustion: an explicit incomplete outcome with
-        collected unknowns -- never a fabricated conclusion (CR-DIAG-14)."""
+        """预算/无进展耗尽：带有已收集 unknowns 的显式不完整结果——
+        绝不编造结论（CR-DIAG-14）。"""
         unknowns: list[str] = []
         if state.last_error:
             unknowns.append(f"最近错误未解决: {state.last_error}")
@@ -176,5 +174,5 @@ class DiagnosisNodes:
 
     @staticmethod
     def reask_error_code() -> ErrorCode:
-        """Stable code surfaced when both decision attempts fail parsing."""
+        """两次决策尝试都解析失败时浮出的稳定错误码。"""
         return ErrorCode.MODEL_PARSE_ERROR

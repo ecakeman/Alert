@@ -1,8 +1,7 @@
-"""RAG protocol DTOs: camelCase wire format (design 5.5.3, CR-LAY-10).
+"""RAG 协议 DTO：camelCase 线上格式（design 5.5.3，CR-LAY-10）。
 
-DTOs own the wire contract only; the camelCase<->snake_case conversion happens
-exactly once via pydantic aliases plus the mapper layer. Internal models stay
-snake_case.
+DTO 只负责线上契约；camelCase 与 snake_case 之间的转换通过 pydantic 别名
+加映射器层精确发生一次。内部模型保持 snake_case。
 """
 
 from __future__ import annotations

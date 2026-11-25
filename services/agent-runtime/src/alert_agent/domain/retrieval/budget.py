@@ -1,10 +1,9 @@
-"""RetrievalBudget with the single termination entry (design 3.2.2,
-CR-RAG-12/13).
+"""RetrievalBudget 与唯一的终止入口（design 3.2.2，
+CR-RAG-12/13）。
 
-``exhausted`` is the only termination gate: hop exhaustion, llm-call
-exhaustion, wall-clock deadline or the consecutive zero-new-hits ceiling. The
-graph recursion cap is derived from ``max_hops`` and the node count -- no
-independent magic constant (CR-RAG-13).
+``exhausted`` 是唯一的终止门控：跳数耗尽、LLM 调用
+耗尽、墙钟超时或连续零新命中上限。图的递归上限由
+``max_hops`` 与节点数量推导得出——不使用独立的魔法常量（CR-RAG-13）。
 """
 
 from __future__ import annotations
@@ -35,5 +34,5 @@ class RetrievalBudget(BaseModel):
         return state.zero_new_hits >= self.max_zero_new_hits
 
     def recursion_limit(self, node_count: int) -> int:
-        """LangGraph recursion cap derived from the budget (CR-RAG-13)."""
+        """由预算推导出的 LangGraph 递归上限（CR-RAG-13）。"""
         return self.max_hops * max(node_count, 1) + node_count + 1

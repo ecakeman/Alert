@@ -1,9 +1,8 @@
-"""OpenAI-compatible embedding client (T16, design 5.1, CR-RAG-04, D7).
+"""OpenAI 兼容的嵌入客户端（T16，design 5.1，CR-RAG-04，D7）。
 
-Batch embeddings against ``/embeddings``; one lazily created shared
-``httpx.AsyncClient`` (double-checked lock, connection reuse); timeouts derive
-from the single LlmSettings group (CR-REG-32). Dimension consistency with the
-DB vector columns is validated at startup from ``embed_dim`` (D7).
+对 ``/embeddings`` 做批量嵌入；一个惰性创建的共享 ``httpx.AsyncClient``
+（双重检查锁，连接复用）；超时由单一的 LlmSettings 配置组推导（CR-REG-32）。
+启动时依据 ``embed_dim`` 校验与数据库 vector 列的维度一致性（D7）。
 """
 
 from __future__ import annotations
@@ -20,7 +19,7 @@ LOGGER = logging.getLogger(__name__)
 
 
 class OpenAiCompatibleEmbedder:
-    """``Embedder`` port implementation (T16)."""
+    """``Embedder`` 端口实现（T16）。"""
 
     def __init__(self, settings: LlmSettings, batch_size: int = 16) -> None:
         self._base_url = settings.embedding_api_base.rstrip("/")

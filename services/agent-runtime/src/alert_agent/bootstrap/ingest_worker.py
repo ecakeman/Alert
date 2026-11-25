@@ -1,8 +1,7 @@
-"""Ingestion worker runtime (T20, CR-ING-03): one loop polls QUEUED jobs and
-executes them one at a time; a crash mid-run leaves the job at PROCESSING in
-the persisted table, and re-dispatch/acceptance semantics decide recovery --
-no in-memory authority (CR-ING-02). Exceptions never kill the loop (same
-isolation discipline as the task worker, CR-TASK-09/CR-REG-47)."""
+"""Ingestion worker 运行时（T20，CR-ING-03）：单个循环轮询 QUEUED 状态的
+job 并逐个执行；运行中崩溃会使 job 在持久化表中停留在 PROCESSING 状态，
+恢复由重新分发/受理语义决定——不存在内存中的权威状态（CR-ING-02）。异常
+绝不会杀死循环（与 task worker 相同的隔离纪律，CR-TASK-09/CR-REG-47）。"""
 
 from __future__ import annotations
 
@@ -16,7 +15,7 @@ LOGGER = logging.getLogger(__name__)
 
 
 class IngestWorkerRuntime:
-    """Owns the poll-execute loop for QUEUED ingest jobs (T20)."""
+    """掌管 QUEUED 状态 ingest job 的轮询-执行循环（T20）。"""
 
     def __init__(
         self, *, store: IngestJobStore, process: ProcessIngestion, poll_interval_seconds: float
@@ -35,7 +34,7 @@ class IngestWorkerRuntime:
                     except asyncio.CancelledError:
                         raise
                     except Exception:
-                        # One job's failure isolates; the loop continues (CR-TASK-09).
+                        # 单个 job 的失败被隔离；循环继续（CR-TASK-09）。
                         LOGGER.exception("ingest job %s crashed the runner", job.doc_id)
             except asyncio.CancelledError:
                 raise
