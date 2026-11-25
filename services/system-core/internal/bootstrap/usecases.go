@@ -19,12 +19,13 @@ import (
 // UseCases 是六个应用用例的集合。
 // AuditConsumer 无条件构造：纯依赖集合、无 IO 副作用；messaging 组件仍按开关分支构造。
 type UseCases struct {
-	Service       *appservice.Service
-	Dashboard     *appdashboard.Service
-	Episode       *appepisode.Service
-	Monitor       *appmonitor.Service
-	Task          *apptask.Service
-	AuditConsumer *appoutbox.Consumer
+	Service         *appservice.Service
+	Dashboard       *appdashboard.Service
+	Episode         *appepisode.Service
+	Monitor         *appmonitor.Service
+	Task            *apptask.Service
+	AuditConsumer   *appoutbox.Consumer
+	MonitorConsumer *appepisode.MonitorConsumer
 }
 
 func NewUseCases(sh *Shared, r *Repos) *UseCases {
@@ -49,7 +50,6 @@ func NewUseCases(sh *Shared, r *Repos) *UseCases {
 		Sources: r.Sources, Episodes: r.Episodes,
 		Services:       r.Services,
 		Outbox:         r.Outbox,
-		Driver:         episodeDriverAdapter{uc: epUC},
 		RemoteRegistry: sh.Cfg.RemoteRegistry,
 		Clock:          sh.Clock,
 		IDs:            sh.IDs,
@@ -60,10 +60,13 @@ func NewUseCases(sh *Shared, r *Repos) *UseCases {
 	})
 
 	taskUC := newTaskService(sh, r, nil, episodeDispatchAdapter{uc: epUC})
+	monitorConsumer := appepisode.NewMonitorConsumer(appepisode.MonitorConsumerDeps{
+		UOW: sh.UOW, Episodes: r.Episodes, Idem: r.Idem, Clock: sh.Clock, Service: epUC,
+	})
 
 	return &UseCases{
 		Service: svcUC, Dashboard: dashUC, Episode: epUC,
-		Monitor: monitorUC, Task: taskUC, AuditConsumer: auditUC,
+		Monitor: monitorUC, Task: taskUC, AuditConsumer: auditUC, MonitorConsumer: monitorConsumer,
 	}
 }
 
@@ -85,18 +88,6 @@ func taskLease(taskLease, ownershipTTL time.Duration) time.Duration {
 		return ownershipTTL
 	}
 	return taskLease
-}
-
-// episodeDriverAdapter 把 episode 用例转调为 monitor.EpisodeDriver。
-type episodeDriverAdapter struct{ uc *appepisode.Service }
-
-func (a episodeDriverAdapter) OpenOrReuse(ctx context.Context, serviceID string) (bool, error) {
-	_, created, err := a.uc.OpenOrReuse(ctx, serviceID)
-	return created, err
-}
-
-func (a episodeDriverAdapter) TryResolve(ctx context.Context, episodeID string) (bool, []string, error) {
-	return a.uc.TryResolve(ctx, episodeID)
 }
 
 func splitBrokers(raw string) []string {

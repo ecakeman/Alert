@@ -244,15 +244,20 @@ func (s *Service) TryResolve(ctx context.Context, episodeID string) (bool, []str
 		var err error
 		ep, err = s.deps.Episodes.Get(ctx, tx, episodeID)
 		if err != nil {
-			return err
+			return fmt.Errorf("get episode: %w", err)
 		}
 		sources, err = s.deps.Sources.ListByService(ctx, tx, ep.ServiceID)
 		if err != nil {
-			return err
+			return fmt.Errorf("list sources: %w", err)
 		}
 		activeTasks, err = s.deps.Tasks.ListActiveByEpisode(ctx, tx, episodeID)
-		return err
+		if err != nil {
+			return fmt.Errorf("list active tasks: %w", err)
+		}
+		return nil
 	}); err != nil {
+		slog.Default().WarnContext(ctx, "resolve precheck failed",
+			"episode_id", episodeID, "reason", err.Error())
 		return false, nil, apperr.DependencyUnavailable("resolve precheck unavailable")
 	}
 

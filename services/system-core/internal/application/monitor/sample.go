@@ -26,7 +26,6 @@ type Deps struct {
 	Episodes       portepisode.EpisodeRepo
 	Services       portService.ServiceRepo
 	Outbox         portoutbox.OutboxRepo
-	Driver         EpisodeDriver
 	Clock          portshared.Clock
 	IDs            portshared.IDGen
 	RemoteRegistry bool
@@ -173,37 +172,8 @@ func (s *Service) applySampleTx(ctx context.Context, serviceID, targetID string,
 		s.outOfTxFailure("sources.upsert", err)
 	}
 
-	// 仅在来源状态变化时驱动 episode；OpenOrReuse/TryResolve 内部对同状态为 no-op。
-	if sourceChanged {
-		s.driveEpisode(ctx, serviceID, sourceStatus)
-	}
+	// P3 起立案/解除由 episode 消费 monitor 事件驱动，采样侧不再直调。
 	return sourceStatus, nil
-}
-
-func (s *Service) driveEpisode(ctx context.Context, serviceID, sourceStatus string) {
-	switch sourceStatus {
-	case "ABNORMAL":
-		if _, err := s.deps.Driver.OpenOrReuse(ctx, serviceID); err != nil {
-			s.outOfTxFailure("driver.open_or_reuse", err)
-		}
-	case "NORMAL":
-		var episodeID string
-		if err := s.deps.UOW.WithinTx(ctx, func(ctx context.Context, tx portshared.Tx) error {
-			e, err := s.deps.Episodes.GetActiveByService(ctx, tx, serviceID)
-			if err != nil {
-				return nil
-			}
-			episodeID = e.EpisodeID
-			return nil
-		}); err != nil {
-			s.outOfTxFailure("episodes.get_active", err)
-		}
-		if episodeID != "" {
-			if _, _, err := s.deps.Driver.TryResolve(ctx, episodeID); err != nil {
-				s.outOfTxFailure("driver.try_resolve", err)
-			}
-		}
-	}
 }
 
 func (s *Service) outOfTxFailure(op string, err error) {
@@ -379,9 +349,6 @@ func (s *Service) applySampleRemote(ctx context.Context, serviceID, targetID str
 		ServiceID: serviceID, SourceType: "MONITOR", Status: newSource,
 	}); err != nil {
 		s.outOfTxFailure("sources.upsert_remote", err)
-	}
-	if sourceChanged {
-		s.driveEpisode(ctx, serviceID, newSource)
 	}
 	return newSource, nil
 }

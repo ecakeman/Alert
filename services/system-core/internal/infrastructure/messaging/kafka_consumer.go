@@ -20,11 +20,12 @@ type Consumer struct {
 
 func NewConsumer(brokers []string, topic, groupID string, handler MessageHandler) *Consumer {
 	cfg := kafka.ReaderConfig{
-		Brokers:     brokers,
-		Topic:       topic,
-		MinBytes:    1,
-		MaxBytes:    10 << 20,
-		StartOffset: kafka.FirstOffset,
+		Brokers:        brokers,
+		Topic:          topic,
+		MinBytes:       1,
+		MaxBytes:       10 << 20,
+		StartOffset:    kafka.FirstOffset,
+		CommitInterval: 0, // 手动提交：处理失败不得提交该条（design 2.5.2 幂等矩阵）
 	}
 	if groupID != "" {
 		cfg.GroupID = groupID
@@ -37,9 +38,10 @@ func NewConsumer(brokers []string, topic, groupID string, handler MessageHandler
 func (c *Consumer) OnError(fn func(error)) { c.onError = fn }
 
 // Run 持续消费直到 ctx 取消。
+// 单条处理失败只记录、不提交该条 offset；成功才 CommitMessages（重启可重放）。
 func (c *Consumer) Run(ctx context.Context) error {
 	for {
-		m, err := c.reader.ReadMessage(ctx)
+		m, err := c.reader.FetchMessage(ctx)
 		if err != nil {
 			if ctx.Err() != nil {
 				return nil
@@ -48,6 +50,10 @@ func (c *Consumer) Run(ctx context.Context) error {
 		}
 		if err := c.handler(ctx, m.Value); err != nil {
 			c.reportHandlerError(m.Value, err)
+			continue
+		}
+		if err := c.reader.CommitMessages(ctx, m); err != nil && ctx.Err() == nil {
+			return err
 		}
 	}
 }

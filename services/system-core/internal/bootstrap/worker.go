@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	appepisode "github.com/ecakeman/alert/services/system-core/internal/application/episode"
 	appmonitor "github.com/ecakeman/alert/services/system-core/internal/application/monitor"
 	appoutbox "github.com/ecakeman/alert/services/system-core/internal/application/outbox"
 	portmonitor "github.com/ecakeman/alert/services/system-core/internal/application/port/monitor"
@@ -15,13 +16,14 @@ import (
 // Worker 承载后台角色装配：publisher/audit/task consumer/reconciler/probe。
 // 角色白名单：仅后台装配，不含 HTTP 服务/路由。
 type Worker struct {
-	Probe        *probe.Engine
-	Sender       *messaging.Sender
-	Publisher    *appoutbox.Publisher
-	Consumer     *messaging.Consumer
-	TaskConsumer *messaging.Consumer
-	Reconciler   *Reconciler
-	AgentClient  *grpcclient.AgentClient
+	Probe           *probe.Engine
+	Sender          *messaging.Sender
+	Publisher       *appoutbox.Publisher
+	Consumer        *messaging.Consumer
+	TaskConsumer    *messaging.Consumer
+	MonitorConsumer *messaging.Consumer
+	Reconciler      *Reconciler
+	AgentClient     *grpcclient.AgentClient
 }
 
 func NewWorker(sh *Shared, r *Repos, ucs *UseCases) (*Worker, error) {
@@ -31,23 +33,27 @@ func NewWorker(sh *Shared, r *Repos, ucs *UseCases) (*Worker, error) {
 	agent := grpcclient.NewAgentClient(sh.Cfg.AgentGRPCTarget, sh.Cfg.AgentGRPCTimeout)
 	ucs.Task = newTaskService(sh, r, agent, episodeDispatchAdapter{uc: ucs.Episode})
 
-	engine := probe.NewEngine(probe.EngineDeps{
-		Source: ucs.Monitor,
-		HTTP:   probe.NewHTTPProber(), TCP: probe.NewTCPProber(),
-		Handler: func(ctx context.Context, target portmonitor.TargetSnapshot, smp probe.Sample) error {
-			_, err := ucs.Monitor.ApplySample(ctx, target.ServiceID, target.TargetID, target.ConfigGeneration, appmonitor.Sample{
-				CheckStatus: smp.CheckStatus, StatusClass: smp.StatusClass, ErrorClass: smp.ErrorClass,
-				LatencyMS: smp.LatencyMS, StateFingerprint: smp.StateFingerprint,
-			})
-			return err
-		},
-		Workers: sh.Cfg.ProbeWorkers, Capacity: sh.Cfg.ProbeQueueCapacity, Clock: sh.Clock, ScanEvery: time.Second,
-	})
+	var engine *probe.Engine
+	if sh.Cfg.ProbeEnabled {
+		engine = probe.NewEngine(probe.EngineDeps{
+			Source: ucs.Monitor,
+			HTTP:   probe.NewHTTPProber(), TCP: probe.NewTCPProber(),
+			Handler: func(ctx context.Context, target portmonitor.TargetSnapshot, smp probe.Sample) error {
+				_, err := ucs.Monitor.ApplySample(ctx, target.ServiceID, target.TargetID, target.ConfigGeneration, appmonitor.Sample{
+					CheckStatus: smp.CheckStatus, StatusClass: smp.StatusClass, ErrorClass: smp.ErrorClass,
+					LatencyMS: smp.LatencyMS, StateFingerprint: smp.StateFingerprint,
+				})
+				return err
+			},
+			Workers: sh.Cfg.ProbeWorkers, Capacity: sh.Cfg.ProbeQueueCapacity, Clock: sh.Clock, ScanEvery: time.Second,
+		})
+	}
 
 	var sender *messaging.Sender
 	var publisher *appoutbox.Publisher
 	var consumer *messaging.Consumer
 	var taskConsumer *messaging.Consumer
+	var monitorConsumer *messaging.Consumer
 	if sh.Cfg.OutboxPublisherEnabled {
 		brokers := splitBrokers(sh.Cfg.KafkaBrokers)
 		sender = messaging.NewSender(brokers, sh.Cfg.KafkaTopic)
@@ -64,6 +70,10 @@ func NewWorker(sh *Shared, r *Repos, ucs *UseCases) (*Worker, error) {
 				}
 				return ucs.AuditConsumer.Handle(ctx, ev)
 			})
+		monitorConsumer = messaging.NewConsumer(brokers, sh.Cfg.KafkaMonitorTopic, appepisode.MonitorConsumerName,
+			func(ctx context.Context, body []byte) error {
+				return ucs.MonitorConsumer.Handle(ctx, body)
+			})
 		taskConsumer = messaging.NewConsumer(brokers, sh.Cfg.KafkaTopic, "system.task.dispatch.v1",
 			func(ctx context.Context, body []byte) error {
 				ev, err := messaging.Decode(body)
@@ -76,7 +86,7 @@ func NewWorker(sh *Shared, r *Repos, ucs *UseCases) (*Worker, error) {
 
 	return &Worker{
 		Probe: engine, Sender: sender, Publisher: publisher,
-		Consumer: consumer, TaskConsumer: taskConsumer,
+		Consumer: consumer, TaskConsumer: taskConsumer, MonitorConsumer: monitorConsumer,
 		Reconciler: NewReconciler(ucs.Task, sh.Cfg.TaskRetryDelay), AgentClient: agent,
 	}, nil
 }

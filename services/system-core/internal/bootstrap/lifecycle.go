@@ -56,6 +56,9 @@ func RunWorker(ctx context.Context, w *Worker, sh *Shared) error {
 	if w.TaskConsumer != nil {
 		go func() { _ = w.TaskConsumer.Run(ctx) }()
 	}
+	if w.MonitorConsumer != nil {
+		go func() { _ = w.MonitorConsumer.Run(ctx) }()
+	}
 	if w.Reconciler != nil {
 		go w.Reconciler.Run(ctx)
 	}
@@ -70,6 +73,9 @@ func RunWorker(ctx context.Context, w *Worker, sh *Shared) error {
 }
 
 func stopWorker(w *Worker) {
+	if w.MonitorConsumer != nil {
+		_ = w.MonitorConsumer.Close()
+	}
 	if w.TaskConsumer != nil {
 		_ = w.TaskConsumer.Close()
 	}

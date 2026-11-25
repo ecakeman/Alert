@@ -27,6 +27,8 @@ type Config struct {
 	OutboxBatch            int
 	KafkaBrokers           string
 	KafkaTopic             string
+	KafkaMonitorTopic      string
+	ProbeEnabled           bool
 	RemoteRegistry         bool
 	RegistryBaseURL        string
 	UpstreamTimeout        time.Duration
@@ -153,6 +155,8 @@ var (
 		durSpec("UPSTREAM_TIMEOUT", func(c *Config, v time.Duration) { c.UpstreamTimeout = v }),
 		strSpec("KAFKA_BROKERS", func(c *Config, v string) { c.KafkaBrokers = v }),
 		strSpec("KAFKA_TOPIC", func(c *Config, v string) { c.KafkaTopic = v }),
+		strSpec("KAFKA_MONITOR_TOPIC", func(c *Config, v string) { c.KafkaMonitorTopic = v }),
+		boolSpec("PROBE_ENABLED", func(c *Config, v bool) { c.ProbeEnabled = v }),
 		intSpec("PROBE_WORKERS", func(c *Config, v int) { c.ProbeWorkers = v }),
 		intSpec("PROBE_QUEUE_CAPACITY", func(c *Config, v int) { c.ProbeQueueCapacity = v }),
 		strSpec("AGENT_GRPC_TARGET", func(c *Config, v string) { c.AgentGRPCTarget = v }),
@@ -191,6 +195,8 @@ var loadOrder = []string{
 	"DB_HEALTHCHECK_PERIOD", "GRPC_ADDR", "AGENT_GRPC_TIMEOUT", "OUTBOX_POLL_INTERVAL", "TASK_RETRY_DELAY",
 	"TASK_DEADLINE", "PROBE_SHUTDOWN_TIMEOUT", "READYZ_TIMEOUT", "HTTP_READ_TIMEOUT", "HTTP_WRITE_TIMEOUT",
 	"HTTP_IDLE_TIMEOUT", "HTTP_SHUTDOWN_TIMEOUT", "TASK_LEASE",
+	"KAFKA_MONITOR_TOPIC", "PROBE_ENABLED",
+	"REMOTE_REGISTRY", "REGISTRY_BASE_URL", "UPSTREAM_TIMEOUT",
 }
 
 // Load 从 lookup 读取配置：先填默认值，再按表解析（首个非法项即返回），最后校验。
@@ -212,6 +218,8 @@ func Load(lookup func(string) string) (Config, error) {
 		OutboxClaimLease:       30 * time.Second,
 		OutboxBatch:            16,
 		KafkaTopic:             "alertflow.system.events.v1",
+		KafkaMonitorTopic:      "alertflow.monitor.events.v1",
+		ProbeEnabled:           true,
 		RegistryBaseURL:        "http://127.0.0.1:8081",
 		UpstreamTimeout:        3 * time.Second,
 		ProbeWorkers:           8,
@@ -358,6 +366,9 @@ func (c Config) Validate() error {
 
 	if c.KafkaTopic == "" {
 		return &LoadError{Var: "KAFKA_TOPIC", Reason: "must not be empty"}
+	}
+	if c.KafkaMonitorTopic == "" {
+		return &LoadError{Var: "KAFKA_MONITOR_TOPIC", Reason: "must not be empty"}
 	}
 	if _, _, err := net.SplitHostPort(c.GRPCAddr); err != nil {
 		return &LoadError{Var: "GRPC_ADDR", Reason: "must be host:port"}
