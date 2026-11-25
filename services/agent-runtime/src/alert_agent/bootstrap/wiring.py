@@ -21,6 +21,8 @@ from alert_agent.application.diagnosis.execute import ExecuteDiagnosis
 from alert_agent.application.diagnosis.tools import DiagnosisToolExecutor
 from alert_agent.application.knowledge.ports import FaultDocSearcher, KnowledgeInvoker
 from alert_agent.application.mcp.ports import McpSession
+from alert_agent.application.retrieval.execute import ChatAnswer
+from alert_agent.application.retrieval.nodes import RetrievalNodes
 from alert_agent.application.retrieval.searcher import DualLegSearcher
 from alert_agent.application.shared.ports import ArtifactWriter
 from alert_agent.application.task.executor import TaskExecutor
@@ -32,6 +34,7 @@ from alert_agent.application.task.ports import (
 )
 from alert_agent.application.task.submit import SubmitTask
 from alert_agent.config import Settings
+from alert_agent.domain.retrieval.budget import RetrievalBudget
 from alert_agent.domain.shared import ErrorCode, FatalError
 from alert_agent.infrastructure.archive import ArtifactFileReader, LlmFaultIndexExtractor
 from alert_agent.infrastructure.artifactstore.writer import FileSystemArtifactWriter
@@ -56,6 +59,7 @@ __all__ = [
     "build_archive_executor",
     "build_artifact_store",
     "build_artifact_writer",
+    "build_chat_answer",
     "build_diagnosis_executor",
     "build_gateway_channel",
     "build_gateway_client",
@@ -237,3 +241,24 @@ def build_retrieval_searcher(settings: Settings, pool: AsyncConnectionPool) -> D
         fusion_top_k=10,
         rerank_top_k=5,
     )
+
+def build_chat_answer(settings: Settings, pool: AsyncConnectionPool) -> ChatAnswer:
+    """Assemble the RAG chat use case (T17); the graph itself compiles once
+    behind the module-level singleton in application/retrieval/graph.py."""
+    budget = RetrievalBudget(
+        max_hops=settings.retrieval.retrieval_max_hops,
+        max_llm_calls=settings.retrieval.retrieval_max_llm_calls,
+        deadline_seconds=settings.retrieval.retrieval_deadline_seconds,
+        max_zero_new_hits=settings.retrieval.retrieval_max_zero_new_hits,
+    )
+    llm_client = build_llm_client(settings)
+    nodes = RetrievalNodes(
+        searcher=build_retrieval_searcher(settings, pool),
+        llm_json=llm_client,
+        streamer=llm_client,
+        budget=budget,
+        refusal_message=settings.retrieval.refusal_message,
+        grade_threshold=settings.retrieval.grade_threshold,
+        clock=SystemClock(),
+    )
+    return ChatAnswer(nodes=nodes, clock=SystemClock())
