@@ -19,9 +19,13 @@ import (
 	platformmigrate "github.com/ecakeman/alert/services/platform/migrate"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	monitorapp "github.com/ecakeman/alert/services/monitor-svc/internal/application/monitor"
+	portmonitor "github.com/ecakeman/alert/services/monitor-svc/internal/application/port/monitor"
 	monitorprojection "github.com/ecakeman/alert/services/monitor-svc/internal/application/projection"
 	"github.com/ecakeman/alert/services/monitor-svc/internal/config"
 	"github.com/ecakeman/alert/services/monitor-svc/internal/infrastructure/clock"
+	"github.com/ecakeman/alert/services/monitor-svc/internal/infrastructure/idgen"
+	"github.com/ecakeman/alert/services/monitor-svc/internal/infrastructure/probe"
 	monitorpostgres "github.com/ecakeman/alert/services/monitor-svc/internal/infrastructure/persistence/postgres"
 	monitorhttp "github.com/ecakeman/alert/services/monitor-svc/internal/transport/http"
 	"github.com/ecakeman/alert/services/monitor-svc/migrations"
@@ -118,6 +122,36 @@ func main() {
 			}
 		}()
 		defer kafkaConsumer.Close()
+	}
+
+	if cfg.ProbeEnabled {
+		sampler := monitorapp.New(monitorapp.Deps{
+			UOW:        monitorpostgres.NewUnitOfWork(pool.Raw()),
+			Points:     monitorpostgres.NewMonitorPointRepo(),
+			Projection: monitorpostgres.NewProjectionRepo(),
+			States:     monitorpostgres.NewStateRepo(),
+			Outbox:     monitorpostgres.NewOutboxRepo(),
+			Clock:      clock.System{},
+			IDs:        idgen.Generator{},
+		})
+		engine := probe.NewEngine(probe.EngineDeps{
+			Source: sampler, HTTP: probe.NewHTTPProber(), TCP: probe.NewTCPProber(),
+			Handler: func(ctx context.Context, snap portmonitor.TargetSnapshot, smp probe.Sample) error {
+				_, err := sampler.ApplySample(ctx, snap.ServiceID, snap.TargetID, snap.ConfigGeneration, monitorapp.Sample{
+					CheckStatus: smp.CheckStatus, StatusClass: smp.StatusClass, ErrorClass: smp.ErrorClass,
+					LatencyMS: smp.LatencyMS, StateFingerprint: smp.StateFingerprint,
+				})
+				return err
+			},
+			Workers: cfg.ProbeWorkers, Capacity: cfg.ProbeQueueCapacity,
+			Clock: clock.System{}, ScanEvery: cfg.MonitorScanInterval,
+		})
+		go func() {
+			if err := engine.Run(ctx); err != nil && ctx.Err() == nil {
+				logger.Error("probe engine stopped", "reason", err.Error())
+			}
+		}()
+		logger.Info("probe engine started", "workers", cfg.ProbeWorkers, "scan_every", cfg.MonitorScanInterval.String())
 	}
 
 	handler := httpx.Chain(
