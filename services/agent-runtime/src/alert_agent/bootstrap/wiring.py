@@ -16,7 +16,12 @@ from uuid import uuid4
 import grpc.aio
 from psycopg_pool import AsyncConnectionPool
 
+from alert_agent.application.diagnosis.execute import ExecuteDiagnosis
+from alert_agent.application.diagnosis.tools import DiagnosisToolExecutor
+from alert_agent.application.knowledge.ports import FaultDocSearcher, KnowledgeInvoker
+from alert_agent.application.mcp.ports import McpSession
 from alert_agent.application.shared.ports import ArtifactWriter
+from alert_agent.application.task.executor import TaskExecutor
 from alert_agent.application.task.ports import ArtifactStore, ReceiptStore, TaskGateway
 from alert_agent.application.task.submit import SubmitTask
 from alert_agent.config import Settings
@@ -32,6 +37,7 @@ __all__ = [
     "UuidIdGen",
     "build_artifact_store",
     "build_artifact_writer",
+    "build_diagnosis_executor",
     "build_gateway_channel",
     "build_gateway_client",
     "build_llm_client",
@@ -39,6 +45,8 @@ __all__ = [
     "build_receipt_store",
     "build_submit_use_case",
     "postgres_ready_check",
+    "register_task_executor",
+    "resolve_task_executor",
 ]
 
 
@@ -99,3 +107,46 @@ def build_llm_client(settings: Settings) -> OpenAiCompatibleLlmClient:
     """OpenAI-compatible client implementing the LlmDecider port (T11);
     complete_json/stream serve the RAG side once its ports land (T15~T17)."""
     return OpenAiCompatibleLlmClient(settings.llm)
+
+def build_diagnosis_executor(
+    settings: Settings,
+    pool: AsyncConnectionPool,
+    channel: grpc.aio.Channel,
+    *,
+    knowledge: KnowledgeInvoker | None = None,
+    mcp: McpSession | None = None,
+    fault_searcher: FaultDocSearcher | None = None,
+) -> ExecuteDiagnosis:
+    """Assemble the DIAGNOSIS TaskExecutor (T13). knowledge/MCP/fault-search
+    implementations land with T22/T21/T14; until then the corresponding
+    actions fail explicitly instead of fabricating results (CR-DISC-05)."""
+    gateway = build_gateway_client(channel, settings)
+    return ExecuteDiagnosis(
+        gateway=gateway,
+        artifact_store=build_artifact_store(pool),
+        artifact_writer=build_artifact_writer(settings),
+        decider=build_llm_client(settings),
+        tool_executor=DiagnosisToolExecutor(
+            gateway=gateway,
+            knowledge=knowledge,
+            mcp=mcp,
+            fault_searcher=fault_searcher,
+        ),
+        settings=settings,
+        clock=SystemClock(),
+    )
+
+
+_EXECUTOR: TaskExecutor | None = None
+
+
+def register_task_executor(executor: TaskExecutor) -> None:
+    """Register the task executor before the worker runtime is built (T13);
+    the worker's late binding (T08) reads it exactly once at startup."""
+    global _EXECUTOR
+    _EXECUTOR = executor
+
+
+def resolve_task_executor() -> TaskExecutor | None:
+    """Late-bound lookup consumed by worker.build_task_worker_runtime (T08)."""
+    return _EXECUTOR

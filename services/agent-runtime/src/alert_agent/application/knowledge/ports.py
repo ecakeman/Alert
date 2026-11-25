@@ -10,8 +10,21 @@ from __future__ import annotations
 
 from typing import Protocol
 
+from alert_agent.domain.diagnosis.records import FdHit
 from alert_agent.domain.knowledge.models import InvocationV1, KnowledgeHit
 
 
 class KnowledgeInvoker(Protocol):
     async def invoke(self, invocation: InvocationV1) -> list[KnowledgeHit]: ...
+
+
+class FaultDocSearcher(Protocol):
+    """Historical fault-document retrieval inside the cognitive store
+    (CR-DIAG-12, implemented by the archive batch T14).
+
+    Implementations rank the same service first with a cross-service
+    fallback, fuse vector and full-text legs and return traceable ``fd_id``
+    hits validated as ``FdHit``.
+    """
+
+    async def search(self, service_id: str, query: str, *, top_k: int = 5) -> list[FdHit]: ...
