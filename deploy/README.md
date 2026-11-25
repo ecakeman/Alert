@@ -57,6 +57,13 @@ docker compose -f deploy/compose/compose.yaml --profile setup run --rm provision
 bash deploy/split/verify-isolation.sh
 ```
 
+断言共 8 条，输出 `PASS n/8`：
+
+- 反向 4 条：`alert_registry` 读 `monitor`、`alert_monitor` 写 `registry`、`alert_episode` 读 `task`、`alert_task` 写 `episode`，必须返回 `permission denied`；
+- 正向 4 条：各角色对自有 schema 中由 `alert` 创建的表执行 `INSERT/SELECT`（覆盖 DEFAULT PRIVILEGES 与序列），并自行建表验证 `CREATE` 权限。
+
+任何一条不符合预期即非零退出。
+
 ## 已知限制
 
 - 宿主机上的 Go 进程必须使用 `127.0.0.1:9092`；容器内进程必须使用 `kafka:29092`。混用会拿到无法路由的 advertised 地址。
