@@ -11,11 +11,14 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/ecakeman/alert/services/platform/db"
 	"github.com/ecakeman/alert/services/platform/httpx"
 	"github.com/ecakeman/alert/services/platform/logging"
+	"github.com/ecakeman/alert/services/platform/messaging"
 	platformmigrate "github.com/ecakeman/alert/services/platform/migrate"
+	platformoutbox "github.com/ecakeman/alert/services/platform/outbox"
 
 	"github.com/gin-gonic/gin"
 
@@ -23,6 +26,7 @@ import (
 	"github.com/ecakeman/alert/services/service-registry/internal/config"
 	"github.com/ecakeman/alert/services/service-registry/internal/infrastructure/clock"
 	"github.com/ecakeman/alert/services/service-registry/internal/infrastructure/idgen"
+	"github.com/ecakeman/alert/services/service-registry/internal/infrastructure/outboxsender"
 	registrypostgres "github.com/ecakeman/alert/services/service-registry/internal/infrastructure/persistence/postgres"
 	registryhttp "github.com/ecakeman/alert/services/service-registry/internal/transport/http"
 	registryhandler "github.com/ecakeman/alert/services/service-registry/internal/transport/http/handler"
@@ -105,6 +109,33 @@ func main() {
 	engine.Use(gin.Recovery())
 	registryhandler.NewRegistry(uc).Register(engine)
 
+	if cfg.KafkaBrokers != "" {
+		sender, err := messaging.NewSender(messaging.SenderConfig{
+			Brokers: splitBrokers(cfg.KafkaBrokers), Topic: cfg.KafkaPublishTopic,
+		})
+		if err != nil {
+			logger.Error("kafka sender", "reason", err.Error())
+			os.Exit(1)
+		}
+		outboxRepo, err := platformoutbox.NewRepo("registry")
+		if err != nil {
+			logger.Error("outbox repo", "reason", err.Error())
+			os.Exit(1)
+		}
+		publisher, err := platformoutbox.New(platformoutbox.Deps{
+			Store: outboxRepo, Tx: pool.Raw(),
+			Sender: outboxsender.New(sender), Owner: "registry",
+			PublishTopic: cfg.KafkaPublishTopic,
+			ClaimLease:   30 * time.Second, Batch: 16, PollInterval: 500 * time.Millisecond,
+		})
+		if err != nil {
+			logger.Error("outbox publisher", "reason", err.Error())
+			os.Exit(1)
+		}
+		go publisher.Run(ctx)
+		defer sender.Close()
+	}
+
 	handler := httpx.Chain(
 		registryhttp.New(registryhttp.Deps{Health: health, Logger: logger, API: engine}),
 		httpx.Recovery(logger),
@@ -151,4 +182,15 @@ func healthcheckAddr(addr string) string {
 		return addr + ":8081"
 	}
 	return addr
+}
+
+func splitBrokers(raw string) []string {
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if trimmed := strings.TrimSpace(part); trimmed != "" {
+			out = append(out, trimmed)
+		}
+	}
+	return out
 }

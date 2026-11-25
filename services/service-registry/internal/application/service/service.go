@@ -306,9 +306,12 @@ func (s *Service) appendServiceStateChanged(ctx context.Context, tx portshared.T
 	if err != nil {
 		return err
 	}
-	return s.deps.Outbox.Append(ctx, tx, contracts.Event{
+	if err := s.deps.Outbox.Append(ctx, tx, contracts.Event{
 		EventID: s.deps.IDs.NewID(), EventType: contracts.EventServiceStateChanged, SchemaVersion: 1,
 		AggregateType: "service", AggregateID: serviceID,
 		OccurredAt: s.deps.Clock.Now().UTC(), Payload: payload,
-	}, nil)
+	}, nil); err != nil {
+		return err
+	}
+	return s.appendCatalogChanged(ctx, tx, serviceID)
 }

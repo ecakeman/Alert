@@ -26,6 +26,7 @@ const (
 	EventEpisodeStatusChanged  = "episode.status.changed.v1"
 	EventEpisodeInputAppended  = "episode.input.appended.v1"
 	EventTaskDispatchRequested = "task.dispatch.requested.v1"
+	EventServiceCatalogChanged = "service.catalog.changed.v1"
 
 	// P0.16 预演：monitor 域自有事件（拆分后发布到 monitor topic）。
 	EventMonitorTargetStateChanged  = "monitor.target.state.changed.v1"
@@ -79,7 +80,7 @@ func Supported(eventType string, schemaVersion int) bool {
 	switch eventType {
 	case EventServiceStateChanged, EventEpisodeStatusChanged, EventEpisodeInputAppended,
 		EventTaskDispatchRequested, EventMonitorTargetStateChanged, EventMonitorServiceStateChanged,
-		EventEpisodeDispatchable:
+		EventEpisodeDispatchable, EventServiceCatalogChanged:
 		return schemaVersion == 1
 	default:
 		return false
