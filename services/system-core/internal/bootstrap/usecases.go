@@ -47,8 +47,10 @@ func NewUseCases(sh *Shared, r *Repos) *UseCases {
 		UOW: sh.UOW, Targets: r.Targets, MonitorPoints: r.MonitorPoints,
 		Sources: r.Sources, Episodes: r.Episodes,
 		Services: r.Services,
+		Outbox:   r.Outbox,
 		Driver:   episodeDriverAdapter{uc: epUC},
 		Clock:    sh.Clock,
+		IDs:      sh.IDs,
 	})
 
 	auditUC := appoutbox.NewConsumer(appoutbox.ConsumerDeps{

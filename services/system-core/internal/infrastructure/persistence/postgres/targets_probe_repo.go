@@ -39,3 +39,11 @@ WHERE target_id=$1 AND deleted_at IS NULL`,
 		targetID, status, failures, successes, utc(lastCheckAt))
 	return Translate(err)
 }
+
+// UpdateLastCheckAt 只更新最近探测时刻（P0 采样事务内自产字段；P3 迁到投影表）。
+func (targetRepo) UpdateLastCheckAt(ctx context.Context, tx portshared.Tx, targetID string, at time.Time) error {
+	_, err := txFrom(tx).Exec(ctx, `
+UPDATE system.service_monitor_targets SET last_check_at=$2, updated_at=now()
+WHERE target_id=$1 AND deleted_at IS NULL`, targetID, utc(at))
+	return Translate(err)
+}

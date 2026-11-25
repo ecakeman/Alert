@@ -26,6 +26,10 @@ const (
 	EventEpisodeStatusChanged  = "episode.status.changed.v1"
 	EventEpisodeInputAppended  = "episode.input.appended.v1"
 	EventTaskDispatchRequested = "task.dispatch.requested.v1"
+
+	// P0.16 预演：monitor 域自有事件（拆分后发布到 monitor topic）。
+	EventMonitorTargetStateChanged  = "monitor.target.state.changed.v1"
+	EventMonitorServiceStateChanged = "monitor.service.state.changed.v1"
 )
 
 // ErrUnsupportedEvent 表示事件类型或版本不受支持。
@@ -34,7 +38,8 @@ var ErrUnsupportedEvent = errors.New("unsupported event type or schema version")
 // Supported 判断事件类型与版本是否受支持。
 func Supported(eventType string, schemaVersion int) bool {
 	switch eventType {
-	case EventServiceStateChanged, EventEpisodeStatusChanged, EventEpisodeInputAppended, EventTaskDispatchRequested:
+	case EventServiceStateChanged, EventEpisodeStatusChanged, EventEpisodeInputAppended,
+		EventTaskDispatchRequested, EventMonitorTargetStateChanged, EventMonitorServiceStateChanged:
 		return schemaVersion == 1
 	default:
 		return false

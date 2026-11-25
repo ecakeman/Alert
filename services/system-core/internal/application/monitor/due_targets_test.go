@@ -36,6 +36,9 @@ func (fakeTargetRepo) Patch(context.Context, portshared.Tx, string, portService.
 func (fakeTargetRepo) UpdateProbeResult(context.Context, portshared.Tx, string, string, int, int, time.Time) error {
 	return nil
 }
+func (fakeTargetRepo) UpdateLastCheckAt(context.Context, portshared.Tx, string, time.Time) error {
+	return nil
+}
 func (fakeTargetRepo) SoftDelete(context.Context, portshared.Tx, string, time.Time) error { return nil }
 
 type fakeUOW struct{}

@@ -88,6 +88,7 @@ type TargetRepo interface {
 	ListEnabled(ctx context.Context, tx portshared.Tx) ([]MonitorTarget, error)
 	Patch(ctx context.Context, tx portshared.Tx, targetID string, p TargetPatch) error
 	UpdateProbeResult(ctx context.Context, tx portshared.Tx, targetID, status string, failures, successes int, lastCheckAt time.Time) error
+	UpdateLastCheckAt(ctx context.Context, tx portshared.Tx, targetID string, at time.Time) error
 	SoftDelete(ctx context.Context, tx portshared.Tx, targetID string, at time.Time) error
 }
 
