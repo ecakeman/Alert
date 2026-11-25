@@ -36,10 +36,32 @@ DELETE FROM system.service_execution_ownership WHERE service_id IN ('${SVC_1}','
 DELETE FROM system.agent_tasks WHERE episode_id = '${EP_1}';
 DELETE FROM system.episode_input_versions WHERE episode_id = '${EP_1}';
 DELETE FROM system.episode_app_events WHERE episode_id = '${EP_1}';
+DELETE FROM system.episode_input_versions
+  WHERE episode_id IN (SELECT episode_id FROM system.episodes WHERE service_id IN ('${SVC_1}','${SVC_2}'));
+DELETE FROM system.episode_app_events WHERE service_id IN ('${SVC_1}','${SVC_2}');
+DELETE FROM system.service_monitor_points WHERE service_id IN ('${SVC_1}','${SVC_2}');
+DELETE FROM system.episode_input_versions
+  WHERE episode_id IN (SELECT episode_id FROM system.episodes WHERE service_id IN ('${SVC_1}','${SVC_2}'));
+DELETE FROM system.episode_app_events WHERE service_id IN ('${SVC_1}','${SVC_2}');
+DELETE FROM system.service_monitor_points WHERE service_id IN ('${SVC_1}','${SVC_2}');
 DELETE FROM system.episodes WHERE episode_id = '${EP_1}';
 DELETE FROM system.service_monitor_targets WHERE service_id IN ('${SVC_1}','${SVC_2}');
 DELETE FROM system.service_source_states WHERE service_id IN ('${SVC_1}','${SVC_2}');
 DELETE FROM system.services WHERE service_id IN ('${SVC_1}','${SVC_2}');
+DELETE FROM system.episode_input_versions
+  WHERE episode_id IN (SELECT episode_id FROM system.episodes
+    WHERE service_id IN (SELECT service_id FROM system.services WHERE service_key = 'snapshot-created'));
+DELETE FROM system.episode_app_events
+  WHERE service_id IN (SELECT service_id FROM system.services WHERE service_key = 'snapshot-created');
+DELETE FROM system.service_monitor_points
+  WHERE service_id IN (SELECT service_id FROM system.services WHERE service_key = 'snapshot-created');
+DELETE FROM system.episode_input_versions
+  WHERE episode_id IN (SELECT episode_id FROM system.episodes
+    WHERE service_id IN (SELECT service_id FROM system.services WHERE service_key = 'snapshot-created'));
+DELETE FROM system.episode_app_events
+  WHERE service_id IN (SELECT service_id FROM system.services WHERE service_key = 'snapshot-created');
+DELETE FROM system.service_monitor_points
+  WHERE service_id IN (SELECT service_id FROM system.services WHERE service_key = 'snapshot-created');
 DELETE FROM system.service_monitor_targets
   WHERE service_id IN (SELECT service_id FROM system.services WHERE service_key = 'snapshot-created');
 DELETE FROM system.service_source_states

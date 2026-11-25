@@ -86,10 +86,19 @@ else
 fi
 
 NORMALIZE_CODE='import json,re,sys
+ts_re=re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}")
+uuid_re=re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
+hex32_re=re.compile(r"^[0-9a-f]{32}$")
+seen={}
 def norm(v):
     if isinstance(v,dict): return {k:norm(x) for k,x in v.items()}
     if isinstance(v,list): return [norm(x) for x in v]
-    if isinstance(v,str) and re.match(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}",v): return "<timestamp>"
+    if isinstance(v,str):
+        if ts_re.match(v): return "<timestamp>"
+        if hex32_re.match(v): return "<hex32>"
+        if uuid_re.match(v):
+            if v not in seen: seen[v]="<uuid-%d>"%(len(seen)+1)
+            return seen[v]
     return v
 json.dump(norm(json.load(open(sys.argv[1],encoding="utf-8"))),sys.stdout,sort_keys=True,indent=2,ensure_ascii=False)
 print()'

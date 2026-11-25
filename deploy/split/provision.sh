@@ -7,6 +7,7 @@ PGHOST="${PGHOST:-postgres}"
 PGPORT="${PGPORT:-5432}"
 PGUSER="${PGUSER:-alert}"
 PGDATABASE="${PGDATABASE:-alert}"
+export PGPASSWORD="${PGPASSWORD:-alert}"
 
 REGISTRY_PASSWORD="${ALERT_REGISTRY_PASSWORD:-alert_registry_pw_dev}"
 MONITOR_PASSWORD="${ALERT_MONITOR_PASSWORD:-alert_monitor_pw_dev}"
@@ -18,12 +19,20 @@ psql_exec() {
     --set=ON_ERROR_STOP=1 --no-psqlrc "$@"
 }
 
+# 生成 SQL 字符串字面量（单引号转义为两个单引号）。
+sql_quote() {
+  local escaped
+  escaped="$(printf '%s' "$1" | sed "s/'/''/g")"
+  printf "'%s'" "$escaped"
+}
+
 ensure_role() {
-  local role="$1" password="$2"
+  local role="$1" password="$2" quoted
+  quoted="$(sql_quote "$password")"
   if [ "$(psql_exec --tuples-only --no-align --command="SELECT 1 FROM pg_roles WHERE rolname='${role}'")" = "1" ]; then
-    psql_exec --command="ALTER ROLE ${role} LOGIN PASSWORD :'pw'" --set="pw=${password}"
+    psql_exec --command="ALTER ROLE ${role} LOGIN PASSWORD ${quoted}"
   else
-    psql_exec --command="CREATE ROLE ${role} LOGIN PASSWORD :'pw'" --set="pw=${password}"
+    psql_exec --command="CREATE ROLE ${role} LOGIN PASSWORD ${quoted}"
   fi
 }
 

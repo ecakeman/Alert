@@ -1,0 +1,127 @@
+{
+  "limit": 10,
+  "offset": 0,
+  "services": [
+    {
+      "active_episode_id": "<uuid-2>",
+      "app_status": "UNKNOWN",
+      "description": "",
+      "enabled": true,
+      "last_check_at": null,
+      "monitor_status": "UNKNOWN",
+      "name": "b7-acc-2",
+      "service_id": "<uuid-1>",
+      "service_key": "b7acc-2-eacf6c5b",
+      "target_count": 0
+    },
+    {
+      "active_episode_id": "<uuid-4>",
+      "app_status": "UNKNOWN",
+      "description": "",
+      "enabled": true,
+      "last_check_at": null,
+      "monitor_status": "UNKNOWN",
+      "name": "b7-acc-1",
+      "service_id": "<uuid-3>",
+      "service_key": "b7acc-1-7e92ccf2",
+      "target_count": 0
+    },
+    {
+      "active_episode_id": "<uuid-6>",
+      "app_status": "UNKNOWN",
+      "description": "",
+      "enabled": true,
+      "last_check_at": null,
+      "monitor_status": "UNKNOWN",
+      "name": "b7-acc-0",
+      "service_id": "<uuid-5>",
+      "service_key": "b7acc-0-614527c9",
+      "target_count": 0
+    },
+    {
+      "active_episode_id": "<uuid-8>",
+      "app_status": "UNKNOWN",
+      "description": "",
+      "enabled": true,
+      "last_check_at": null,
+      "monitor_status": "UNKNOWN",
+      "name": "b7-acc-2",
+      "service_id": "<uuid-7>",
+      "service_key": "b7acc-2-d9936bbb",
+      "target_count": 0
+    },
+    {
+      "active_episode_id": "<uuid-10>",
+      "app_status": "UNKNOWN",
+      "description": "",
+      "enabled": true,
+      "last_check_at": null,
+      "monitor_status": "UNKNOWN",
+      "name": "b7-acc-1",
+      "service_id": "<uuid-9>",
+      "service_key": "b7acc-1-3b0cd11d",
+      "target_count": 0
+    },
+    {
+      "active_episode_id": "<uuid-12>",
+      "app_status": "UNKNOWN",
+      "description": "",
+      "enabled": true,
+      "last_check_at": null,
+      "monitor_status": "UNKNOWN",
+      "name": "b7-acc-0",
+      "service_id": "<uuid-11>",
+      "service_key": "b7acc-0-5b91e70c",
+      "target_count": 0
+    },
+    {
+      "active_episode_id": "<uuid-14>",
+      "app_status": "UNKNOWN",
+      "description": "",
+      "enabled": true,
+      "last_check_at": "<timestamp>",
+      "monitor_status": "ABNORMAL",
+      "name": "B6",
+      "service_id": "<uuid-13>",
+      "service_key": "b6-1795447561",
+      "target_count": 2
+    },
+    {
+      "active_episode_id": null,
+      "app_status": "UNKNOWN",
+      "description": "",
+      "enabled": true,
+      "last_check_at": null,
+      "monitor_status": "UNKNOWN",
+      "name": "B5",
+      "service_id": "<uuid-15>",
+      "service_key": "b5-1795446797",
+      "target_count": 0
+    },
+    {
+      "active_episode_id": null,
+      "app_status": "UNKNOWN",
+      "description": "",
+      "enabled": true,
+      "last_check_at": null,
+      "monitor_status": "UNKNOWN",
+      "name": "S",
+      "service_id": "<uuid-16>",
+      "service_key": "smoke-tl-1795446213",
+      "target_count": 0
+    },
+    {
+      "active_episode_id": null,
+      "app_status": "UNKNOWN",
+      "description": "",
+      "enabled": true,
+      "last_check_at": null,
+      "monitor_status": "UNKNOWN",
+      "name": "S",
+      "service_id": "<uuid-17>",
+      "service_key": "smoke-e-1795445586",
+      "target_count": 0
+    }
+  ],
+  "total": 15
+}

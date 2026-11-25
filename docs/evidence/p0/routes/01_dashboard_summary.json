@@ -1,0 +1,110 @@
+{
+  "episodes": {
+    "active": 8,
+    "archived": 0,
+    "resolved": 0
+  },
+  "generated_at": "<timestamp>",
+  "monitor_trend": [],
+  "recent_episodes": [
+    {
+      "active_task_status": "RETRY_WAIT",
+      "active_task_type": "DIAGNOSIS",
+      "archived_at": null,
+      "episode_id": "<uuid-1>",
+      "has_diagnosis_report": false,
+      "input_version": 2,
+      "processed_input_version": 1,
+      "resolution_pending": false,
+      "resolved_at": null,
+      "service_id": "<uuid-2>",
+      "service_name": "b7-acc-2",
+      "started_at": "<timestamp>",
+      "started_by": "MONITOR",
+      "status": "ACTIVE",
+      "updated_at": "<timestamp>"
+    },
+    {
+      "active_task_status": "RETRY_WAIT",
+      "active_task_type": "DIAGNOSIS",
+      "archived_at": null,
+      "episode_id": "<uuid-3>",
+      "has_diagnosis_report": false,
+      "input_version": 2,
+      "processed_input_version": 1,
+      "resolution_pending": false,
+      "resolved_at": null,
+      "service_id": "<uuid-4>",
+      "service_name": "b7-acc-1",
+      "started_at": "<timestamp>",
+      "started_by": "MONITOR",
+      "status": "ACTIVE",
+      "updated_at": "<timestamp>"
+    },
+    {
+      "active_task_status": "RUNNING",
+      "active_task_type": "DIAGNOSIS",
+      "archived_at": null,
+      "episode_id": "<uuid-5>",
+      "has_diagnosis_report": false,
+      "input_version": 2,
+      "processed_input_version": 1,
+      "resolution_pending": false,
+      "resolved_at": null,
+      "service_id": "<uuid-6>",
+      "service_name": "b7-acc-0",
+      "started_at": "<timestamp>",
+      "started_by": "MONITOR",
+      "status": "ACTIVE",
+      "updated_at": "<timestamp>"
+    },
+    {
+      "active_task_status": "RETRY_WAIT",
+      "active_task_type": "DIAGNOSIS",
+      "archived_at": null,
+      "episode_id": "<uuid-7>",
+      "has_diagnosis_report": false,
+      "input_version": 2,
+      "processed_input_version": 1,
+      "resolution_pending": false,
+      "resolved_at": null,
+      "service_id": "<uuid-8>",
+      "service_name": "b7-acc-2",
+      "started_at": "<timestamp>",
+      "started_by": "MONITOR",
+      "status": "ACTIVE",
+      "updated_at": "<timestamp>"
+    },
+    {
+      "active_task_status": "RETRY_WAIT",
+      "active_task_type": "DIAGNOSIS",
+      "archived_at": null,
+      "episode_id": "<uuid-9>",
+      "has_diagnosis_report": false,
+      "input_version": 2,
+      "processed_input_version": 1,
+      "resolution_pending": false,
+      "resolved_at": null,
+      "service_id": "<uuid-10>",
+      "service_name": "b7-acc-1",
+      "started_at": "<timestamp>",
+      "started_by": "MONITOR",
+      "status": "ACTIVE",
+      "updated_at": "<timestamp>"
+    }
+  ],
+  "services": {
+    "abnormal": 2,
+    "disabled": 0,
+    "enabled": 15,
+    "normal": 1,
+    "total": 15,
+    "unknown": 6
+  },
+  "targets": {
+    "abnormal": 3,
+    "normal": 2,
+    "total": 5,
+    "unknown": 0
+  }
+}

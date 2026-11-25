@@ -1,0 +1,12 @@
+{
+  "app_status": "UNKNOWN",
+  "authority_producer_id": "producer-snapshot",
+  "description": "created by snapshot",
+  "enabled": true,
+  "monitor_aggregation_mode": "ALL_REQUIRED",
+  "monitor_status": "UNKNOWN",
+  "name": "Snapshot Created",
+  "service_id": "<uuid-1>",
+  "service_key": "snapshot-created",
+  "targets": []
+}

@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "INTERNAL",
+    "message": "internal error",
+    "request_id": "<hex32>"
+  }
+}

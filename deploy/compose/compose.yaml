@@ -13,6 +13,7 @@ services:
       POSTGRES_DB: alert
       TZ: UTC
       PGTZ: UTC
+      PGPASSWORD: alert
     volumes:
       - alert-pg-data:/var/lib/postgresql/data
     healthcheck:
@@ -83,6 +84,7 @@ services:
       PGHOST: postgres
       PGPORT: "5432"
       PGUSER: alert
+      PGPASSWORD: alert
       PGDATABASE: alert
       ALERT_REGISTRY_PASSWORD: ${ALERT_REGISTRY_PASSWORD:-alert_registry_pw_dev}
       ALERT_MONITOR_PASSWORD: ${ALERT_MONITOR_PASSWORD:-alert_monitor_pw_dev}

@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "VALIDATION",
+    "message": "service_key, name, authority_producer_id are required",
+    "request_id": "<hex32>"
+  }
+}
