@@ -22,6 +22,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	registryconsumer "github.com/ecakeman/alert/services/service-registry/internal/application/consumer"
 	appservice "github.com/ecakeman/alert/services/service-registry/internal/application/service"
 	"github.com/ecakeman/alert/services/service-registry/internal/config"
 	"github.com/ecakeman/alert/services/service-registry/internal/infrastructure/clock"
@@ -134,6 +135,28 @@ func main() {
 		}
 		go publisher.Run(ctx)
 		defer sender.Close()
+
+		registryConsumer := registryconsumer.New(registryconsumer.Deps{
+			UOW:     registrypostgres.NewUnitOfWork(pool.Raw()),
+			Targets: registrypostgres.NewTargetRepo(),
+			Sources: registrypostgres.NewSourceStateRepo(),
+			Idem:    registrypostgres.NewIdempotencyRepo(),
+			Clock:   clock.System{},
+		})
+		kafkaConsumer, err := messaging.NewConsumer(messaging.ConsumerConfig{
+			Brokers: splitBrokers(cfg.KafkaBrokers), Topics: cfg.KafkaConsumeTopics,
+			GroupID: "registry.monitor-events.v1", Logger: logger,
+		}, registryConsumer.Handle)
+		if err != nil {
+			logger.Error("kafka consumer", "reason", err.Error())
+			os.Exit(1)
+		}
+		go func() {
+			if err := kafkaConsumer.Run(ctx); err != nil && ctx.Err() == nil {
+				logger.Error("kafka consumer stopped", "reason", err.Error())
+			}
+		}()
+		defer kafkaConsumer.Close()
 	}
 
 	handler := httpx.Chain(
