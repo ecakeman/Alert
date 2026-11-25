@@ -21,6 +21,7 @@ from alert_agent.application.diagnosis.execute import ExecuteDiagnosis
 from alert_agent.application.diagnosis.tools import DiagnosisToolExecutor
 from alert_agent.application.knowledge.ports import FaultDocSearcher, KnowledgeInvoker
 from alert_agent.application.mcp.ports import McpSession
+from alert_agent.application.retrieval.searcher import DualLegSearcher
 from alert_agent.application.shared.ports import ArtifactWriter
 from alert_agent.application.task.executor import TaskExecutor
 from alert_agent.application.task.ports import (
@@ -34,12 +35,19 @@ from alert_agent.config import Settings
 from alert_agent.domain.shared import ErrorCode, FatalError
 from alert_agent.infrastructure.archive import ArtifactFileReader, LlmFaultIndexExtractor
 from alert_agent.infrastructure.artifactstore.writer import FileSystemArtifactWriter
+from alert_agent.infrastructure.bm25 import InProcessBm25Index
+from alert_agent.infrastructure.embedding import OpenAiCompatibleEmbedder
 from alert_agent.infrastructure.grpc.gateway_client import SystemTaskGatewayClient
 from alert_agent.infrastructure.llm.client import OpenAiCompatibleLlmClient
 from alert_agent.infrastructure.persistence.postgres.artifact_repo import PostgresArtifactStore
 from alert_agent.infrastructure.persistence.postgres.fault_doc_repo import PostgresFaultDocStore
 from alert_agent.infrastructure.persistence.postgres.pool import build_pool
 from alert_agent.infrastructure.persistence.postgres.receipt_repo import PostgresReceiptStore
+from alert_agent.infrastructure.persistence.postgres.retrieval_repo import (
+    PostgresParentFetcher,
+    PostgresVectorStore,
+)
+from alert_agent.infrastructure.rerank import OpenAiCompatibleReranker
 
 __all__ = [
     "SystemClock",
@@ -54,6 +62,7 @@ __all__ = [
     "build_llm_client",
     "build_pool",
     "build_receipt_store",
+    "build_retrieval_searcher",
     "build_submit_use_case",
     "build_task_executor",
     "postgres_ready_check",
@@ -206,4 +215,25 @@ def build_task_executor(
             "DIAGNOSIS": build_diagnosis_executor(settings, pool, channel),
             "ARCHIVE": build_archive_executor(settings, pool, channel),
         }
+    )
+
+def build_retrieval_searcher(settings: Settings, pool: AsyncConnectionPool) -> DualLegSearcher:
+    """Assemble the dual-leg searcher (T16). The BM25 index is the single
+    in-process instance per process (D9); disabled embedding leaves the
+    vector leg unconfigured and reported in leg_status (CR-RAG-06)."""
+    embedder = (
+        OpenAiCompatibleEmbedder(settings.llm) if settings.llm.enable_embedding else None
+    )
+    reranker = (
+        OpenAiCompatibleReranker(settings.llm) if settings.llm.enable_rerank else None
+    )
+    return DualLegSearcher(
+        embedder=embedder,
+        vector_store=PostgresVectorStore(pool) if embedder else None,
+        bm25_index=InProcessBm25Index(pool),
+        reranker=reranker,
+        parent_fetcher=PostgresParentFetcher(pool),
+        vector_top_k=8,
+        fusion_top_k=10,
+        rerank_top_k=5,
     )
