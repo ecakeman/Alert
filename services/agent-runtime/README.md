@@ -42,3 +42,13 @@ curl -sS https://bootstrap.pypa.io/get-pip.py -o /tmp/get-pip.py
 
 - 禁止两侧共用写账号；禁止 Go runner 发现 Python 迁移；禁止根级公共迁移池（CR-DATA-01/02/03）。
 - 认知侧独占写 cognitive schema，不读写 system schema；产物正文存文件 + `storage_key` 地址制（D5），数据库与回执不承载正文。
+## 最小离线 eval（T24，D8）
+
+```bash
+.venv/bin/python eval/run.py --dataset eval/datasets/simple_qa.csv
+```
+
+- 数据集 CSV 必须包含 `question` 与 `gold_answer` 两列，缺失字段启动即报错（R9）。
+- 检索链复用生产装配（T16 双腿 + T17 图组件，无第二套实现）；judge 走 `LlmJson` 结构化评分（CR-REG-13）。
+- 仅输出已执行的量化结果（逐条得分与平均分），不宣称未执行的评测结论（CR-DISC-07）。
+- 需要真实 Postgres（`DATABASE_URL_COGNITIVE`）与 LLM 端点环境；属 T25 统一验证范围的离线工具，不进主链路。
