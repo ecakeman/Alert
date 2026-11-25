@@ -4,3 +4,6 @@ dist/
 .env
 *.log
 .arts/
+__pycache__/
+*.pyc
+.venv/
