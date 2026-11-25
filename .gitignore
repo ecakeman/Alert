@@ -12,4 +12,5 @@ __pycache__/
 .venv/
 deploy/split/.split-state.json
 deploy/split/snapshots/
-docs/evidence/p0/routes.prev/docs/evidence/p1/routes.prev/
+docs/evidence/p0/routes.prev/
+docs/evidence/p1/routes.prev/
