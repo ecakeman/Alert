@@ -4,6 +4,9 @@ dist/
 .env
 *.log
 .arts/
+.codeartsdoer/
+.ruff_cache/
+.security/
 __pycache__/
 *.pyc
 .venv/
