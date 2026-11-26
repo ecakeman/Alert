@@ -1,6 +1,6 @@
 # Runbook：迁移回放与验证
 
-工作目录：`services/system-core`。
+工作目录：`go/services/system-core`。
 
 ## 1. 常规回放
 

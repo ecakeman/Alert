@@ -3,13 +3,13 @@
 ## 1. 迁移发现异常
 
 - 现象：`-migrate` 报版本缺口/重复/checksum conflict。
-- 排查：`ls services/system-core/migrations/*.sql`（工作目录 `services/system-core`）确认只有 3 个 SQL 且文件名未改；对照 `git log -- migrations/`。
+- 排查：`ls go/services/system-core/migrations/*.sql`（工作目录 `go/services/system-core`）确认只有 3 个 SQL 且文件名未改；对照 `git log -- migrations/`。
 - 纪律：不手改 schema_migrations 记录；恢复文件原文后重放。
 
 ## 2. 旧 import 前缀（S3 搬迁后）
 
 ```bash
-rg -n 'github.com/ecakeman/alert/internal|github.com/ecakeman/alert/migrations' services/system-core
+rg -n 'github.com/ecakeman/alert/internal|github.com/ecakeman/alert/migrations' go/services/system-core
 ```
 
 期望无输出；有输出说明存在未适配的旧前缀引用。

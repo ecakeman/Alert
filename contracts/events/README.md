@@ -1,6 +1,6 @@
 # 事件信封契约 v1（语言无关）
 
-本目录是 Go（`services/contracts` 及各域服务）与 Python（`python/agent-runtime`）之间**唯一**的事件线上契约源。
+本目录是 Go（`go/contracts` 及各域服务）与 Python（`python/agent-runtime`）之间**唯一**的事件线上契约源。
 本文件与 `event-envelope.v1.schema.json` 只描述**公开字段**；投递控制字段（claim/ack/重试）不属于线上契约。
 
 ## 字段（8 个）
@@ -33,12 +33,12 @@
 
 ### 历史差异标注（只标注，不修改既有 payload）
 
-`episode.input.appended.v1` 在单体（`services/system-core`）中存在两处发布点，payload 形状不同：
+`episode.input.appended.v1` 在单体（`go/services/system-core`）中存在两处发布点，payload 形状不同：
 
 | 发布点 | payload 形状 |
 |---|---|
-| `services/system-core/internal/application/episode/episode.go:135` | `{service_id,event_id}` |
-| `services/system-core/internal/application/episode/episode.go:205` | `{episode_id,input_version}` |
+| `go/services/system-core/internal/application/episode/episode.go:135` | `{service_id,event_id}` |
+| `go/services/system-core/internal/application/episode/episode.go:205` | `{episode_id,input_version}` |
 
 微服务拆分后，**新消费者不解析该事件做主路径**：任务派发只依赖新增的 `episode.dispatchable.v1`，该既有事件仅用于审计。既有 payload 保持不变（符合 spec 4.5.2 兼容规则）。
 
@@ -77,6 +77,6 @@
 
 ## 归属
 
-- **Go**：唯一实现位于 `services/contracts`（module `github.com/ecakeman/alert/services/contracts`），负责构造、编码、发布、解码，并以此契约生成线上 JSON。`services/system-core/internal/contracts` 为过渡期旧副本，P6 收口时删除。
+- **Go**：唯一实现位于 `go/contracts`（module `github.com/ecakeman/alert/services/contracts`），负责构造、编码、发布、解码，并以此契约生成线上 JSON。`go/services/system-core/internal/contracts` 为过渡期旧副本，P6 收口时删除。
 - **Python**：位于 `python/agent-runtime`，应基于本 Schema 生成/校验消费模型。
 - 本文件只描述契约，**不得**回写成任何一侧的内部模型或数据库行。

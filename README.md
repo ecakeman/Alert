@@ -49,19 +49,19 @@ Vue 控制台覆盖从服务管理到故障调查的完整操作面：
 docker compose -f deploy/compose/compose.yaml up -d
 
 # 2. 控制面（Go）
-cd services/system-core
+cd go/services/system-core
 go run ./cmd/api -migrate          # 首次迁移（system schema）
 go run ./cmd/api                   # REST 进程
 go run ./cmd/worker                # 后台进程（探测 / 派发 / 消费）
 
 # 3. 认知执行栈（Python）
-cd ../agent-runtime
+cd ../../../python/agent-runtime
 cp .env.example .env               # 按需修改数据库与 LLM 端点
 .venv/bin/python -m alert_agent.bootstrap.migrate   # 首次迁移（cognitive schema）
 .venv/bin/python -m alert_agent.bootstrap.app       # 网关 + 双 Agent + worker 一体进程
 ```
 
-构建验证：`go build ./... && go vet ./...`（Go）；`.venv/bin/ruff check src eval tests`（Python）。
+构建验证：在 `go/services/system-core` 下执行 `go build ./... && go vet ./...`（Go）；`.venv/bin/ruff check src eval tests`（Python）。
 
 ## 核心特性
 
@@ -75,7 +75,7 @@ cp .env.example .env               # 按需修改数据库与 LLM 端点
 
 | 目录 | 内容 |
 |---|---|
-| `services/system-core/` | Go 控制面（api + worker 双入口、六层结构） |
+| `go/services/system-core/` | Go 控制面（api + worker 双入口、六层结构） |
 | `python/agent-runtime/` | Python 认知执行栈（五层骨架 + 迁移 + eval） |
 | `apps/console/` | Vue 控制台 |
 | `contracts/` | proto 与事件 Schema（语言无关契约源） |
@@ -85,7 +85,7 @@ cp .env.example .env               # 按需修改数据库与 LLM 端点
 ## 测试与验收
 
 ```bash
-cd services/system-core && go build ./... && go vet ./... && go test ./internal/domain/... ./internal/contracts/...
+cd go/services/system-core && go build ./... && go vet ./... && go test ./internal/domain/... ./internal/contracts/...
 cd python/agent-runtime && .venv/bin/ruff check src eval tests && .venv/bin/pytest tests -q
 ```
 

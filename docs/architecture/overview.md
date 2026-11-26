@@ -8,7 +8,7 @@
 
 ```text
 Alert/
-├─ services/system-core/     # 唯一 Go module（api + worker 双入口）
+├─ go/services/system-core/     # 唯一 Go module（api + worker 双入口）
 │  ├─ cmd/api|worker/        # 进程入口与 flag
 │  ├─ internal/{domain,contracts,application,infrastructure,transport,bootstrap,config}/
 │  └─ migrations/            # system schema SQL（仅 .sql）

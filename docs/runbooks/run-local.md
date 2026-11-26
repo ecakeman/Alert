@@ -8,13 +8,13 @@ docker compose -f deploy/compose/compose.yaml up -d
 
 提供 PG16（127.0.0.1:5432，alert/alert）与 Kafka KRaft（127.0.0.1:9092）。配置基线见 `.env.example`（33 项，均有默认值）。
 
-## 2. 迁移（工作目录：`services/system-core`，首次或 schema 变更后）
+## 2. 迁移（工作目录：`go/services/system-core`，首次或 schema 变更后）
 
 ```bash
 go run ./cmd/api -migrate
 ```
 
-## 3. 双进程（`services/system-core` 内，两个终端分别执行）
+## 3. 双进程（`go/services/system-core` 内，两个终端分别执行）
 
 ```bash
 go run ./cmd/api      # REST + 探针，默认 :8080
