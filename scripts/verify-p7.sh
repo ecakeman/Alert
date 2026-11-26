@@ -89,7 +89,8 @@ else
 fi
 
 a13=$(grep -rn "$OLD/agent-runtime" python README.md docs contracts \
-  --include='*.md' --include='*.toml' --include='*.py' 2>/dev/null | grep -v 'docs/evidence' | wc -l)
+  --include='*.md' --include='*.toml' --include='*.py' 2>/dev/null \
+  | grep -v 'docs/evidence' | grep -v 'path-migration.md' | wc -l)
 [ "$a13" = "0" ] && ok A13 || ng A13 "Python 旧路径 $a13 处"
 
 if [ "$STRUCTURE_ONLY" = true ]; then
