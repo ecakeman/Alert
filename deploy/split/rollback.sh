@@ -106,7 +106,7 @@ case "$TARGET" in
     echo "R1 停新服务：P0 无新服务（no-op）"
     # R5：恢复旧进程（system-core api/worker），由操作者显式启动。
     if [ "$DRY_RUN" = true ]; then
-      echo "[dry-run] R5 恢复旧进程：go run ./services/system-core/cmd/api 与 cmd/worker"
+      echo "[dry-run] R5 恢复旧进程：go run ./go/services/system-core/cmd/api 与 cmd/worker"
     else
       echo "R5 恢复旧进程：请按 README 启动 system-core api/worker（脚本不自动拉起裸进程）"
     fi

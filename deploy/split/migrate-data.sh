@@ -339,7 +339,7 @@ GRANT ALL ON registry.service_monitor_targets TO alert_registry;
 GRANT ALL ON registry.service_source_states TO alert_registry;
 SQL
 
-  CHECKSUM="$(sha256sum "$ROOT/services/service-registry/migrations/0001_registry_core.sql" | awk '{print $1}')"
+  CHECKSUM="$(sha256sum "$ROOT/go/services/service-registry/migrations/0001_registry_core.sql" | awk '{print $1}')"
   psql_exec >/dev/null <<SQL
 CREATE TABLE IF NOT EXISTS registry.schema_migrations (
     version bigint PRIMARY KEY,

@@ -20,7 +20,7 @@ fail=0
 violations=0
 
 deps_of() {
-  "$GO_BIN" list -deps "./services/$1/..." 2>/dev/null || true
+  "$GO_BIN" list -deps "./go/services/$1/..." 2>/dev/null || true
 }
 
 check_forbidden() {
@@ -28,7 +28,7 @@ check_forbidden() {
   local count
   count=$(deps_of "$svc" | grep -Ec "$pattern" || true)
   if [ "$count" -ne 0 ]; then
-    echo "VIOLATION: services/$svc 依赖 $reason（$count 处）"
+    echo "VIOLATION: go/services/$svc 依赖 $reason（$count 处）"
     violations=$((violations + count))
     fail=1
   fi

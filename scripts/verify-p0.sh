@@ -36,21 +36,21 @@ mark_skip() {
 
 build_all() {
   "$GO_BIN" build -C "$ROOT" \
-    ./services/contracts/... ./services/platform/... ./services/system-core/...
+    ./go/contracts/... ./go/platform/... ./go/services/system-core/...
 }
 
 vet_all() {
   "$GO_BIN" vet -C "$ROOT" \
-    ./services/contracts/... ./services/platform/... ./services/system-core/...
+    ./go/contracts/... ./go/platform/... ./go/services/system-core/...
 }
 
-contracts_test() { "$GO_BIN" test -C "$ROOT/services/contracts" ./... -count=1; }
-platform_test() { "$GO_BIN" test -C "$ROOT/services/platform" ./... -count=1; }
+contracts_test() { "$GO_BIN" test -C "$ROOT/go/contracts" ./... -count=1; }
+platform_test() { "$GO_BIN" test -C "$ROOT/go/platform" ./... -count=1; }
 boundary_check() { GO_BIN="$GO_BIN" bash "$ROOT/scripts/verify-module-boundary.sh"; }
 
-p0_monitor() { "$GO_BIN" test -C "$ROOT/services/system-core" ./internal/application/monitor/ -run TestP0 -count=1; }
-p0_episode() { "$GO_BIN" test -C "$ROOT/services/system-core" ./internal/application/episode/ -run TestP0 -count=1; }
-p0_task() { "$GO_BIN" test -C "$ROOT/services/system-core" ./internal/application/task/ -run TestP0 -count=1; }
+p0_monitor() { "$GO_BIN" test -C "$ROOT/go/services/system-core" ./internal/application/monitor/ -run TestP0 -count=1; }
+p0_episode() { "$GO_BIN" test -C "$ROOT/go/services/system-core" ./internal/application/episode/ -run TestP0 -count=1; }
+p0_task() { "$GO_BIN" test -C "$ROOT/go/services/system-core" ./internal/application/task/ -run TestP0 -count=1; }
 
 provision_check() {
   docker compose -f "$ROOT/deploy/compose/compose.yaml" --profile setup run --rm provision
@@ -60,8 +60,8 @@ migrate_idempotent() {
     -c "CREATE DATABASE alert_migrate_check" >/dev/null || return 1
   local dsn="postgres://alert:alert@127.0.0.1:5432/alert_migrate_check?sslmode=disable"
   local first second
-  first="$(DATABASE_URL="$dsn" KAFKA_BROKERS=127.0.0.1:9092 "$GO_BIN" -C "$ROOT" run ./services/system-core/cmd/api -migrate 2>/dev/null | tail -1)"
-  second="$(DATABASE_URL="$dsn" KAFKA_BROKERS=127.0.0.1:9092 "$GO_BIN" -C "$ROOT" run ./services/system-core/cmd/api -migrate 2>/dev/null | tail -1)"
+  first="$(DATABASE_URL="$dsn" KAFKA_BROKERS=127.0.0.1:9092 "$GO_BIN" -C "$ROOT" run ./go/services/system-core/cmd/api -migrate 2>/dev/null | tail -1)"
+  second="$(DATABASE_URL="$dsn" KAFKA_BROKERS=127.0.0.1:9092 "$GO_BIN" -C "$ROOT" run ./go/services/system-core/cmd/api -migrate 2>/dev/null | tail -1)"
   echo "first=$first second=$second"
   [ "$first" = "applied=3 skipped=0 conflicts=0" ] && [ "$second" = "applied=0 skipped=3 conflicts=0" ]
 }

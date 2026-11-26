@@ -35,11 +35,11 @@ wait_http() {
 }
 
 echo "== 1. 构建 =="
-"$GO_BIN" build ./services/monitor-svc/... ./services/system-core/... || fail "go build"
+"$GO_BIN" build ./go/services/monitor-svc/... ./go/services/system-core/... || fail "go build"
 pass "go build"
 
 echo "== 2. monitor 迁移幂等 =="
-"$GO_BIN" build -o "$BIN_DIR/monitor-svc" ./services/monitor-svc/cmd/monitor-svc || fail "build monitor-svc"
+"$GO_BIN" build -o "$BIN_DIR/monitor-svc" ./go/services/monitor-svc/cmd/monitor-svc || fail "build monitor-svc"
 MON_DSN="postgres://alert_monitor:alert_monitor_pw_dev@127.0.0.1:5432/alert?sslmode=disable"
 M1="$(DATABASE_URL="$MON_DSN" "$BIN_DIR/monitor-svc" -migrate 2>&1 | tail -1)" || fail "migrate #1"
 M2="$(DATABASE_URL="$MON_DSN" "$BIN_DIR/monitor-svc" -migrate 2>&1 | tail -1)" || fail "migrate #2"
@@ -52,8 +52,8 @@ bash deploy/split/verify-isolation.sh || fail "verify-isolation"
 pass "isolation 8/8"
 
 echo "== 4. 启动 registry / monitor / worker =="
-"$GO_BIN" build -o "$BIN_DIR/service-registry" ./services/service-registry/cmd/service-registry || fail "build registry"
-"$GO_BIN" build -o "$BIN_DIR/system-worker" ./services/system-core/cmd/worker || fail "build worker"
+"$GO_BIN" build -o "$BIN_DIR/service-registry" ./go/services/service-registry/cmd/service-registry || fail "build registry"
+"$GO_BIN" build -o "$BIN_DIR/system-worker" ./go/services/system-core/cmd/worker || fail "build worker"
 REG_DSN="postgres://alert_registry:alert_registry_pw_dev@127.0.0.1:5432/alert?sslmode=disable"
 SYS_DSN="postgres://alert:alert@127.0.0.1:5432/alert?sslmode=disable"
 DATABASE_URL="$REG_DSN" KAFKA_BROKERS=127.0.0.1:9092 HTTP_ADDR=:8081 "$BIN_DIR/service-registry" >/tmp/p3-registry.log 2>&1 &
