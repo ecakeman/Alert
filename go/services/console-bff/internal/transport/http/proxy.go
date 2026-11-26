@@ -26,7 +26,7 @@ type routeSpec struct {
 
 // 18 条 L1 路由的域映射（design 2.2.1）；P1 阶段四个 base URL 均指向单体，P6 起改聚合。
 var routes = []routeSpec{
-	{http.MethodGet, []string{"api", "v1", "dashboard", "summary"}, "legacy", ""},
+	{http.MethodGet, []string{"api", "v1", "dashboard", "summary"}, "aggregate", ""},
 	{http.MethodGet, []string{"api", "v1", "services"}, "registry", ""},
 	{http.MethodPost, []string{"api", "v1", "services"}, "registry", ""},
 	{http.MethodGet, []string{"api", "v1", "services", "{service_id}"}, "registry", ""},
@@ -39,8 +39,8 @@ var routes = []routeSpec{
 	{http.MethodGet, []string{"api", "v1", "episodes"}, "episode", "/internal"},
 	{http.MethodGet, []string{"api", "v1", "episodes", "{episode_id}"}, "episode", "/internal"},
 	{http.MethodPost, []string{"api", "v1", "services", "{service_id}", "events"}, "episode", "/internal"},
-	{http.MethodGet, []string{"api", "v1", "services", "{service_id}", "timeline"}, "legacy", ""},
-	{http.MethodGet, []string{"api", "v1", "episodes", "{episode_id}", "timeline"}, "legacy", ""},
+	{http.MethodGet, []string{"api", "v1", "services", "{service_id}", "timeline"}, "aggregate", ""},
+	{http.MethodGet, []string{"api", "v1", "episodes", "{episode_id}", "timeline"}, "aggregate", ""},
 	{http.MethodGet, []string{"api", "v1", "episodes", "{episode_id}", "artifacts"}, "task", "/internal"},
 	{http.MethodPost, []string{"api", "v1", "episodes", "{episode_id}", "retry-diagnosis"}, "task", "/internal"},
 	{http.MethodPost, []string{"api", "v1", "episodes", "{episode_id}", "retry-archive"}, "task", "/internal"},
@@ -48,13 +48,13 @@ var routes = []routeSpec{
 
 // ProxyConfig 是 BFF 反代的四个域地址与上游超时。
 type ProxyConfig struct {
-	Registry string
-	Monitor  string
-	Episode  string
-	Task     string
-	Legacy   string
-	Timeout  time.Duration
-	Logger   *slog.Logger
+	Registry  string
+	Monitor   string
+	Episode   string
+	Task      string
+	Aggregate http.Handler
+	Timeout   time.Duration
+	Logger    *slog.Logger
 }
 
 // Proxy 按白名单将 L1 路由透明反代到目标域。
@@ -69,13 +69,12 @@ func NewProxy(cfg ProxyConfig) (*Proxy, error) {
 	if cfg.Timeout <= 0 {
 		cfg.Timeout = 3 * time.Second
 	}
-	proxies := make(map[string]http.Handler, 5)
+	proxies := map[string]http.Handler{"aggregate": cfg.Aggregate}
 	for name, base := range map[string]string{
 		"registry": cfg.Registry,
 		"monitor":  cfg.Monitor,
 		"episode":  cfg.Episode,
 		"task":     cfg.Task,
-		"legacy":   cfg.Legacy,
 	} {
 		handler, err := newReverseProxy(base, cfg.Timeout)
 		if err != nil {

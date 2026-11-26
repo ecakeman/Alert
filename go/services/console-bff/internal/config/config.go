@@ -24,7 +24,7 @@ type Config struct {
 	MonitorBaseURL   string
 	EpisodeBaseURL   string
 	TaskBaseURL      string
-	LegacyBaseURL    string
+
 	UpstreamTimeout  time.Duration
 	AggregateTimeout time.Duration
 }
@@ -48,7 +48,7 @@ func Load(getenv func(string) string) (Config, error) {
 		MonitorBaseURL:  value(getenv, "MONITOR_BASE_URL", "http://127.0.0.1:8081"),
 		EpisodeBaseURL:  value(getenv, "EPISODE_BASE_URL", "http://127.0.0.1:8081"),
 		TaskBaseURL:     value(getenv, "TASK_BASE_URL", "http://127.0.0.1:8081"),
-		LegacyBaseURL:   value(getenv, "LEGACY_BASE_URL", "http://127.0.0.1:8084"),
+
 	}
 
 	if strings.TrimSpace(getenv("DATABASE_URL")) != "" {

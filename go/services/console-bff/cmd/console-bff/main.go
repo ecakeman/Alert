@@ -15,6 +15,7 @@ import (
 	"github.com/ecakeman/alert/services/platform/httpx"
 	"github.com/ecakeman/alert/services/platform/logging"
 
+	"github.com/ecakeman/alert/services/console-bff/internal/aggregate"
 	"github.com/ecakeman/alert/services/console-bff/internal/config"
 	bffhttp "github.com/ecakeman/alert/services/console-bff/internal/transport/http"
 )
@@ -43,14 +44,20 @@ func main() {
 		os.Exit(1)
 	}
 
+	aggregateSvc := aggregate.New(aggregate.Clients{
+		Registry: httpx.NewClient(cfg.RegistryBaseURL, cfg.UpstreamTimeout),
+		Episode:  httpx.NewClient(cfg.EpisodeBaseURL, cfg.UpstreamTimeout),
+		Monitor:  httpx.NewClient(cfg.MonitorBaseURL, cfg.UpstreamTimeout),
+	}, cfg.AggregateTimeout, logger)
+
 	proxy, err := bffhttp.NewProxy(bffhttp.ProxyConfig{
-		Registry: cfg.RegistryBaseURL,
-		Monitor:  cfg.MonitorBaseURL,
-		Episode:  cfg.EpisodeBaseURL,
-		Task:     cfg.TaskBaseURL,
-		Legacy:   cfg.LegacyBaseURL,
-		Timeout:  cfg.UpstreamTimeout,
-		Logger:   logger,
+		Registry:  cfg.RegistryBaseURL,
+		Monitor:   cfg.MonitorBaseURL,
+		Episode:   cfg.EpisodeBaseURL,
+		Task:      cfg.TaskBaseURL,
+		Aggregate: aggregateSvc,
+		Timeout:   cfg.UpstreamTimeout,
+		Logger:    logger,
 	})
 	if err != nil {
 		logger.Error("proxy", "reason", err.Error())
