@@ -4,7 +4,6 @@ import (
 	"context"
 	"time"
 
-	appepisode "github.com/ecakeman/alert/services/system-core/internal/application/episode"
 	appmonitor "github.com/ecakeman/alert/services/system-core/internal/application/monitor"
 	appoutbox "github.com/ecakeman/alert/services/system-core/internal/application/outbox"
 	portmonitor "github.com/ecakeman/alert/services/system-core/internal/application/port/monitor"
@@ -69,10 +68,6 @@ func NewWorker(sh *Shared, r *Repos, ucs *UseCases) (*Worker, error) {
 					return err
 				}
 				return ucs.AuditConsumer.Handle(ctx, ev)
-			})
-		monitorConsumer = messaging.NewConsumer(brokers, sh.Cfg.KafkaMonitorTopic, appepisode.MonitorConsumerName,
-			func(ctx context.Context, body []byte) error {
-				return ucs.MonitorConsumer.Handle(ctx, body)
 			})
 		taskConsumer = messaging.NewConsumer(brokers, sh.Cfg.KafkaTopic, "system.task.dispatch.v1",
 			func(ctx context.Context, body []byte) error {

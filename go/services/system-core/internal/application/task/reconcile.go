@@ -88,6 +88,18 @@ func (s *Service) Reconcile(ctx context.Context, now time.Time) (ReconcileSummar
 	}
 
 	s.logSummary(summary)
+	if created, err := s.EnsureDiagnosisTasks(ctx, reconcileBatch); err != nil {
+		summary.Failures = append(summary.Failures, err.Error())
+	} else {
+		summary.CreatedDiagnosis = created
+	}
+	if created, err := s.EnsureArchiveTasks(ctx, reconcileBatch); err != nil {
+		summary.Failures = append(summary.Failures, err.Error())
+	} else {
+		summary.CreatedArchive = created
+	}
+
+	s.logSummary(summary)
 	return summary, nil
 }
 
@@ -201,8 +213,9 @@ func (s *Service) failExpiredTask(ctx context.Context, task porttask.AgentTask) 
 }
 
 func (s *Service) logSummary(summary ReconcileSummary) {
-	log.Printf("reconcile done by_type{stale=%d lease=%d retry=%d} errors=%d limit=%d",
+	log.Printf("reconcile done by_type{stale=%d lease=%d retry=%d diagnosis=%d archive=%d} errors=%d limit=%d",
 		summary.StaleDispatched, summary.LeaseExpired, summary.RetryPromoted,
+		summary.CreatedDiagnosis, summary.CreatedArchive,
 		len(summary.Failures), reconcileBatch)
 }
 

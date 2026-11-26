@@ -7,6 +7,7 @@ import (
 	portoutbox "github.com/ecakeman/alert/services/system-core/internal/application/port/outbox"
 	portService "github.com/ecakeman/alert/services/system-core/internal/application/port/service"
 	porttask "github.com/ecakeman/alert/services/system-core/internal/application/port/task"
+	"github.com/ecakeman/alert/services/system-core/internal/infrastructure/episodeclient"
 	"github.com/ecakeman/alert/services/system-core/internal/infrastructure/monitorclient"
 	"github.com/ecakeman/alert/services/system-core/internal/infrastructure/persistence/postgres"
 	"github.com/ecakeman/alert/services/system-core/internal/infrastructure/registryclient"
@@ -36,7 +37,7 @@ func NewRepos(sh *Shared) *Repos {
 		Services:      postgres.NewServiceRepo(),
 		Targets:       postgres.NewTargetRepo(),
 		Sources:       postgres.NewSourceStateRepo(),
-		Episodes:      postgres.NewEpisodeRepo(),
+		Episodes:      episodeclient.New(sh.Cfg.EpisodeBaseURL, sh.Cfg.UpstreamTimeout).EpisodeRepo(),
 		InputVersions: postgres.NewInputVersionRepo(),
 		AppEvents:     postgres.NewAppEventRepo(),
 		MonitorPoints: postgres.NewMonitorPointRepo(),

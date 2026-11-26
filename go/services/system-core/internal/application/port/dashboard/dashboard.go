@@ -43,3 +43,14 @@ type TrendPoint struct {
 type DashboardRepo interface {
 	Summary(ctx context.Context, tx portshared.Tx, now time.Time, window time.Duration) (DashboardSummary, error)
 }
+
+// EpisodeSource 是 dashboard 的 episode 域数据源（P4.8：单体不再直读 episode schema）。
+type EpisodeSource interface {
+	Counts(ctx context.Context) (map[string]int, error)
+	Recent(ctx context.Context, limit int) ([]RecentEpisode, error)
+}
+
+// RecentEnricher 用单体自有表补齐 episode 域之外的展示字段。
+type RecentEnricher interface {
+	EnrichRecent(ctx context.Context, tx portshared.Tx, items []RecentEpisode) ([]RecentEpisode, error)
+}

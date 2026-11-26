@@ -110,6 +110,8 @@ type ReconcileSummary struct {
 	LeaseExpired       int
 	RetryPromoted      int
 	OwnershipReclaimed int
+	CreatedDiagnosis   int
+	CreatedArchive     int
 	Failures           []string
 }
 

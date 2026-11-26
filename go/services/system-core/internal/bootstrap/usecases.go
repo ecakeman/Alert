@@ -14,6 +14,7 @@ import (
 	apptask "github.com/ecakeman/alert/services/system-core/internal/application/task"
 	"github.com/ecakeman/alert/services/system-core/internal/contracts"
 	"github.com/ecakeman/alert/services/system-core/internal/infrastructure/artifacts"
+	"github.com/ecakeman/alert/services/system-core/internal/infrastructure/episodeclient"
 )
 
 // UseCases 是六个应用用例的集合。
@@ -36,6 +37,7 @@ func NewUseCases(sh *Shared, r *Repos) *UseCases {
 	})
 	dashUC := appdashboard.New(appdashboard.Deps{
 		UOW: sh.UOW, Repo: r.Dashboard, Clock: sh.Clock,
+		Episode: episodeclient.New(sh.Cfg.EpisodeBaseURL, sh.Cfg.UpstreamTimeout),
 	})
 	epUC := appepisode.New(appepisode.Deps{
 		UOW: sh.UOW, Episodes: r.Episodes, InputVersions: r.InputVersions,
@@ -60,13 +62,9 @@ func NewUseCases(sh *Shared, r *Repos) *UseCases {
 	})
 
 	taskUC := newTaskService(sh, r, nil, episodeDispatchAdapter{uc: epUC})
-	monitorConsumer := appepisode.NewMonitorConsumer(appepisode.MonitorConsumerDeps{
-		UOW: sh.UOW, Episodes: r.Episodes, Idem: r.Idem, Clock: sh.Clock, Service: epUC,
-	})
-
 	return &UseCases{
 		Service: svcUC, Dashboard: dashUC, Episode: epUC,
-		Monitor: monitorUC, Task: taskUC, AuditConsumer: auditUC, MonitorConsumer: monitorConsumer,
+		Monitor: monitorUC, Task: taskUC, AuditConsumer: auditUC, MonitorConsumer: nil,
 	}
 }
 
