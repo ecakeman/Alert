@@ -12,9 +12,6 @@ import (
 func (s *Service) ReadArtifact(ctx context.Context, episodeID, artifactType string) (EpisodeArtifactView, error) {
 	var ref porttask.ArtifactRef
 	err := s.deps.UOW.WithinTx(ctx, func(ctx context.Context, tx portshared.Tx) error {
-		if _, err := s.deps.Episodes.Get(ctx, tx, episodeID); err != nil {
-			return err
-		}
 		latest, err := s.deps.Artifacts.GetLatest(ctx, tx, episodeID, artifactType)
 		if err != nil {
 			if apperr.Code(err) == apperr.CodeNotFound {
@@ -57,9 +54,6 @@ func (s *Service) ReadArtifact(ctx context.Context, episodeID, artifactType stri
 func (s *Service) ListArtifactRefs(ctx context.Context, episodeID string) ([]porttask.ArtifactRef, error) {
 	var out []porttask.ArtifactRef
 	err := s.deps.UOW.WithinTx(ctx, func(ctx context.Context, tx portshared.Tx) error {
-		if _, err := s.deps.Episodes.Get(ctx, tx, episodeID); err != nil {
-			return err
-		}
 		refs, err := s.deps.Artifacts.ListByEpisode(ctx, tx, episodeID)
 		if err != nil {
 			return err

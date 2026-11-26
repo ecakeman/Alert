@@ -9,6 +9,7 @@ import (
 	"github.com/ecakeman/alert/services/platform/httpx"
 
 	"github.com/ecakeman/alert/services/contracts"
+	portepisode "github.com/ecakeman/alert/services/task-orchestrator/internal/application/port/episode"
 	"github.com/ecakeman/alert/services/task-orchestrator/internal/application/apperr"
 )
 
@@ -28,6 +29,22 @@ func (c *Client) ListPendingDispatch(ctx context.Context, limit int) ([]contract
 		return nil, mapErr(err)
 	}
 	return out, nil
+}
+
+// GetEpisode 读取 episode 关键事实（retry 前置校验用）。
+func (c *Client) GetEpisode(ctx context.Context, episodeID string) (portepisode.Episode, error) {
+	var dto struct {
+		EpisodeID    string `json:"episode_id"`
+		ServiceID    string `json:"service_id"`
+		Status       string `json:"status"`
+		InputVersion int64  `json:"input_version"`
+	}
+	if err := c.http.GetJSON(ctx, "/internal/episodes/"+episodeID, &dto); err != nil {
+		return portepisode.Episode{}, mapErr(err)
+	}
+	return portepisode.Episode{
+		EpisodeID: dto.EpisodeID, ServiceID: dto.ServiceID, Status: dto.Status, InputVersion: dto.InputVersion,
+	}, nil
 }
 
 // GetStatus 读取 episode 状态（retry 前置校验用）。

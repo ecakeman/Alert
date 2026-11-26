@@ -19,15 +19,22 @@ import (
 
 	"github.com/ecakeman/alert/services/platform/db"
 	"github.com/ecakeman/alert/services/platform/httpx"
+	"github.com/ecakeman/alert/services/platform/messaging"
 	platformmigrate "github.com/ecakeman/alert/services/platform/migrate"
+	platformoutbox "github.com/ecakeman/alert/services/platform/outbox"
 
 	"github.com/ecakeman/alert/services/task-orchestrator/internal/config"
+	taskconsumer "github.com/ecakeman/alert/services/task-orchestrator/internal/application/consumer"
 	taskapp "github.com/ecakeman/alert/services/task-orchestrator/internal/application/task"
+	"github.com/ecakeman/alert/services/task-orchestrator/internal/infrastructure/artifacts"
 	"github.com/ecakeman/alert/services/task-orchestrator/internal/infrastructure/clock"
 	"github.com/ecakeman/alert/services/task-orchestrator/internal/infrastructure/episodeclient"
+	"github.com/ecakeman/alert/services/task-orchestrator/internal/infrastructure/grpcclient"
 	"github.com/ecakeman/alert/services/task-orchestrator/internal/infrastructure/idgen"
+	"github.com/ecakeman/alert/services/task-orchestrator/internal/infrastructure/outboxsender"
 	taskpostgres "github.com/ecakeman/alert/services/task-orchestrator/internal/infrastructure/persistence/postgres"
 	taskhttp "github.com/ecakeman/alert/services/task-orchestrator/internal/transport/http"
+	taskhandler "github.com/ecakeman/alert/services/task-orchestrator/internal/transport/http/handler"
 	transportgrpc "github.com/ecakeman/alert/services/task-orchestrator/internal/transport/grpc"
 	"github.com/ecakeman/alert/services/task-orchestrator/migrations"
 )
@@ -89,14 +96,67 @@ func main() {
 	})
 	health.CheckTimeout = cfg.ReadyzTimeout
 
+	epClient := episodeclient.New(cfg.EpisodeBaseURL, cfg.UpstreamTimeout)
 	uow := taskpostgres.NewUnitOfWork(pool.Raw())
 	svc := taskapp.New(taskapp.Deps{
 		UOW: uow, Tasks: taskpostgres.NewTaskRepo(), Ownership: taskpostgres.NewOwnershipRepo(),
 		Artifacts: taskpostgres.NewArtifactRepo(), Outbox: taskpostgres.NewOutboxRepo(),
 		Idem: taskpostgres.NewIdempotencyRepo(), Clock: clock.System{}, IDs: idgen.Generator{},
 		Lease: 30 * time.Second, MaxAttempts: 3, RetryDelay: 5 * time.Second, Deadline: 5 * time.Minute,
-		Dispatch: episodeclient.New(cfg.EpisodeBaseURL, cfg.UpstreamTimeout),
+		Dispatch:   epClient,
+		EpisodeGet: epClient.GetEpisode,
+		Submit:     grpcclient.NewAgentClient(cfg.AgentGRPCTarget, cfg.UpstreamTimeout),
+		Reader:     artifacts.NewReader(cfg.ArtifactStorageRoot),
 	})
+
+	var kafkaConsumer *messaging.Consumer
+	var kafkaSender *messaging.Sender
+	if cfg.KafkaBrokers != "" {
+		brokers := splitBrokers(cfg.KafkaBrokers)
+		sender, err := messaging.NewSender(messaging.SenderConfig{Brokers: brokers, Topic: cfg.KafkaPublishTopic})
+		if err != nil {
+			log.Printf("kafka sender: %v", err)
+			os.Exit(1)
+		}
+		kafkaSender = sender
+		outboxRepo, err := platformoutbox.NewRepo("task")
+		if err != nil {
+			log.Printf("outbox repo: %v", err)
+			os.Exit(1)
+		}
+		publisher, err := platformoutbox.New(platformoutbox.Deps{
+			Store: outboxRepo, Tx: pool.Raw(), Sender: outboxsender.New(sender), Owner: "task",
+			PublishTopic: cfg.KafkaPublishTopic, ClaimLease: 30 * time.Second, Batch: 16,
+			PollInterval: 500 * time.Millisecond,
+		})
+		if err != nil {
+			log.Printf("outbox publisher: %v", err)
+			os.Exit(1)
+		}
+		go publisher.Run(ctx)
+
+		kc, err := messaging.NewConsumer(messaging.ConsumerConfig{
+			Brokers: brokers, Topics: cfg.KafkaConsumeTopics, GroupID: "task.dispatch.v1",
+		}, taskconsumer.New(svc).Handle)
+		if err != nil {
+			log.Printf("kafka consumer: %v", err)
+			os.Exit(1)
+		}
+		kafkaConsumer = kc
+		go func() {
+			if err := kc.Run(ctx); err != nil && ctx.Err() == nil {
+				log.Printf("kafka consumer stopped: %v", err)
+			}
+		}()
+	}
+	defer func() {
+		if kafkaConsumer != nil {
+			kafkaConsumer.Close()
+		}
+		if kafkaSender != nil {
+			kafkaSender.Close()
+		}
+	}()
 
 	lis, err := net.Listen("tcp", cfg.GRPCAddr)
 	if err != nil {
@@ -113,6 +173,7 @@ func main() {
 
 	engine := gin.New()
 	engine.Use(gin.Recovery())
+	taskhandler.NewInternal(svc).Register(engine)
 
 	handler := httpx.Chain(
 		taskhttp.New(taskhttp.Deps{Health: health, API: engine}),
@@ -155,4 +216,15 @@ func healthcheckAddr(addr string) string {
 		return "http://127.0.0.1:" + strings.TrimPrefix(addr, "0.0.0.0:")
 	}
 	return "http://" + addr
+}
+
+func splitBrokers(raw string) []string {
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if v := strings.TrimSpace(p); v != "" {
+			out = append(out, v)
+		}
+	}
+	return out
 }

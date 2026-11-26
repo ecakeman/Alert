@@ -24,12 +24,13 @@ func (s *Service) RetryArchive(ctx context.Context, episodeID string) (TaskView,
 }
 
 func (s *Service) retry(ctx context.Context, episodeID, taskType string) (TaskView, error) {
+	// episode 事实在事务外经 HTTP 取得（跨域查询禁止进入事务）。
+	episode, err := s.deps.EpisodeGet(ctx, episodeID)
+	if err != nil {
+		return TaskView{}, err
+	}
 	var view TaskView
-	err := s.deps.UOW.WithinTx(ctx, func(ctx context.Context, tx portshared.Tx) error {
-		episode, err := s.deps.Episodes.Get(ctx, tx, episodeID)
-		if err != nil {
-			return err
-		}
+	err = s.deps.UOW.WithinTx(ctx, func(ctx context.Context, tx portshared.Tx) error {
 		active, err := s.deps.Tasks.ListActiveByEpisode(ctx, tx, episodeID)
 		if err != nil {
 			return err

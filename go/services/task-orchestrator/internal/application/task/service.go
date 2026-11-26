@@ -24,6 +24,7 @@ type Deps struct {
 	Ownership     porttask.OwnershipRepo
 	Artifacts     porttask.ArtifactRepo
 	Episodes      portepisode.EpisodeRepo
+	EpisodeGet    func(ctx context.Context, episodeID string) (portepisode.Episode, error)
 	InputVersions portepisode.InputVersionRepo
 	Outbox        portoutbox.OutboxRepo
 	Idem          portoutbox.ConsumerIdempotencyRepo

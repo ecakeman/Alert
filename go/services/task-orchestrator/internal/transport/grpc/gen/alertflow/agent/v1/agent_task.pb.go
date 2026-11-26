@@ -7,7 +7,7 @@
 package agentv1
 
 import (
-	v1 "github.com/ecakeman/alert/services/system-core/internal/transport/grpc/gen/alertflow/system/v1"
+	v1 "github.com/ecakeman/alert/services/task-orchestrator/internal/transport/grpc/gen/alertflow/system/v1"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	reflect "reflect"
