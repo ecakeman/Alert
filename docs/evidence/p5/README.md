@@ -1,6 +1,6 @@
 # P5 阶段进展与验收证据（进行中）
 
-## 1. 已完成 task（8/11，P5.9 代码就绪）
+## 1. 已完成 task（8/11；P5.9 接线完成、执行链受阻）
 
 | task | 提交 | 验收要点 |
 |---|---|---|
@@ -24,7 +24,7 @@
 
 | task | 状态 |
 |---|---|
-| P5.9 认知栈接线 | **代码就绪**：新增 `python/agent-runtime/Dockerfile`；compose 增加 `agent-runtime`（env 覆盖 DB host、`AGENT_GRPC_TARGET=task-orchestrator:9090`）；修正 task-orchestrator 默认上游为 `127.0.0.1:50052`。**镜像构建未完成**（grpcio 等依赖下载超 12 分钟未结束，已终止） |
+| P5.9 认知栈接线 | **接线完成**：`python/agent-runtime/Dockerfile` 与 compose 服务已交付；宿主 venv 真实启动认知栈（50052/18080），task-orchestrator 容器可向其提交、认知栈可回调 task-orchestrator（实测收到历史任务并进入 recover）。修复认知侧 `TaskRunner` 的 `self._store/_clock/_executor` 属性名缺陷。**执行链受阻**：认知侧报 `lease token is not persisted; needs re-dispatch`（既有缺陷），无法完成“回调成功 + 产物”验收 |
 | P5.10 单体下线 | 部分（单体 api/worker 已停；BFF legacy 仍指 8084，dashboard/timeline 待 P6 聚合） |
 | P5.11 全链路门槛 | 未开始（依赖 P5.8~P5.10） |
 
@@ -58,3 +58,11 @@
   3. 再执行 P5.10（单体下线/全路由）与 P5.11（全链路门槛）。
 
 **未以 stub/跳过替代**：P5.9 的运行验证与 P5.10/P5.11 的全链路验证尚未完成。
+
+## 8. P5.9 阻塞点（认知侧既有缺陷）
+
+1. 已修：`src/alert_agent/bootstrap/worker.py` 的 `self._store / self._clock / self._executor` 与 dataclass 字段 `store / clock / executor` 不一致，导致 TaskRunner 崩溃。
+2. 未修（阻塞完整链路）：认知侧恢复扫描输出 `cannot renew: lease token is not persisted; needs re-dispatch` —— 任务受理时未持久化 `lease_token`，导致恢复/续租失败。需在认知侧 receipt 存储增加 lease_token 持久化并衔接 Go 的围栏校验。
+3. 镜像构建：容器网络无法访问 PyPI/镜像源（`No matching distribution found for uv`），容器化交付物就绪但未产出镜像；当前用宿主 venv 做真实运行验证。
+
+在 2 修复前，P5.9 的“回调成功”与 P5.10/P5.11 全链路不能标记通过。

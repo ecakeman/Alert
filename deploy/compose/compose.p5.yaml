@@ -144,7 +144,7 @@ services:
       EPISODE_BASE_URL: "http://episode-svc:8082"
       REGISTRY_BASE_URL: "http://host.docker.internal:8081"
       MONITOR_BASE_URL: "http://host.docker.internal:8083"
-      AGENT_GRPC_TARGET: "agent-runtime:9090"
+      AGENT_GRPC_TARGET: "host.docker.internal:50052"
       ARTIFACT_STORAGE_ROOT: "/data/artifacts"
       TASK_RECONCILE_INTERVAL: "30s"
     volumes:

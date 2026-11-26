@@ -77,7 +77,7 @@ class TaskRunner:
         heartbeat_task: asyncio.Task[None] | None = None
         exec_task: asyncio.Task[None] | None = None
         try:
-            if not await self._store.mark_running(key[0], key[1], started_at=self._clock.now()):
+            if not await self.store.mark_running(key[0], key[1], started_at=self.clock.now()):
                 # 更旧 generation 或已推进（CR-REG-41 generation 条件）。
                 LOGGER.info("receipt %s gen %d no longer ACCEPTED; skip run", *key)
                 return
@@ -85,11 +85,11 @@ class TaskRunner:
                 await self._finish_unrenewable(run.receipt)  # type: ignore[arg-type]
                 return
             submission = run.submission
-            exec_task = asyncio.create_task(self._executor.execute(submission))
+            exec_task = asyncio.create_task(self.executor.execute(submission))
             heartbeat_task = asyncio.create_task(
                 self._heartbeat_loop(submission.identity, exec_task, stop)
             )
-            remaining = (submission.boundary.deadline_at - self._clock.now()).total_seconds()
+            remaining = (submission.boundary.deadline_at - self.clock.now()).total_seconds()
             done, _pending = await asyncio.wait({exec_task}, timeout=max(remaining, 0.0))
             if exec_task not in done:
                 # 总时长 deadline（5.1.5，CR-REG-38）：停止并记录。
