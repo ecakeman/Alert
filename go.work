@@ -3,7 +3,7 @@ go 1.27.4
 use (
 	./go/contracts
 	./go/platform
-	./services/system-core
+	./go/services/system-core
 	./go/services/console-bff
 	./go/services/service-registry
 	./go/services/monitor-svc
