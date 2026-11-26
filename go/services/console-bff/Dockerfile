@@ -6,7 +6,7 @@ ARG RUNTIME_IMAGE=alpine:3.20
 
 FROM ${GO_IMAGE} AS build
 WORKDIR /src
-COPY services/platform services/platform
+COPY platform platform
 COPY services/console-bff services/console-bff
 WORKDIR /src/services/console-bff
 ENV GOWORK=off CGO_ENABLED=0

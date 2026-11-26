@@ -5,7 +5,7 @@ ARG RUNTIME_IMAGE=alpine:3.20
 
 FROM ${GO_IMAGE} AS build
 WORKDIR /src
-COPY services/platform services/platform
+COPY platform platform
 COPY services/monitor-svc services/monitor-svc
 WORKDIR /src/services/monitor-svc
 ENV GOWORK=off CGO_ENABLED=0 GOPROXY=https://goproxy.cn,direct

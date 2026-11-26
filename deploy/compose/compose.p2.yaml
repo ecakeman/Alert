@@ -95,7 +95,7 @@ services:
   console-bff:
     # P1 阶段下游仍是宿主机单体（8081）；P2 起逐域切换，P6 改聚合。
     build:
-      context: ../..
+      context: ../../go
       dockerfile: services/console-bff/Dockerfile
     container_name: alert-console-bff
     ports:

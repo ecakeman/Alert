@@ -1,0 +1,12 @@
+# S6 镜像构建证据（MS-P4.4G）
+generated_at=2026-11-26T02:44:14Z
+context=go
+A9=4 A10=0 A11=4 A12=4
+A15: 4 份 compose 仅 build.context 行变更
+
+service-registry PASS
+monitor-svc PASS
+console-bff PASS
+episode-svc FAIL（R31 既有缺口：episode Dockerfile 缺 COPY contracts，移交 MS-P4.9）
+
+日志摘要：internal/application/episode/service.go:13:2 github.com/ecakeman/alert/services/contracts@v0.0.0: replacement directory ../../contracts does not exist
