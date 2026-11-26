@@ -86,6 +86,41 @@ SQL
   mv "$tmp" "$STATE_FILE"
 }
 
+# P4 回退：episode 三表移回 system（P4.2 的逆操作；跨域 FK 不恢复，与 P3 完成态一致）。
+rollback_episode_tables() {
+  docker exec -i -e PGPASSWORD="${PGPASSWORD:-alert}" "$PG_CONTAINER" psql \
+    -U alert -d "$PGDATABASE" --set=ON_ERROR_STOP=1 --single-transaction <<'SQL'
+ALTER TABLE episode.episode_input_versions DROP CONSTRAINT IF EXISTS episode_input_versions_episode_id_fkey;
+ALTER TABLE episode.episode_app_events DROP CONSTRAINT IF EXISTS episode_app_events_episode_id_fkey;
+ALTER TABLE episode.episodes SET SCHEMA system;
+ALTER TABLE episode.episode_input_versions SET SCHEMA system;
+ALTER TABLE episode.episode_app_events SET SCHEMA system;
+ALTER TABLE system.episode_input_versions ADD CONSTRAINT episode_input_versions_episode_id_fkey FOREIGN KEY (episode_id) REFERENCES system.episodes(episode_id) ON DELETE RESTRICT;
+ALTER TABLE system.episode_app_events ADD CONSTRAINT episode_app_events_episode_id_fkey FOREIGN KEY (episode_id) REFERENCES system.episodes(episode_id) ON DELETE RESTRICT;
+SQL
+  local tmp
+  tmp="$(mktemp "$SPLIT_DIR/.split-state.json.XXXXXX")"
+  printf '{"stage":"P3","phase":"rolled-back","started_at":"%s","snapshot":""}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$tmp"
+  mv "$tmp" "$STATE_FILE"
+}
+
+# P5 回退：task 四表移回 system（P5.2 的逆操作；同域 FK 保留）。
+rollback_task_tables() {
+  docker exec -i -e PGPASSWORD="${PGPASSWORD:-alert}" "$PG_CONTAINER" psql \
+    -U alert -d "$PGDATABASE" --set=ON_ERROR_STOP=1 --single-transaction <<'SQL'
+ALTER TABLE task.service_execution_ownership DROP CONSTRAINT IF EXISTS service_execution_ownership_task_id_fkey;
+ALTER TABLE task.episode_artifact_refs DROP CONSTRAINT IF EXISTS episode_artifact_refs_task_id_fkey;
+ALTER TABLE task.episode_fault_document_refs DROP CONSTRAINT IF EXISTS episode_fault_document_refs_task_id_fkey;
+ALTER TABLE task.episode_fault_document_refs SET SCHEMA system;
+ALTER TABLE task.episode_artifact_refs SET SCHEMA system;
+ALTER TABLE task.service_execution_ownership SET SCHEMA system;
+ALTER TABLE task.agent_tasks SET SCHEMA system;
+ALTER TABLE system.service_execution_ownership ADD CONSTRAINT service_execution_ownership_task_id_fkey FOREIGN KEY (task_id) REFERENCES system.agent_tasks(task_id) ON DELETE RESTRICT;
+ALTER TABLE system.episode_artifact_refs ADD CONSTRAINT episode_artifact_refs_task_id_fkey FOREIGN KEY (task_id) REFERENCES system.agent_tasks(task_id) ON DELETE RESTRICT;
+ALTER TABLE system.episode_fault_document_refs ADD CONSTRAINT episode_fault_document_refs_task_id_fkey FOREIGN KEY (task_id) REFERENCES system.agent_tasks(task_id) ON DELETE RESTRICT;
+SQL
+}
+
 case "$TARGET" in
   P1)
     # P1 回退：停 BFF + 控制台指回单体；--restore 恢复 P1 链路。
@@ -117,8 +152,20 @@ case "$TARGET" in
     fi
     echo "R1 停 monitor-svc：P3 前 compose 未启用（no-op）"
     ;;
-  P3|P4|P5)
-    echo "未实现阶段：$TARGET 的 R2~R4 尚未实装（按 tasks.md 在该阶段任务内补齐）"
+  P3)
+    if [ "$(docker exec -e PGPASSWORD="${PGPASSWORD:-alert}" "$PG_CONTAINER" psql -U alert -d "$PGDATABASE" -tAc "SELECT to_regclass('task.agent_tasks') IS NOT NULL" 2>/dev/null)" = "t" ]; then
+      run_or_echo "R1 停 task-orchestrator" docker rm -f alert-task-orchestrator
+      run_or_echo "R2 反向移表 task→system" rollback_task_tables
+    fi
+    if [ "$(docker exec -e PGPASSWORD="${PGPASSWORD:-alert}" "$PG_CONTAINER" psql -U alert -d "$PGDATABASE" -tAc "SELECT to_regclass('episode.episodes') IS NOT NULL" 2>/dev/null)" = "t" ]; then
+      run_or_echo "R3 停 episode-svc" docker rm -f alert-episode-svc
+      run_or_echo "R4 反向移表 episode→system" rollback_episode_tables
+    fi
+    run_or_echo "R5 BFF 回 compose.p3（episode 路由指单体）" docker compose -f "$SPLIT_DIR/../compose/compose.p3.yaml" up -d --no-deps console-bff
+    echo "R6 代码回退：git revert P4.5..P4.9（P4.8 已删单体 episode 直读，运行态回退不能恢复该链路）"
+    ;;
+  P4|P5)
+    echo "未实现阶段：$TARGET 的 R2~R4 尚未实装（P5.11 内补齐 --to P4）"
     exit 3
     ;;
   *)
