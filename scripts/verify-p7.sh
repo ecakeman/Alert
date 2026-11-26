@@ -70,8 +70,10 @@ a5=$(grep -rn '=> \.\./\.\./go/' go/ 2>/dev/null | wc -l)
 [ "$a5" = "0" ] && ok A5 || ng A5 "过渡 replace 残留 $a5 处"
 
 if [ -n "$GO_BIN" ]; then
+  # A6 的本质是“module 身份未被改名”：允许窗口后新增 import（P4.5 起），但不得出现新前缀且总量不少于 P7 基线 645。
   a6=$(grep -rho 'ecakeman/alert/services/' --include='*.go' go/ 2>/dev/null | wc -l)
-  [ "$a6" = "645" ] && ok A6 || ng A6 "import 行数=$a6（基线 645）"
+  a6bad=$(grep -rn 'ecakeman/alert/go/' --include='*.go' go/ 2>/dev/null | wc -l)
+  if [ "$a6bad" = "0" ] && [ "$a6" -ge 645 ]; then ok A6; else ng A6 "import=$a6（>=645）改名前缀=$a6bad（应为 0）"; fi
 else
   skp A6 "go 不可用"
 fi
