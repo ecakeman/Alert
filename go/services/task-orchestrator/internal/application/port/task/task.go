@@ -42,6 +42,8 @@ type Ownership struct {
 }
 
 type TaskPatch struct {
+	// AllowExpiredLease 供租约回收使用：过期租约必须能被更新，否则任务永久 RUNNING。
+	AllowExpiredLease bool
 	Status       *string
 	LeaseUntil   *time.Time
 	NextRetryAt  *time.Time

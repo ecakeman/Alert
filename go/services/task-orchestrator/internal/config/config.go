@@ -41,6 +41,7 @@ type Config struct {
 	UpstreamTimeout     time.Duration
 	AgentGRPCTarget     string
 	ArtifactStorageRoot string
+	ReconcileInterval   time.Duration
 }
 
 type LoadError struct {
@@ -100,6 +101,7 @@ func Load(getenv func(string) string) (Config, error) {
 		{"DB_MAX_CONN_IDLE_TIME", 5 * time.Minute, &cfg.DBMaxConnIdleTime},
 		{"DB_HEALTHCHECK_PERIOD", 30 * time.Second, &cfg.DBHealthcheckPeriod},
 		{"UPSTREAM_TIMEOUT", 3 * time.Second, &cfg.UpstreamTimeout},
+		{"TASK_RECONCILE_INTERVAL", 30 * time.Second, &cfg.ReconcileInterval},
 	}
 	for _, d := range durations {
 		v, err := duration(getenv, d.key, d.fallback)

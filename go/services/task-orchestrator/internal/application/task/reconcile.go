@@ -182,7 +182,7 @@ func (s *Service) releaseExpiredLease(ctx context.Context, task porttask.AgentTa
 		nextRetry := s.deps.Clock.Now().Add(s.deps.RetryDelay)
 		updated, err := s.deps.Tasks.UpdateCAS(ctx, tx, task.TaskID, task.Generation,
 			[]string{string(domain.TaskRunning)},
-			porttask.TaskPatch{Status: &status, NextRetryAt: &nextRetry})
+			porttask.TaskPatch{Status: &status, NextRetryAt: &nextRetry, AllowExpiredLease: true})
 		if err != nil {
 			return err
 		}

@@ -171,6 +171,26 @@ func main() {
 		}
 	}()
 
+	go func() {
+		ticker := time.NewTicker(cfg.ReconcileInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				summary, err := svc.Reconcile(ctx, time.Now().UTC())
+				if err != nil {
+					log.Printf("reconcile: %v", err)
+					continue
+				}
+				if len(summary.Failures) > 0 {
+					log.Printf("reconcile failures=%v", summary.Failures)
+				}
+			}
+		}
+	}()
+
 	engine := gin.New()
 	engine.Use(gin.Recovery())
 	taskhandler.NewInternal(svc).Register(engine)

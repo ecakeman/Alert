@@ -68,9 +68,10 @@ UPDATE task.agent_tasks SET
   finished_at = COALESCE($11, finished_at),
   updated_at = now()
 WHERE task_id=$1 AND generation=$2 AND status = ANY($3)
-  AND (lease_until IS NULL OR lease_until > now())`,
+  AND ($12 OR lease_until IS NULL OR lease_until > now())`,
 		taskID, generation, expectedStatuses, patch.Status, patch.LeaseUntil, patch.NextRetryAt,
-		patch.Attempt, patch.ErrorCode, patch.ErrorMessage, patch.StartedAt, patch.FinishedAt)
+		patch.Attempt, patch.ErrorCode, patch.ErrorMessage, patch.StartedAt, patch.FinishedAt,
+		patch.AllowExpiredLease)
 	if err != nil {
 		return 0, Translate(err)
 	}
