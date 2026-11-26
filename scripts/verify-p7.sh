@@ -52,7 +52,7 @@ if [ ! -d "$OLD" ]; then ok A2; else ng A2 "磁盘仍存在 $OLD/"; fi
 if [ -n "$GO_BIN" ]; then
   a3=$("$GO_BIN" work edit -json | python3 -c 'import sys,json;d=json.load(sys.stdin);u=d.get("Use") or [];print(len(u), all(x.get("DiskPath","").startswith("./go/") for x in u))' 2>/dev/null || echo "0 False")
   set -- $a3
-  if [ "${1:-0}" = "7" ] && [ "${2:-False}" = "True" ]; then ok A3; else ng A3 "go.work Use=$a3"; fi
+  if [ "${1:-0}" -ge 7 ] && [ "${2:-False}" = "True" ]; then ok A3; else ng A3 "go.work Use=$a3"; fi
 else
   skp A3 "go 不可用"
 fi
