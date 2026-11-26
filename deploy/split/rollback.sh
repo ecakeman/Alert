@@ -164,9 +164,17 @@ case "$TARGET" in
     run_or_echo "R5 BFF 回 compose.p3（episode 路由指单体）" docker compose -f "$SPLIT_DIR/../compose/compose.p3.yaml" up -d --no-deps console-bff
     echo "R6 代码回退：git revert P4.5..P4.9（P4.8 已删单体 episode 直读，运行态回退不能恢复该链路）"
     ;;
-  P4|P5)
-    echo "未实现阶段：$TARGET 的 R2~R4 尚未实装（P5.11 内补齐 --to P4）"
-    exit 3
+  P4)
+    # P5→P4：停 task-orchestrator + task 四表回移 + BFF 回 compose.p4。
+    if [ "$(docker exec -e PGPASSWORD="${PGPASSWORD:-alert}" "$PG_CONTAINER" psql -U alert -d "$PGDATABASE" -tAc "SELECT to_regclass('task.agent_tasks') IS NOT NULL" 2>/dev/null)" = "t" ]; then
+      run_or_echo "R1 停 task-orchestrator" docker rm -f alert-task-orchestrator
+      run_or_echo "R2 反向移表 task→system" rollback_task_tables
+    fi
+    run_or_echo "R3 BFF 回 compose.p4" docker compose -f "$SPLIT_DIR/../compose/compose.p4.yaml" up -d --no-deps console-bff
+    echo "R4 代码回退：git revert P5.1..P5.10"
+    ;;
+  P5)
+    echo "P5 回退：当前即 P5（no-op）"
     ;;
   *)
     echo "未知目标阶段：$TARGET（支持 P0|P1|P2|P3|P4|P5）"

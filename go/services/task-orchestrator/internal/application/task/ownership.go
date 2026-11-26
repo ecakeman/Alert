@@ -89,7 +89,7 @@ func (s *Service) ReclaimExpired(ctx context.Context, now time.Time) (int, error
 				continue
 			}
 			updated, err := s.deps.Tasks.UpdateCAS(ctx, tx, o.TaskID, o.Generation,
-				[]string{string(domain.TaskRunning)}, porttask.TaskPatch{Status: &retryWait})
+				[]string{string(domain.TaskRunning)}, porttask.TaskPatch{Status: &retryWait, AllowExpiredLease: true})
 			if err != nil {
 				return err
 			}
