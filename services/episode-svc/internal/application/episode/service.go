@@ -18,6 +18,7 @@ import (
 	portoutbox "github.com/ecakeman/alert/services/episode-svc/internal/application/port/outbox"
 	portservice "github.com/ecakeman/alert/services/episode-svc/internal/application/port/service"
 	portshared "github.com/ecakeman/alert/services/episode-svc/internal/application/port/shared"
+	porttask "github.com/ecakeman/alert/services/episode-svc/internal/application/port/task"
 	"github.com/ecakeman/alert/services/episode-svc/internal/domain"
 )
 
@@ -29,6 +30,7 @@ type Deps struct {
 	Outbox        portoutbox.OutboxRepo
 	Registry      portservice.Reader
 	Monitor       portmonitor.RemoteReader
+	Tasks         porttask.Reader
 	Clock         portshared.Clock
 	IDs           portshared.IDGen
 }

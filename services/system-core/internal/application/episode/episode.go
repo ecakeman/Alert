@@ -116,6 +116,24 @@ func (s *Service) Get(ctx context.Context, episodeID string) (EpisodeView, error
 	return view, err
 }
 
+// ActiveTask 是 P4 过渡期的域间只读端点：返回 ACTIVE 状态任务，无则 NOT_FOUND。
+// 供 episode-svc 的解除判定在事务外取数；P5 task 域接管后由 task-orchestrator 提供同形端点。
+func (s *Service) ActiveTask(ctx context.Context, episodeID string) (porttask.AgentTask, error) {
+	var out porttask.AgentTask
+	err := s.deps.UOW.WithinTx(ctx, func(ctx context.Context, tx portshared.Tx) error {
+		tasks, err := s.deps.Tasks.ListActiveByEpisode(ctx, tx, episodeID)
+		if err != nil {
+			return err
+		}
+		if len(tasks) == 0 {
+			return apperr.NotFound("active task not found")
+		}
+		out = tasks[0]
+		return nil
+	})
+	return out, err
+}
+
 // AppendAppEvent：同键同内容幂等、同键不同内容 409、新键追加（INV-05）。
 func (s *Service) AppendAppEvent(ctx context.Context, serviceID string, in AppEventInput) (AppendEventResult, error) {
 	if in.ProducerID == "" || in.EventID == "" {

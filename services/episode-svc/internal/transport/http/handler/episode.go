@@ -27,6 +27,7 @@ func (h *Episode) Register(router *gin.Engine) {
 	g.POST("/services/:service_id/episodes/open", h.openOrReuse)
 	g.POST("/services/:service_id/app-events", h.appendAppEvent)
 	g.POST("/episodes/:episode_id/input-versions", h.appendInputVersion)
+	g.POST("/episodes/:episode_id/resolve", h.resolve)
 }
 
 func (h *Episode) openOrReuse(c *gin.Context) {
@@ -84,6 +85,15 @@ func toEpisodeOut(ep portepisode.Episode) dto.EpisodeOut {
 		FinalInputVersion: ep.FinalInputVersion,
 		StartedAt:         dto.FormatTime(ep.StartedAt), UpdatedAt: dto.FormatTime(ep.UpdatedAt),
 	}
+}
+
+func (h *Episode) resolve(c *gin.Context) {
+	resolved, missing, err := h.svc.TryResolve(c.Request.Context(), c.Param("episode_id"))
+	if err != nil {
+		writeErr(c, err)
+		return
+	}
+	c.JSON(200, dto.ResolveOut{Resolved: resolved, Missing: missing})
 }
 
 func writeErr(c *gin.Context, err error) {

@@ -48,4 +48,10 @@ type AppendInputOut struct {
 	Appended bool `json:"appended"`
 }
 
+// ResolveOut 是解除判定结果；missing 顺序即 domain.CanResolve 契约顺序。
+type ResolveOut struct {
+	Resolved bool     `json:"resolved"`
+	Missing  []string `json:"missing"`
+}
+
 func FormatTime(t time.Time) string { return t.UTC().Format(time.RFC3339Nano) }

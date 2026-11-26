@@ -18,6 +18,7 @@ import (
 	"github.com/ecakeman/alert/services/episode-svc/internal/infrastructure/idgen"
 	"github.com/ecakeman/alert/services/episode-svc/internal/infrastructure/monitorclient"
 	"github.com/ecakeman/alert/services/episode-svc/internal/infrastructure/registryclient"
+	"github.com/ecakeman/alert/services/episode-svc/internal/infrastructure/taskclient"
 	episodepostgres "github.com/ecakeman/alert/services/episode-svc/internal/infrastructure/persistence/postgres"
 	episodehttp "github.com/ecakeman/alert/services/episode-svc/internal/transport/http"
 	episodehandler "github.com/ecakeman/alert/services/episode-svc/internal/transport/http/handler"
@@ -94,6 +95,7 @@ func main() {
 		Outbox:        episodepostgres.NewOutboxRepo(),
 		Registry:      registryclient.New(cfg.RegistryBaseURL, cfg.UpstreamTimeout),
 		Monitor:       monitorclient.New(cfg.MonitorBaseURL, cfg.UpstreamTimeout),
+		Tasks:         taskclient.New(cfg.TaskBaseURL, cfg.UpstreamTimeout),
 		Clock:         clock.System{},
 		IDs:           idgen.Generator{},
 	})

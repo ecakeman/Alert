@@ -7,6 +7,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/ecakeman/alert/services/system-core/internal/application/apperr"
 	appepisode "github.com/ecakeman/alert/services/system-core/internal/application/episode"
 	portepisode "github.com/ecakeman/alert/services/system-core/internal/application/port/episode"
 	"github.com/ecakeman/alert/services/system-core/internal/transport/http/dto"
@@ -18,6 +19,21 @@ import (
 type Episode struct{ uc *appepisode.Service }
 
 func NewEpisode(uc *appepisode.Service) *Episode { return &Episode{uc: uc} }
+
+// ActiveTask：GET /internal/episodes/:episode_id/active-task
+// P4 过渡：episode-svc 解除判定的事务外取数端点（P5 后迁至 task-orchestrator）。
+func (h *Episode) ActiveTask(c *gin.Context) {
+	task, err := h.uc.ActiveTask(c.Request.Context(), c.Param("episode_id"))
+	if err != nil {
+		code := apperr.Code(err)
+		c.JSON(apperr.HTTPStatus(code), map[string]string{"code": code, "message": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"task_id": task.TaskID, "episode_id": task.EpisodeID, "service_id": task.ServiceID,
+		"task_type": task.TaskType, "status": task.Status, "generation": task.Generation,
+	})
+}
 
 // Get：GET /episodes/:episode_id
 func (h *Episode) Get(c *gin.Context) {
