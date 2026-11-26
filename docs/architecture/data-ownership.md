@@ -7,7 +7,7 @@
 | 所有者 | 迁移目录 | 连接变量 | 回放入口 | 当前状态 |
 |---|---|---|---|---|
 | system（Go） | `services/system-core/migrations/` | `DATABASE_URL` | `go run ./cmd/api -migrate`（工作目录 `services/system-core`） | 已落地（3 个版本，forward-only） |
-| cognitive（Python） | `services/agent-runtime/migrations/` | `DATABASE_URL_COGNITIVE`（B8 引入） | B8 的 Python 迁移入口 | 未实现；不建目录、不建 SQL、不引入变量 |
+| cognitive（Python） | `python/agent-runtime/migrations/` | `DATABASE_URL_COGNITIVE`（B8 引入） | B8 的 Python 迁移入口 | 未实现；不建目录、不建 SQL、不引入变量 |
 
 ## 2. 边界规则
 

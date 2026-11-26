@@ -1,0 +1,21 @@
+Metadata-Version: 2.4
+Name: alert-agent-runtime
+Version: 0.1.0
+Summary: Alert cognitive runtime: FastAPI gateway + diagnosis agent + RAG agent (src/alert_agent five-layer package)
+Requires-Python: >=3.12
+Requires-Dist: fastapi==0.165.0
+Requires-Dist: uvicorn[standard]==0.54.0
+Requires-Dist: grpcio==1.62.3
+Requires-Dist: grpcio-tools==1.62.3
+Requires-Dist: protobuf<5,>=4.25.3
+Requires-Dist: psycopg[binary,pool]==3.3.9
+Requires-Dist: pydantic==2.14.4
+Requires-Dist: pydantic-settings==2.16.3
+Requires-Dist: httpx==0.28.1
+Requires-Dist: langgraph==1.2.24
+Requires-Dist: rank-bm25==0.2.2
+Requires-Dist: jieba==0.42.1
+Provides-Extra: dev
+Requires-Dist: ruff==0.17.6; extra == "dev"
+Requires-Dist: pytest==9.2.0; extra == "dev"
+Requires-Dist: pytest-asyncio==1.5.0; extra == "dev"

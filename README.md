@@ -76,7 +76,7 @@ cp .env.example .env               # 按需修改数据库与 LLM 端点
 | 目录 | 内容 |
 |---|---|
 | `services/system-core/` | Go 控制面（api + worker 双入口、六层结构） |
-| `services/agent-runtime/` | Python 认知执行栈（五层骨架 + 迁移 + eval） |
+| `python/agent-runtime/` | Python 认知执行栈（五层骨架 + 迁移 + eval） |
 | `apps/console/` | Vue 控制台 |
 | `contracts/` | proto 与事件 Schema（语言无关契约源） |
 | `docs/` | 架构说明、操作手册、验收记录、界面截图 |
@@ -86,14 +86,14 @@ cp .env.example .env               # 按需修改数据库与 LLM 端点
 
 ```bash
 cd services/system-core && go build ./... && go vet ./... && go test ./internal/domain/... ./internal/contracts/...
-cd services/agent-runtime && .venv/bin/ruff check src eval tests && .venv/bin/pytest tests -q
+cd python/agent-runtime && .venv/bin/ruff check src eval tests && .venv/bin/pytest tests -q
 ```
 
-离线检索评测（可选）：`services/agent-runtime/eval/run.py`，用法见该目录说明。
+离线检索评测（可选）：`python/agent-runtime/eval/run.py`，用法见该目录说明。
 
 
 ## 相关文档
 
 - [架构说明](docs/architecture/overview.md) · [数据所有权](docs/architecture/data-ownership.md)
 - [构建](docs/runbooks/build.md) · [本地运行](docs/runbooks/run-local.md) · [迁移](docs/runbooks/migrate.md) · [冒烟](docs/runbooks/smoke.md)
-- [认知执行栈说明](services/agent-runtime/README.md)
+- [认知执行栈说明](python/agent-runtime/README.md)

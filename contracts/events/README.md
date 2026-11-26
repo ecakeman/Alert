@@ -1,6 +1,6 @@
 # 事件信封契约 v1（语言无关）
 
-本目录是 Go（`services/contracts` 及各域服务）与 Python（`services/agent-runtime`）之间**唯一**的事件线上契约源。
+本目录是 Go（`services/contracts` 及各域服务）与 Python（`python/agent-runtime`）之间**唯一**的事件线上契约源。
 本文件与 `event-envelope.v1.schema.json` 只描述**公开字段**；投递控制字段（claim/ack/重试）不属于线上契约。
 
 ## 字段（8 个）
@@ -78,5 +78,5 @@
 ## 归属
 
 - **Go**：唯一实现位于 `services/contracts`（module `github.com/ecakeman/alert/services/contracts`），负责构造、编码、发布、解码，并以此契约生成线上 JSON。`services/system-core/internal/contracts` 为过渡期旧副本，P6 收口时删除。
-- **Python**：位于 `services/agent-runtime`，应基于本 Schema 生成/校验消费模型。
+- **Python**：位于 `python/agent-runtime`，应基于本 Schema 生成/校验消费模型。
 - 本文件只描述契约，**不得**回写成任何一侧的内部模型或数据库行。

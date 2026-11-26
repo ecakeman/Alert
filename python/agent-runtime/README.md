@@ -1,4 +1,4 @@
-# services/agent-runtime（Python 认知执行栈）
+# python/agent-runtime（Python 认知执行栈）
 
 Alert 的 AI Agent 运行时：一个进程内同时承载 **HTTP/gRPC 网关、诊断 Agent、RAG Agent 与摄取 worker**，接收 Go 控制面派发的任务，产出可追溯的诊断产物与可检索的故障知识。
 
@@ -31,7 +31,7 @@ bootstrap/       装配、lifespan、worker 循环、迁移入口
 ## 快速开始
 
 ```bash
-cd services/agent-runtime
+cd python/agent-runtime
 python3 -m venv --without-pip .venv
 curl -sS https://bootstrap.pypa.io/get-pip.py -o /tmp/get-pip.py
 .venv/bin/python /tmp/get-pip.py
@@ -64,7 +64,7 @@ cp .env.example .env        # 修改 DATABASE_URL_COGNITIVE 等；LLM 端点可�
 
 | 项 | system（Go） | cognitive（本组件） |
 |---|---|---|
-| 迁移目录 | `services/system-core/migrations/` | `services/agent-runtime/migrations/` |
+| 迁移目录 | `go/services/system-core/migrations/` | `python/agent-runtime/migrations/` |
 | 连接变量 | `DATABASE_URL` | `DATABASE_URL_COGNITIVE` |
 | 数据所有权 | `system` schema 只读保护 | 独占写 `cognitive` schema，不触碰 system |
 

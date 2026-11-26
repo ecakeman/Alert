@@ -1,0 +1,17 @@
+fastapi==0.165.0
+uvicorn[standard]==0.54.0
+grpcio==1.62.3
+grpcio-tools==1.62.3
+protobuf<5,>=4.25.3
+psycopg[binary,pool]==3.3.9
+pydantic==2.14.4
+pydantic-settings==2.16.3
+httpx==0.28.1
+langgraph==1.2.24
+rank-bm25==0.2.2
+jieba==0.42.1
+
+[dev]
+ruff==0.17.6
+pytest==9.2.0
+pytest-asyncio==1.5.0

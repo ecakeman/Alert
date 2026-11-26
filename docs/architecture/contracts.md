@@ -12,7 +12,7 @@
 ## 2. proto/gRPC（预留）
 
 - 包路径约定：`alertflow/agent/v1/`、`alertflow/system/v1/`；接线前不建空子目录。
-- 生成物归属：Go → `services/system-core`（接线后在 transport/grpc）；Python → `services/agent-runtime/gen/`。
+- 生成物归属：Go → `services/system-core`（接线后在 transport/grpc）；Python → `python/agent-runtime/gen/`。
 - 当前状态：未生成任何 proto 源与生成物。详见 `contracts/proto/README.md`。
 
 ## 3. 公开 REST（openapi 说明）

@@ -12,7 +12,7 @@ Alert/
 │  ├─ cmd/api|worker/        # 进程入口与 flag
 │  ├─ internal/{domain,contracts,application,infrastructure,transport,bootstrap,config}/
 │  └─ migrations/            # system schema SQL（仅 .sql）
-├─ services/agent-runtime/   # Python 组件占位（B8 未实现）
+├─ python/agent-runtime/   # Python 组件占位（B8 未实现）
 ├─ apps/console/             # Vue 控制台
 ├─ contracts/                # events / proto（预留）/ openapi
 ├─ deploy/compose/           # PG16 + Kafka(KRaft) 本地拓扑

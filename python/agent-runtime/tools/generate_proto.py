@@ -2,11 +2,11 @@
 
 Contract source (read-only, never copied): ``contracts/proto/alertflow/...``
 Output (committed, never hand-edited):
-    ``services/agent-runtime/src/alert_agent/infrastructure/grpc/gen/``
+    ``python/agent-runtime/src/alert_agent/infrastructure/grpc/gen/``
 
 Usage:
 
-    services/agent-runtime/.venv/bin/python services/agent-runtime/tools/generate_proto.py
+    python/agent-runtime/.venv/bin/python python/agent-runtime/tools/generate_proto.py
 
 Generated stubs were produced with grpcio-tools ``GRPC_TOOLS_PIN``; the
 runtime dependency family in ``pyproject.toml`` (grpcio / grpcio-tools /

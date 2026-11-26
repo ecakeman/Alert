@@ -16,7 +16,7 @@ Protobuf/gRPC 契约预留目录（对应保留清单 B7 / gRPC 接线），**�
 | 语言 | 生成物落点 | 说明 |
 |---|---|---|
 | Go | `services/system-core/internal/transport/grpc/`（接线后） | 生成 `.pb.go`，与 `services/system-core` 同 module |
-| Python | `services/agent-runtime/gen/`（B8 接线后） | 生成 `_pb2.py`，与 `services/agent-runtime` 同组件 |
+| Python | `python/agent-runtime/gen/`（B8 接线后） | 生成 `_pb2.py`，与 `python/agent-runtime` 同组件 |
 
 - 契约源在本目录，生成物**不得跨语言复制**、不得反向回写成契约源。
 - 当前状态：**本次未生成**任何 proto 源文件与生成物；接线前本目录仅有本 README。
