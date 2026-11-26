@@ -20,28 +20,30 @@ type routeSpec struct {
 	method   string
 	segments []string
 	upstream string
+	// rewrite 非空时把对外前缀替换为域内前缀（P4.9：/api/v1 → /internal）。
+	rewrite string
 }
 
 // 18 条 L1 路由的域映射（design 2.2.1）；P1 阶段四个 base URL 均指向单体，P6 起改聚合。
 var routes = []routeSpec{
-	{http.MethodGet, []string{"api", "v1", "dashboard", "summary"}, "episode"},
-	{http.MethodGet, []string{"api", "v1", "services"}, "registry"},
-	{http.MethodPost, []string{"api", "v1", "services"}, "registry"},
-	{http.MethodGet, []string{"api", "v1", "services", "{service_id}"}, "registry"},
-	{http.MethodPatch, []string{"api", "v1", "services", "{service_id}"}, "registry"},
-	{http.MethodDelete, []string{"api", "v1", "services", "{service_id}"}, "registry"},
-	{http.MethodGet, []string{"api", "v1", "services", "{service_id}", "targets"}, "registry"},
-	{http.MethodPost, []string{"api", "v1", "services", "{service_id}", "targets"}, "registry"},
-	{http.MethodPatch, []string{"api", "v1", "targets", "{target_id}"}, "registry"},
-	{http.MethodDelete, []string{"api", "v1", "targets", "{target_id}"}, "registry"},
-	{http.MethodGet, []string{"api", "v1", "episodes"}, "episode"},
-	{http.MethodGet, []string{"api", "v1", "episodes", "{episode_id}"}, "episode"},
-	{http.MethodPost, []string{"api", "v1", "services", "{service_id}", "events"}, "episode"},
-	{http.MethodGet, []string{"api", "v1", "services", "{service_id}", "timeline"}, "episode"},
-	{http.MethodGet, []string{"api", "v1", "episodes", "{episode_id}", "timeline"}, "episode"},
-	{http.MethodGet, []string{"api", "v1", "episodes", "{episode_id}", "artifacts"}, "task"},
-	{http.MethodPost, []string{"api", "v1", "episodes", "{episode_id}", "retry-diagnosis"}, "task"},
-	{http.MethodPost, []string{"api", "v1", "episodes", "{episode_id}", "retry-archive"}, "task"},
+	{http.MethodGet, []string{"api", "v1", "dashboard", "summary"}, "legacy", ""},
+	{http.MethodGet, []string{"api", "v1", "services"}, "registry", ""},
+	{http.MethodPost, []string{"api", "v1", "services"}, "registry", ""},
+	{http.MethodGet, []string{"api", "v1", "services", "{service_id}"}, "registry", ""},
+	{http.MethodPatch, []string{"api", "v1", "services", "{service_id}"}, "registry", ""},
+	{http.MethodDelete, []string{"api", "v1", "services", "{service_id}"}, "registry", ""},
+	{http.MethodGet, []string{"api", "v1", "services", "{service_id}", "targets"}, "registry", ""},
+	{http.MethodPost, []string{"api", "v1", "services", "{service_id}", "targets"}, "registry", ""},
+	{http.MethodPatch, []string{"api", "v1", "targets", "{target_id}"}, "registry", ""},
+	{http.MethodDelete, []string{"api", "v1", "targets", "{target_id}"}, "registry", ""},
+	{http.MethodGet, []string{"api", "v1", "episodes"}, "episode", "/internal"},
+	{http.MethodGet, []string{"api", "v1", "episodes", "{episode_id}"}, "episode", "/internal"},
+	{http.MethodPost, []string{"api", "v1", "services", "{service_id}", "events"}, "episode", "/internal"},
+	{http.MethodGet, []string{"api", "v1", "services", "{service_id}", "timeline"}, "legacy", ""},
+	{http.MethodGet, []string{"api", "v1", "episodes", "{episode_id}", "timeline"}, "legacy", ""},
+	{http.MethodGet, []string{"api", "v1", "episodes", "{episode_id}", "artifacts"}, "task", ""},
+	{http.MethodPost, []string{"api", "v1", "episodes", "{episode_id}", "retry-diagnosis"}, "task", ""},
+	{http.MethodPost, []string{"api", "v1", "episodes", "{episode_id}", "retry-archive"}, "task", ""},
 }
 
 // ProxyConfig 是 BFF 反代的四个域地址与上游超时。
@@ -50,6 +52,7 @@ type ProxyConfig struct {
 	Monitor  string
 	Episode  string
 	Task     string
+	Legacy   string
 	Timeout  time.Duration
 	Logger   *slog.Logger
 }
@@ -66,12 +69,13 @@ func NewProxy(cfg ProxyConfig) (*Proxy, error) {
 	if cfg.Timeout <= 0 {
 		cfg.Timeout = 3 * time.Second
 	}
-	proxies := make(map[string]http.Handler, 4)
+	proxies := make(map[string]http.Handler, 5)
 	for name, base := range map[string]string{
 		"registry": cfg.Registry,
 		"monitor":  cfg.Monitor,
 		"episode":  cfg.Episode,
 		"task":     cfg.Task,
+		"legacy":   cfg.Legacy,
 	} {
 		handler, err := newReverseProxy(base, cfg.Timeout)
 		if err != nil {
@@ -123,6 +127,9 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if traceID := httpx.TraceIDFrom(r.Context()); traceID != "" {
 			r.Header.Set(httpx.HeaderTraceID, traceID)
 		}
+		if route.rewrite != "" {
+			r = rewritePath(r, route.rewrite)
+		}
 		upstream.ServeHTTP(w, r)
 		return
 	}
@@ -132,6 +139,15 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	notFound(w, r)
+}
+
+// rewritePath 把 /api/v1/** 重写为 <prefix>/**，保留查询串（克隆请求，避免污染原对象）。
+func rewritePath(r *http.Request, prefix string) *http.Request {
+	clone := r.Clone(r.Context())
+	trimmed := strings.TrimPrefix(clone.URL.Path, "/api/v1")
+	clone.URL.Path = prefix + trimmed
+	clone.URL.RawPath = ""
+	return clone
 }
 
 func pathSegments(path string) []string {

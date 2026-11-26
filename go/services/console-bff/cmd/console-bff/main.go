@@ -48,6 +48,7 @@ func main() {
 		Monitor:  cfg.MonitorBaseURL,
 		Episode:  cfg.EpisodeBaseURL,
 		Task:     cfg.TaskBaseURL,
+		Legacy:   cfg.LegacyBaseURL,
 		Timeout:  cfg.UpstreamTimeout,
 		Logger:   logger,
 	})
