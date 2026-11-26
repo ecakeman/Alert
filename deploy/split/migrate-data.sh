@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 存量搬迁：P0=S0 只读预检；P2=把 registry 三表从 system 迁入 registry（单事务）。
+# 存量搬迁：P0=S0 只读预检；P2=registry 三表、P3=points、P4=episode 三表从 system 迁入本域（单事务）。
 set -euo pipefail
 
 SPLIT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -105,6 +105,106 @@ write_state() {
     "$stage" "$phase" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${snapshot:-}" > "$tmp"
   mv "$tmp" "$STATE_FILE"
 }
+
+if [ "$STAGE" = "P4" ]; then
+  if [ -f "$STATE_FILE" ] && grep -q '"stage":"P4"' "$STATE_FILE" && grep -q '"phase":"complete"' "$STATE_FILE"; then
+    echo "P4 搬迁已完成（读状态文件，no-op）"
+    exit 0
+  fi
+  ensure_db
+
+  for t in episodes episode_input_versions episode_app_events; do
+    if [ "$(query "SELECT to_regclass('episode.${t}') IS NOT NULL")" != "t" ]; then
+      echo "episode.${t} 不存在：请先执行 episode-svc -migrate（P4.1）"
+      exit 5
+    fi
+    rows="$(query "SELECT count(*) FROM episode.${t}")"
+    if [ "$rows" != "0" ]; then
+      echo "episode.${t} 已含 $rows 行，拒绝覆盖"
+      exit 5
+    fi
+  done
+
+  SNAPSHOT_FILE="$(snapshot P4)"
+  echo "S0 预检完成：$SNAPSHOT_FILE"
+
+  before_episodes="$(query "SELECT count(*) FROM system.episodes")"
+  before_inputs="$(query "SELECT count(*) FROM system.episode_input_versions")"
+  before_app="$(query "SELECT count(*) FROM system.episode_app_events")"
+
+  MIGRATE_SQL="$(cat <<'SQL'
+ALTER TABLE system.episodes DROP CONSTRAINT IF EXISTS episodes_service_id_fkey;
+ALTER TABLE system.episode_input_versions DROP CONSTRAINT IF EXISTS episode_input_versions_episode_id_fkey;
+ALTER TABLE system.episode_app_events DROP CONSTRAINT IF EXISTS episode_app_events_service_id_fkey;
+ALTER TABLE system.episode_app_events DROP CONSTRAINT IF EXISTS episode_app_events_episode_id_fkey;
+
+-- 目标域为已迁移的空表；删除以让 SET SCHEMA 接管（索引/identity 序列随表迁移）。
+DROP TABLE IF EXISTS episode.episode_app_events CASCADE;
+DROP TABLE IF EXISTS episode.episode_input_versions CASCADE;
+DROP TABLE IF EXISTS episode.episodes CASCADE;
+
+ALTER TABLE system.episodes SET SCHEMA episode;
+ALTER TABLE system.episode_input_versions SET SCHEMA episode;
+ALTER TABLE system.episode_app_events SET SCHEMA episode;
+
+ALTER TABLE episode.episode_input_versions
+  ADD CONSTRAINT episode_input_versions_episode_id_fkey
+  FOREIGN KEY (episode_id) REFERENCES episode.episodes(episode_id) ON DELETE RESTRICT;
+ALTER TABLE episode.episode_app_events
+  ADD CONSTRAINT episode_app_events_episode_id_fkey
+  FOREIGN KEY (episode_id) REFERENCES episode.episodes(episode_id) ON DELETE RESTRICT;
+SQL
+)"
+
+  if [ "$DRY_RUN" = true ]; then
+    printf '%s\n' "$MIGRATE_SQL"
+    echo "[dry-run] P4 搬迁 SQL 打印完毕（未执行）"
+    exit 0
+  fi
+  if [ "$CONFIRM" != true ]; then
+    echo "拒绝执行危险动作（缺少 --confirm）"
+    exit 4
+  fi
+
+  printf '%s\n' "$MIGRATE_SQL" | psql_exec --single-transaction >/dev/null
+
+  psql_exec >/dev/null <<'SQL'
+GRANT ALL ON episode.episodes TO alert_episode;
+GRANT ALL ON episode.episode_input_versions TO alert_episode;
+GRANT ALL ON episode.episode_app_events TO alert_episode;
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA episode TO alert_episode;
+SQL
+
+  after_episodes="$(query "SELECT count(*) FROM episode.episodes")"
+  after_inputs="$(query "SELECT count(*) FROM episode.episode_input_versions")"
+  after_app="$(query "SELECT count(*) FROM episode.episode_app_events")"
+  if [ "$before_episodes" != "$after_episodes" ] || [ "$before_inputs" != "$after_inputs" ] || [ "$before_app" != "$after_app" ]; then
+    echo "行数对账失败: episodes $before_episodes->$after_episodes, inputs $before_inputs->$after_inputs, app_events $before_app->$after_app"
+    exit 6
+  fi
+  for t in episodes episode_input_versions episode_app_events; do
+    if [ "$(query "SELECT to_regclass('system.${t}') IS NOT NULL")" = "t" ]; then
+      echo "system.${t} 仍存在，搬迁未完成"
+      exit 7
+    fi
+  done
+
+  idx_count="$(query "SELECT count(*) FROM pg_indexes WHERE schemaname='episode' AND indexname IN ('episodes_one_active','episodes_service_idx','episodes_status_idx','app_events_service_idx','app_events_episode_idx')")"
+  if [ "$idx_count" != "5" ]; then
+    echo "索引校验失败: episode 域仅剩 $idx_count/5 个预期索引"
+    exit 8
+  fi
+  fk_count="$(query "SELECT count(*) FROM pg_constraint WHERE contype='f' AND connamespace='episode'::regnamespace")"
+  if [ "$fk_count" != "2" ]; then
+    echo "同域外键校验失败: episode 域 FK=$fk_count（预期 2，跨域 FK 应为 0）"
+    exit 9
+  fi
+
+  write_state P4 complete "$(basename "$SNAPSHOT_FILE")"
+  echo "P4 搬迁完成：episodes=$after_episodes inputs=$after_inputs app_events=$after_app"
+  echo "状态文件：$STATE_FILE（stage=P4 phase=complete）"
+  exit 0
+fi
 
 if [ "$STAGE" = "P3" ]; then
   if [ -f "$STATE_FILE" ] && grep -q '"stage":"P3"' "$STATE_FILE" && grep -q '"phase":"complete"' "$STATE_FILE"; then
