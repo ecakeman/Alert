@@ -24,6 +24,11 @@ func CanAcquire(existing *Ownership, req Ownership, nowUnix int64) AcquireDecisi
 	if existing.TaskID == req.TaskID && existing.Generation == req.Generation {
 		return AcquireDecision{Allowed: true}
 	}
+	// 同一 task 的新代次接管旧代次执行权：旧代次已被回收/放弃，其行不得
+	// 被当作"其他任务的占用"（P5.9 GAP-2）。
+	if existing.TaskID == req.TaskID && req.Generation > existing.Generation {
+		return AcquireDecision{Allowed: true}
+	}
 	if existing.LeaseUntil <= nowUnix {
 		return AcquireDecision{Allowed: true}
 	}

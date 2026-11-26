@@ -6,11 +6,13 @@
 （CR-TASK-11）——回执只携带统一的 thread_id（CR-REG-43）用于辅助去重，
 绝不构成第二个所有权模型。
 
-未确认的结果（COMPLETED + NOT_SENT）在每次扫描中被观察：重放
-``report_result`` 需要有效的租约 token，而回执并不持久化它
-（migration 0001），因此回调保持 NOT_SENT 并在每次扫描中被重新检查，
-直到重新派发的 generation 完成；该限制被记录日志，绝不静默吞掉
-（CR-REG-47）。
+migration 0006 起回执持久化 lease_token 与冻结边界：六列齐备时
+``to_submission`` 重建 TaskSubmission，恢复后的执行复用与首次受理相同的
+路径（同一 identity → 同一 token → 心跳/产物/结果原样回传）。六列缺失的
+老回执仍以 receipt 形式入队，由 worker 显式降级并记录原因码。
+
+未确认的结果（COMPLETED + NOT_SENT）若 token 与边界齐备则入队重放结果
+回调；否则记录"需重派"，绝不静默吞掉（CR-REG-47）。
 """
 
 from __future__ import annotations
@@ -33,13 +35,30 @@ class RecoverUnfinished:
     async def execute(self) -> int:
         reenqueued = 0
         for receipt in await self._store.list_unfinished():
-            if self._queue.try_enqueue(QueuedTask(receipt=receipt)):
+            submission = receipt.to_submission()
+            unit = (
+                QueuedTask(submission=submission)
+                if submission is not None
+                else QueuedTask(receipt=receipt)
+            )
+            if self._queue.try_enqueue(unit):
                 reenqueued += 1
-                # 队列已满时保留"等待恢复"的事实（CR-TASK-08）；
-                # 下一次扫描重试同一回执。
+            # 队列已满时保留"等待恢复"的事实（CR-TASK-08）；
+            # 下一次扫描重试同一回执。
+
         for receipt in await self._store.list_unconfirmed_results():
+            submission = receipt.to_submission()
+            if submission is not None:
+                if self._queue.try_enqueue(QueuedTask(receipt=receipt)):
+                    continue
+                LOGGER.warning(
+                    "queue full; result replay deferred for task_id=%s generation=%d",
+                    receipt.task_id,
+                    receipt.generation,
+                )
+                continue
             LOGGER.warning(
-                "result callback not replayable yet: lease token is not persisted"
+                "result callback not replayable: lease credentials absent"
                 " for task_id=%s generation=%d; callback_state stays NOT_SENT",
                 receipt.task_id,
                 receipt.generation,

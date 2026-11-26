@@ -41,7 +41,7 @@ func (s *Service) Acquire(ctx context.Context, taskID string, generation int64, 
 		if decision := domain.CanAcquire(existing, req, now.Unix()); !decision.Allowed {
 			return apperr.New(decision.Reason, "service execution is busy")
 		}
-		ok, err := s.deps.Ownership.Acquire(ctx, tx, porttask.Ownership{
+		outcome, err := s.deps.Ownership.Acquire(ctx, tx, porttask.Ownership{
 			ServiceID:  req.ServiceID,
 			TaskID:     req.TaskID,
 			EpisodeID:  task.EpisodeID,
@@ -54,7 +54,7 @@ func (s *Service) Acquire(ctx context.Context, taskID string, generation int64, 
 		if err != nil {
 			return err
 		}
-		if !ok {
+		if outcome == porttask.AcquireBusy {
 			return apperr.New(domain.CodeServiceBusy, "service execution is busy")
 		}
 		allowed = true

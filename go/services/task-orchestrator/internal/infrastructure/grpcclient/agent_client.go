@@ -59,7 +59,7 @@ func (c *AgentClient) SubmitTask(ctx context.Context, task porttask.AgentTask) (
 
 	leaseUntil := int64(0)
 	if task.LeaseUntil != nil {
-		leaseUntil = task.LeaseUntil.Unix()
+		leaseUntil = leaseUntilUnixCeil(*task.LeaseUntil)
 	}
 	resp, err := client.SubmitTask(callCtx, &agentv1.SubmitTaskRequest{
 		Identity: &systemv1.TaskIdentity{
@@ -99,4 +99,10 @@ func (c *AgentClient) Close() error {
 func encodeLeaseToken(taskID string, generation, leaseUntilUnix int64) string {
 	raw := taskID + "|" + strconv.FormatInt(generation, 10) + "|" + strconv.FormatInt(leaseUntilUnix, 10)
 	return base64.RawURLEncoding.EncodeToString([]byte(raw))
+}
+func leaseUntilUnixCeil(t time.Time) int64 {
+	if t.Nanosecond() == 0 {
+		return t.Unix()
+	}
+	return t.Unix() + 1
 }

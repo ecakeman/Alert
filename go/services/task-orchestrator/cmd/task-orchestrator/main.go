@@ -102,7 +102,7 @@ func main() {
 		UOW: uow, Tasks: taskpostgres.NewTaskRepo(), Ownership: taskpostgres.NewOwnershipRepo(),
 		Artifacts: taskpostgres.NewArtifactRepo(), Outbox: taskpostgres.NewOutboxRepo(),
 		Idem: taskpostgres.NewIdempotencyRepo(), Clock: clock.System{}, IDs: idgen.Generator{},
-		Lease: 30 * time.Second, MaxAttempts: 3, RetryDelay: 5 * time.Second, Deadline: 5 * time.Minute,
+		Lease: cfg.TaskLease, MaxAttempts: cfg.TaskMaxAttempts, RetryDelay: 5 * time.Second, Deadline: 5 * time.Minute,
 		Dispatch:   epClient,
 		EpisodeGet: epClient.GetEpisode,
 		Submit:     grpcclient.NewAgentClient(cfg.AgentGRPCTarget, cfg.UpstreamTimeout),

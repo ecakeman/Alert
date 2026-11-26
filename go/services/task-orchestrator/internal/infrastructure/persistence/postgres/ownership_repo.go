@@ -13,25 +13,45 @@ type ownershipRepo struct{}
 
 func NewOwnershipRepo() porttask.OwnershipRepo { return ownershipRepo{} }
 
-// Acquire：服务级执行权；过期或同 task+generation 幂等时允许接管。
-func (ownershipRepo) Acquire(ctx context.Context, tx portshared.Tx, o porttask.Ownership) (bool, error) {
-	tag, err := txFrom(tx).Exec(ctx, `
-INSERT INTO task.service_execution_ownership AS o(service_id,task_id,episode_id,task_type,generation,lease_until,acquired_at,updated_at)
-VALUES($1,$2,$3,$4,$5,$6,now(),now())
-ON CONFLICT (service_id) DO UPDATE SET
-  task_id=EXCLUDED.task_id,
-  episode_id=EXCLUDED.episode_id,
-  task_type=EXCLUDED.task_type,
-  generation=EXCLUDED.generation,
-  lease_until=EXCLUDED.lease_until,
-  updated_at=now()
-WHERE o.lease_until <= now()
-   OR (o.task_id = EXCLUDED.task_id AND o.generation = EXCLUDED.generation)`,
-		o.ServiceID, o.TaskID, o.EpisodeID, o.TaskType, o.Generation, utc(o.LeaseUntil))
-	if err != nil {
-		return false, Translate(err)
+// Acquire：服务级执行权；判定由应用层 domain.CanAcquire 单一负责，
+// 仓储只承担行锁 + 唯一约束。无行插入；有行在行锁下无条件覆盖，
+// 并发对手的更高代次由调用方任务 CAS（generation 条件）兜底回滚。
+func (ownershipRepo) Acquire(ctx context.Context, tx portshared.Tx, o porttask.Ownership) (porttask.AcquireOutcome, error) {
+	exec := txFrom(tx)
+	row, err := model.OwnershipRow{}.Scan(exec.QueryRow(ctx,
+		`SELECT `+model.OwnershipColumns+` FROM task.service_execution_ownership WHERE service_id=$1 FOR UPDATE`,
+		o.ServiceID))
+	switch {
+	case err == nil:
+		if row.TaskID == o.TaskID && row.Generation == o.Generation {
+			// 同代次幂等：刷新租约后返回 already_held，调用方仍可幂等重投。
+			if _, err := exec.Exec(ctx, `
+UPDATE task.service_execution_ownership
+SET task_id=$2, episode_id=$3, task_type=$4, generation=$5, lease_until=$6, updated_at=now()
+WHERE service_id=$1`, o.ServiceID, o.TaskID, o.EpisodeID, o.TaskType, o.Generation, utc(o.LeaseUntil)); err != nil {
+				return "", Translate(err)
+			}
+			return porttask.AcquireAlreadyHeld, nil
+		}
+		if _, err := exec.Exec(ctx, `
+UPDATE task.service_execution_ownership
+SET task_id=$2, episode_id=$3, task_type=$4, generation=$5, lease_until=$6, updated_at=now()
+WHERE service_id=$1`, o.ServiceID, o.TaskID, o.EpisodeID, o.TaskType, o.Generation, utc(o.LeaseUntil)); err != nil {
+			return "", Translate(err)
+		}
+		return porttask.AcquireAcquired, nil
+	case NoRows(err):
+		if _, err := exec.Exec(ctx, `
+INSERT INTO task.service_execution_ownership
+  (service_id,task_id,episode_id,task_type,generation,lease_until,acquired_at,updated_at)
+VALUES($1,$2,$3,$4,$5,$6,now(),now())`,
+			o.ServiceID, o.TaskID, o.EpisodeID, o.TaskType, o.Generation, utc(o.LeaseUntil)); err != nil {
+			return "", Translate(err)
+		}
+		return porttask.AcquireAcquired, nil
+	default:
+		return "", Translate(err)
 	}
-	return tag.RowsAffected() == 1, nil
 }
 
 func (ownershipRepo) Get(ctx context.Context, tx portshared.Tx, serviceID string) (porttask.Ownership, error) {

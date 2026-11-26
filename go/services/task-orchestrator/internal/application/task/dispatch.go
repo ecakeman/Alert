@@ -3,6 +3,7 @@ package task
 import (
 	"context"
 	"fmt"
+	"log"
 
 	"github.com/ecakeman/alert/services/task-orchestrator/internal/application/apperr"
 	portoutbox "github.com/ecakeman/alert/services/task-orchestrator/internal/application/port/outbox"
@@ -21,6 +22,7 @@ func (s *Service) Dispatch(ctx context.Context, taskID string, generation int64)
 func (s *Service) dispatch(ctx context.Context, taskID string, generation int64, eventID string) (DispatchResult, error) {
 	var task porttask.AgentTask
 	var skipped bool
+	var reason, skipDetail string
 	err := s.deps.UOW.WithinTx(ctx, func(ctx context.Context, tx portshared.Tx) error {
 		if eventID != "" {
 			first, err := s.deps.Idem.Reserve(ctx, tx, portoutbox.ConsumerIdempotency{
@@ -74,9 +76,11 @@ func (s *Service) dispatch(ctx context.Context, taskID string, generation int64,
 		}
 		if decision := domain.CanAcquire(existing, request, now.Unix()); !decision.Allowed {
 			skipped = true
+			reason = "ownership_busy"
+			skipDetail = fmt.Sprintf("service_id=%s task_id=%s generation=%d", current.ServiceID, current.TaskID, current.Generation)
 			return nil
 		}
-		acquired, err := s.deps.Ownership.Acquire(ctx, tx, porttask.Ownership{
+		outcome, err := s.deps.Ownership.Acquire(ctx, tx, porttask.Ownership{
 			ServiceID:  current.ServiceID,
 			TaskID:     current.TaskID,
 			EpisodeID:  current.EpisodeID,
@@ -89,8 +93,15 @@ func (s *Service) dispatch(ctx context.Context, taskID string, generation int64,
 		if err != nil {
 			return err
 		}
-		if !acquired {
+		switch outcome {
+		case porttask.AcquireAcquired:
+			reason = "dispatch_acquired"
+		case porttask.AcquireAlreadyHeld:
+			reason = "dispatch_idempotent"
+		default:
 			skipped = true
+			reason = "ownership_busy"
+			skipDetail = fmt.Sprintf("service_id=%s task_id=%s generation=%d", current.ServiceID, current.TaskID, current.Generation)
 			return nil
 		}
 
@@ -115,6 +126,10 @@ func (s *Service) dispatch(ctx context.Context, taskID string, generation int64,
 		return DispatchRejected, err
 	}
 	if skipped {
+		if reason == "" {
+			reason = "dispatch_skipped"
+		}
+		log.Printf("dispatch skipped reason=%s %s", reason, skipDetail)
 		return DispatchRejected, nil
 	}
 

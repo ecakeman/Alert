@@ -82,12 +82,21 @@ func leaseValid(task porttask.AgentTask, id TaskIdentity, now time.Time) bool {
 		return false
 	}
 	return taskID == task.TaskID && generation == task.Generation &&
-		until > now.Unix() && task.LeaseUntil.After(now)
+		until >= now.Unix() && task.LeaseUntil.After(now)
 }
 
 func encodeLeaseToken(taskID string, generation, leaseUntilUnix int64) string {
 	raw := taskID + "|" + strconv.FormatInt(generation, 10) + "|" + strconv.FormatInt(leaseUntilUnix, 10)
 	return base64.RawURLEncoding.EncodeToString([]byte(raw))
+}
+
+// leaseUntilUnixCeil 向上取整到秒：token 的 until 是 lease_until 的承诺，
+// 不得因向下截断把合法回调误判为 LEASE_LOST（P5.9 GAP-2 精度缺陷）。
+func leaseUntilUnixCeil(t time.Time) int64 {
+	if t.Nanosecond() == 0 {
+		return t.Unix()
+	}
+	return t.Unix() + 1
 }
 
 func decodeLeaseToken(token string) (string, int64, int64, bool) {

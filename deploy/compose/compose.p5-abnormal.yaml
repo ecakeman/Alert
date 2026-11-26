@@ -1,0 +1,6 @@
+services:
+  task-orchestrator:
+    environment:
+      TASK_LEASE: "10s"
+      TASK_MAX_ATTEMPTS: "3"
+      TASK_RECONCILE_INTERVAL: "5s"

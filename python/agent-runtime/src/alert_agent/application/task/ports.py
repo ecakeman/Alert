@@ -40,7 +40,12 @@ class AcceptOutcome(BaseModel):
 
 
 class UnfinishedReceipt(BaseModel):
-    """供恢复用例消费的回执投影（CR-TASK-10）。"""
+    """供恢复用例消费的回执投影（CR-TASK-10）。
+
+    ``lease_token`` 与 5 项冻结边界来自 migration 0006；六列齐备时
+    ``to_submission`` 能重建可调用身份，使重启后可续跑（P5.9 GAP-1）。
+    迁移前的老回执六列为 None，保持"不可续租"的诚实语义。
+    """
 
     model_config = ConfigDict(frozen=True)
 
@@ -51,6 +56,41 @@ class UnfinishedReceipt(BaseModel):
     service_id: str
     thread_id: str
     status: ReceiptStatus
+    lease_token: str | None = None
+    input_version_from: int | None = None
+    input_version_to: int | None = None
+    monitor_watermark: int | None = None
+    app_event_watermark: int | None = None
+    deadline_at: datetime | None = None
+
+    def to_submission(self) -> TaskSubmission | None:
+        """六列齐备时重建 TaskSubmission；缺一返回 None（不得伪造）。"""
+        if (
+            self.lease_token is None
+            or self.input_version_from is None
+            or self.input_version_to is None
+            or self.monitor_watermark is None
+            or self.app_event_watermark is None
+            or self.deadline_at is None
+        ):
+            return None
+        return TaskSubmission(
+            identity=TaskIdentity(
+                task_id=self.task_id,
+                episode_id=self.episode_id,
+                task_type=self.task_type,
+                generation=self.generation,
+                lease_token=self.lease_token,
+            ),
+            boundary=FrozenBoundary(
+                input_version_from=self.input_version_from,
+                input_version_to=self.input_version_to,
+                monitor_watermark=self.monitor_watermark,
+                app_event_watermark=self.app_event_watermark,
+                deadline_at=self.deadline_at,
+            ),
+            service_id=self.service_id,
+        )
 
 
 class ReceiptStore(Protocol):

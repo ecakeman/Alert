@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 
 
 @dataclass(frozen=True, slots=True)
@@ -20,3 +21,9 @@ class ReceiptRow:
     service_id: str
     thread_id: str
     status: str
+    lease_token: str | None = None
+    input_version_from: int | None = None
+    input_version_to: int | None = None
+    monitor_watermark: int | None = None
+    app_event_watermark: int | None = None
+    deadline_at: datetime | None = None

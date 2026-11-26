@@ -83,8 +83,17 @@ type TaskRepo interface {
 	PromoteRetry(ctx context.Context, tx portshared.Tx, taskID string, generation int64) (int64, error)
 }
 
+// AcquireOutcome 是三态执行权获取结果：禁止静默 skip（P5.9 GAP-2）。
+type AcquireOutcome string
+
+const (
+	AcquireAcquired    AcquireOutcome = "acquired"
+	AcquireAlreadyHeld AcquireOutcome = "already_held_by_same_generation"
+	AcquireBusy        AcquireOutcome = "busy_by_other_generation"
+)
+
 type OwnershipRepo interface {
-	Acquire(ctx context.Context, tx portshared.Tx, o Ownership) (bool, error)
+	Acquire(ctx context.Context, tx portshared.Tx, o Ownership) (AcquireOutcome, error)
 	Get(ctx context.Context, tx portshared.Tx, serviceID string) (Ownership, error)
 	Release(ctx context.Context, tx portshared.Tx, serviceID, taskID string, generation int64) (bool, error)
 	ReclaimExpired(ctx context.Context, tx portshared.Tx, now time.Time) ([]string, error)

@@ -6,6 +6,9 @@
 已记录的 generation 时以 ``STALE_GENERATION`` 拒绝且零写入（6.1.3.2）；
 同 generation 的 FAILED 回执被重新受理并保留原始失败记录（CR-TASK-03）；
 每次状态更新都携带 generation（以及需要时的 status）条件（CR-REG-41，Q2）。
+
+migration 0006 增列的租约与边界在 accept 时一并写入，使恢复路径可重建
+TaskSubmission（P5.9 GAP-1）；老回执六列为 NULL，保持不可续租语义。
 """
 
 from __future__ import annotations
@@ -28,14 +31,18 @@ from alert_agent.infrastructure.persistence.postgres.rows import ReceiptRow
 _INSERT_RECEIPT = """
 INSERT INTO cognitive.agent_task_receipts
     (task_id, generation, task_type, episode_id, service_id, thread_id,
-     status, callback_state, accepted_at, updated_at)
-VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+     status, callback_state, accepted_at, updated_at,
+     lease_token, input_version_from, input_version_to, monitor_watermark,
+     app_event_watermark, deadline_at)
+VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
 ON CONFLICT (task_id, generation) DO NOTHING
 RETURNING task_id
 """
 
 _SELECT_EXISTING_FOR_SHARE = """
-SELECT task_id, generation, task_type, episode_id, service_id, thread_id, status
+SELECT task_id, generation, task_type, episode_id, service_id, thread_id, status,
+       lease_token, input_version_from, input_version_to, monitor_watermark,
+       app_event_watermark, deadline_at
 FROM cognitive.agent_task_receipts
 WHERE task_id = %s AND generation = %s
 FOR SHARE
@@ -47,7 +54,9 @@ _SELECT_MAX_GENERATION = (
 
 _REACCEPT_FAILED = """
 UPDATE cognitive.agent_task_receipts
-SET status = %s, callback_state = %s, updated_at = %s
+SET status = %s, callback_state = %s, updated_at = %s,
+    lease_token = %s, input_version_from = %s, input_version_to = %s,
+    monitor_watermark = %s, app_event_watermark = %s, deadline_at = %s
 WHERE task_id = %s AND generation = %s AND status = %s
 RETURNING task_id
 """
@@ -73,16 +82,20 @@ WHERE task_id = %s AND generation = %s
 
 _LIST_UNFINISHED = """
 SELECT DISTINCT ON (task_id)
-    task_id, generation, task_type, episode_id, service_id, thread_id, status
+    task_id, generation, task_type, episode_id, service_id, thread_id, status,
+    lease_token, input_version_from, input_version_to, monitor_watermark,
+    app_event_watermark, deadline_at
 FROM cognitive.agent_task_receipts
 WHERE status IN (%s, %s)
 ORDER BY task_id, generation DESC
 """
 
 _LIST_UNCONFIRMED_RESULTS = """
-SELECT task_id, generation, task_type, episode_id, service_id, thread_id, status
+SELECT task_id, generation, task_type, episode_id, service_id, thread_id, status,
+       lease_token, input_version_from, input_version_to, monitor_watermark,
+       app_event_watermark, deadline_at
 FROM cognitive.agent_task_receipts
-WHERE status = %s AND callback_state = %s
+WHERE status = %s AND callback_state = %s AND lease_token IS NOT NULL
 """
 
 
@@ -96,6 +109,7 @@ class PostgresReceiptStore:
         self, submission: TaskSubmission, *, thread_id: str, accepted_at: datetime
     ) -> AcceptOutcome:
         identity = submission.identity
+        boundary = submission.boundary
         async with self._pool.connection() as connection:
             cursor = await connection.execute(
                 _INSERT_RECEIPT,
@@ -110,6 +124,12 @@ class PostgresReceiptStore:
                     CallbackState.NOT_SENT,
                     accepted_at,
                     accepted_at,
+                    identity.lease_token,
+                    boundary.input_version_from,
+                    boundary.input_version_to,
+                    boundary.monitor_watermark,
+                    boundary.app_event_watermark,
+                    boundary.deadline_at,
                 ),
             )
             if await cursor.fetchone() is not None:
@@ -138,6 +158,12 @@ class PostgresReceiptStore:
                         ReceiptStatus.ACCEPTED,
                         CallbackState.NOT_SENT,
                         accepted_at,
+                        identity.lease_token,
+                        boundary.input_version_from,
+                        boundary.input_version_to,
+                        boundary.monitor_watermark,
+                        boundary.app_event_watermark,
+                        boundary.deadline_at,
                         identity.task_id,
                         identity.generation,
                         ReceiptStatus.FAILED,
@@ -241,4 +267,10 @@ def _to_unfinished(row: ReceiptRow) -> UnfinishedReceipt:
         service_id=row.service_id,
         thread_id=row.thread_id,
         status=ReceiptStatus(row.status),
+        lease_token=row.lease_token,
+        input_version_from=row.input_version_from,
+        input_version_to=row.input_version_to,
+        monitor_watermark=row.monitor_watermark,
+        app_event_watermark=row.app_event_watermark,
+        deadline_at=row.deadline_at,
     )

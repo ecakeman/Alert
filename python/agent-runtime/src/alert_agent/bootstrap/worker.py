@@ -66,10 +66,26 @@ class TaskRunner:
 
     async def run(self, run: QueuedTask) -> None:
         """以完整的异常隔离执行一个排队任务（CR-TASK-09）。"""
-        if run.submission is not None:
-            key: _TASK_KEY = (run.submission.identity.task_id, run.submission.identity.generation)
+        submission = run.submission
+        if submission is not None:
+            key: _TASK_KEY = (submission.identity.task_id, submission.identity.generation)
         elif run.receipt is not None:
             key = (run.receipt.task_id, run.receipt.generation)
+            submission = run.receipt.to_submission()
+            if submission is None:
+                self._in_flight.add(key)
+                try:
+                    await self._finish_unrenewable(run.receipt)
+                finally:
+                    self._in_flight.discard(key)
+                return
+            if run.receipt.status == ReceiptStatus.COMPLETED:
+                self._in_flight.add(key)
+                try:
+                    await self._replay_result(run.receipt, submission)
+                finally:
+                    self._in_flight.discard(key)
+                return
         else:  # 不可达：QueuedTask 校验恰好有一个来源
             return
         self._in_flight.add(key)
@@ -81,10 +97,6 @@ class TaskRunner:
                 # 更旧 generation 或已推进（CR-REG-41 generation 条件）。
                 LOGGER.info("receipt %s gen %d no longer ACCEPTED; skip run", *key)
                 return
-            if run.submission is None:
-                await self._finish_unrenewable(run.receipt)  # type: ignore[arg-type]
-                return
-            submission = run.submission
             exec_task = asyncio.create_task(self.executor.execute(submission))
             heartbeat_task = asyncio.create_task(
                 self._heartbeat_loop(submission.identity, exec_task, stop)
@@ -183,11 +195,30 @@ class TaskRunner:
                 return
 
     async def _finish_unrenewable(self, receipt: UnfinishedReceipt) -> None:
-        """缺少持久化 lease/boundary 的恢复运行（migration 0001）：
-        推进到可重试的终态，使 Go 以新 lease 重新分发新的 generation
-        （5.2.2 "executable or retryable state"）。"""
+        """回执无法重建可调用身份时的显式降级（P5.9 GAP-1）。
+
+        仅两种合法原因：
+        (a) 六列缺失（迁移前老回执）→ LEASE_CREDENTIALS_ABSENT；
+        (b) deadline_at 已过 → DEADLINE_EXCEEDED。
+        两者都以 WARN 带原因码记录，绝不静默。
+        """
+        if receipt.deadline_at is not None and receipt.deadline_at <= self.clock.now():
+            LOGGER.warning(
+                "recovered task %s gen %d cannot resume: DEADLINE_EXCEEDED at restart",
+                receipt.task_id,
+                receipt.generation,
+            )
+            await self._finish(
+                (receipt.task_id, receipt.generation),
+                ReceiptStatus.FAILED,
+                "DEADLINE_EXCEEDED",
+                "task exceeded its deadline_at at restart",
+                CallbackState.NOT_SENT,
+            )
+            return
         LOGGER.warning(
-            "recovered task %s gen %d cannot renew: lease token is not persisted; needs re-dispatch",
+            "recovered task %s gen %d cannot renew: lease credentials absent"
+            " (LEASE_CREDENTIALS_ABSENT); needs re-dispatch",
             receipt.task_id,
             receipt.generation,
         )
@@ -195,9 +226,45 @@ class TaskRunner:
             (receipt.task_id, receipt.generation),
             ReceiptStatus.FAILED,
             ErrorCode.LEASE_LOST.value,
-            "lease token not persisted after restart; task needs re-dispatch",
+            "lease credentials absent after restart; task needs re-dispatch",
             CallbackState.NOT_SENT,
         )
+
+    async def _replay_result(
+        self, receipt: UnfinishedReceipt, submission: TaskSubmission
+    ) -> None:
+        """COMPLETED + NOT_SENT 的结果回调重放（P5.9 GAP-1）。
+
+        仅在 token/边界齐备（to_submission 成功）时进入；拒绝或异常都不改变
+        NOT_SENT，下一轮扫描继续重试（CR-REG-47）。
+        """
+        try:
+            ack = await self.gateway.report_result(submission.identity)
+        except Exception:
+            LOGGER.exception(
+                "result replay failed for task %s gen %d; stays NOT_SENT",
+                receipt.task_id,
+                receipt.generation,
+            )
+            return
+        if ack.accepted:
+            await self.store.mark_callback_state(
+                receipt.task_id,
+                receipt.generation,
+                CallbackState.SENT,
+                updated_at=self.clock.now(),
+            )
+            LOGGER.info(
+                "replayed result callback for task %s gen %d",
+                receipt.task_id,
+                receipt.generation,
+            )
+        else:
+            LOGGER.warning(
+                "result replay rejected for task %s gen %d; stays NOT_SENT",
+                receipt.task_id,
+                receipt.generation,
+            )
 
     async def _finish(
         self,

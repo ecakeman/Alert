@@ -42,6 +42,8 @@ type Config struct {
 	AgentGRPCTarget     string
 	ArtifactStorageRoot string
 	ReconcileInterval   time.Duration
+	TaskLease           time.Duration
+	TaskMaxAttempts     int
 }
 
 type LoadError struct {
@@ -102,6 +104,7 @@ func Load(getenv func(string) string) (Config, error) {
 		{"DB_HEALTHCHECK_PERIOD", 30 * time.Second, &cfg.DBHealthcheckPeriod},
 		{"UPSTREAM_TIMEOUT", 3 * time.Second, &cfg.UpstreamTimeout},
 		{"TASK_RECONCILE_INTERVAL", 30 * time.Second, &cfg.ReconcileInterval},
+		{"TASK_LEASE", 30 * time.Second, &cfg.TaskLease},
 	}
 	for _, d := range durations {
 		v, err := duration(getenv, d.key, d.fallback)
@@ -109,6 +112,9 @@ func Load(getenv func(string) string) (Config, error) {
 			return Config{}, err
 		}
 		*d.target = v
+	}
+	if cfg.TaskMaxAttempts, perr = intValue(getenv, "TASK_MAX_ATTEMPTS", 3); perr != nil {
+		return Config{}, perr
 	}
 	return cfg, nil
 }
@@ -154,6 +160,18 @@ func int32Value(getenv func(string) string, key string, fallback int32) (int32, 
 		return 0, &LoadError{Var: key, Reason: "must be a non-negative integer"}
 	}
 	return int32(n), nil
+}
+
+func intValue(getenv func(string) string, key string, fallback int) (int, error) {
+	raw := strings.TrimSpace(getenv(key))
+	if raw == "" {
+		return fallback, nil
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil || n < 1 {
+		return 0, &LoadError{Var: key, Reason: "must be a positive integer"}
+	}
+	return n, nil
 }
 
 func splitList(raw string) []string {
