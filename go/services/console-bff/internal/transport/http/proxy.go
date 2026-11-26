@@ -41,9 +41,9 @@ var routes = []routeSpec{
 	{http.MethodPost, []string{"api", "v1", "services", "{service_id}", "events"}, "episode", "/internal"},
 	{http.MethodGet, []string{"api", "v1", "services", "{service_id}", "timeline"}, "legacy", ""},
 	{http.MethodGet, []string{"api", "v1", "episodes", "{episode_id}", "timeline"}, "legacy", ""},
-	{http.MethodGet, []string{"api", "v1", "episodes", "{episode_id}", "artifacts"}, "task", ""},
-	{http.MethodPost, []string{"api", "v1", "episodes", "{episode_id}", "retry-diagnosis"}, "task", ""},
-	{http.MethodPost, []string{"api", "v1", "episodes", "{episode_id}", "retry-archive"}, "task", ""},
+	{http.MethodGet, []string{"api", "v1", "episodes", "{episode_id}", "artifacts"}, "task", "/internal"},
+	{http.MethodPost, []string{"api", "v1", "episodes", "{episode_id}", "retry-diagnosis"}, "task", "/internal"},
+	{http.MethodPost, []string{"api", "v1", "episodes", "{episode_id}", "retry-archive"}, "task", "/internal"},
 }
 
 // ProxyConfig 是 BFF 反代的四个域地址与上游超时。

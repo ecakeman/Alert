@@ -1,6 +1,6 @@
 # P5 阶段进展与验收证据（进行中）
 
-## 1. 已完成 task（7/11）
+## 1. 已完成 task（8/11）
 
 | task | 提交 | 验收要点 |
 |---|---|---|
@@ -10,7 +10,8 @@
 | P5.4 gRPC :9090 | `f013119` | 7 RPC 有响应、旧代次 FailedPrecondition、端口 fail-fast |
 | P5.5 派发消费者 | `c161555` | dispatchable→1 任务；重放 3 次仍 1；agent 不可达→RETRY_WAIT |
 | P5.6 产物/重试 API | `c161555` | 列表/正文 200；retry 202 且 generation=2 |
-| P5.7 reconciler | 本提交 | 5s 周期；过期租约不再永久 RUNNING；事件丢失对账补建 1 |
+| P5.7 reconciler | `679296d` | 5s 周期；过期租约不再永久 RUNNING；事件丢失对账补建 1 |
+| P5.8 BFF 切 task + compose | 本提交 | route16=200、route17=202（generation 递增）；task 容器无宿主端口；compose.p5 config OK |
 
 ## 2. 本轮修复的缺陷
 
@@ -23,9 +24,8 @@
 
 | task | 状态 |
 |---|---|
-| P5.8 BFF 切 task + compose | 未开始 |
 | P5.9 认知栈接线 | 未开始（agent-runtime 尚未容器化，需先补 Dockerfile + compose 服务） |
-| P5.10 单体下线 | 部分（单体 api/worker 已停；BFF legacy/task 路由仍指 8084） |
+| P5.10 单体下线 | 部分（单体 api/worker 已停；BFF legacy 仍指 8084，dashboard/timeline 待 P6 聚合） |
 | P5.11 全链路门槛 | 未开始（依赖 P5.8~P5.10） |
 
 ## 4. 未实证项（需 P5.11）
@@ -37,3 +37,13 @@
 
 - task-orchestrator：HTTP :8084 / gRPC :9090（宿主进程）；episode-svc 容器 healthy。
 - BFF：registry → :8081、monitor → :8083、episode → episode-svc:8082；task/legacy 仍指宿主 :8084（P5.8 切换）。
+
+## 6. P5.9 的硬依赖
+
+`python/agent-runtime` 目前无 Dockerfile，compose 中无 agent-runtime 服务。P5.9 必须新增：
+
+1. `python/agent-runtime/Dockerfile`（Python 3.12 + 依赖安装 + 启动 `alert_agent.bootstrap.app`）；
+2. compose 服务 `agent-runtime`（`HTTP_LISTEN` / `AGENT_GRPC_LISTEN` 不变，`AGENT_GRPC_TARGET=task-orchestrator:9090`）；
+3. 认知执行所需模型凭证（`.env`）。
+
+未完成此三项则 P5.10/P5.11 的全链路无法真实跑通；不得以 stub 代替。
