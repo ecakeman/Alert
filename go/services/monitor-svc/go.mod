@@ -1,4 +1,4 @@
-module github.com/ecakeman/alert/services/service-registry
+module github.com/ecakeman/alert/services/monitor-svc
 
 go 1.27.4
 
@@ -47,4 +47,4 @@ require (
 	google.golang.org/protobuf v1.36.10 // indirect
 )
 
-replace github.com/ecakeman/alert/services/platform => ../../go/platform
+replace github.com/ecakeman/alert/services/platform => ../../platform

@@ -4,8 +4,8 @@ use (
 	./go/contracts
 	./go/platform
 	./services/system-core
-	./services/console-bff
-	./services/service-registry
-	./services/monitor-svc
-	./services/episode-svc
+	./go/services/console-bff
+	./go/services/service-registry
+	./go/services/monitor-svc
+	./go/services/episode-svc
 )
