@@ -11,12 +11,15 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/ecakeman/alert/services/episode-svc/internal/config"
+	episodeconsumer "github.com/ecakeman/alert/services/episode-svc/internal/application/consumer"
 	episodeapp "github.com/ecakeman/alert/services/episode-svc/internal/application/episode"
 	"github.com/ecakeman/alert/services/episode-svc/internal/infrastructure/clock"
 	"github.com/ecakeman/alert/services/episode-svc/internal/infrastructure/idgen"
 	"github.com/ecakeman/alert/services/episode-svc/internal/infrastructure/monitorclient"
+	"github.com/ecakeman/alert/services/episode-svc/internal/infrastructure/outboxsender"
 	"github.com/ecakeman/alert/services/episode-svc/internal/infrastructure/registryclient"
 	"github.com/ecakeman/alert/services/episode-svc/internal/infrastructure/taskclient"
 	episodepostgres "github.com/ecakeman/alert/services/episode-svc/internal/infrastructure/persistence/postgres"
@@ -25,7 +28,9 @@ import (
 	"github.com/ecakeman/alert/services/episode-svc/migrations"
 	"github.com/ecakeman/alert/services/platform/db"
 	"github.com/ecakeman/alert/services/platform/httpx"
+	"github.com/ecakeman/alert/services/platform/messaging"
 	platformmigrate "github.com/ecakeman/alert/services/platform/migrate"
+	platformoutbox "github.com/ecakeman/alert/services/platform/outbox"
 	"github.com/gin-gonic/gin"
 )
 
@@ -100,6 +105,49 @@ func main() {
 		IDs:           idgen.Generator{},
 	})
 
+	if cfg.KafkaBrokers != "" {
+		brokers := splitBrokers(cfg.KafkaBrokers)
+		sender, err := messaging.NewSender(messaging.SenderConfig{Brokers: brokers, Topic: cfg.KafkaPublishTopic})
+		if err != nil {
+			log.Printf("kafka sender: %v", err)
+			os.Exit(1)
+		}
+		outboxRepo, err := platformoutbox.NewRepo("episode")
+		if err != nil {
+			log.Printf("outbox repo: %v", err)
+			os.Exit(1)
+		}
+		publisher, err := platformoutbox.New(platformoutbox.Deps{
+			Store: outboxRepo, Tx: pool.Raw(), Sender: outboxsender.New(sender), Owner: "episode",
+			PublishTopic: cfg.KafkaPublishTopic, ClaimLease: 30 * time.Second, Batch: 16,
+			PollInterval: 500 * time.Millisecond,
+		})
+		if err != nil {
+			log.Printf("outbox publisher: %v", err)
+			os.Exit(1)
+		}
+		go publisher.Run(ctx)
+		defer sender.Close()
+
+		epConsumer := episodeconsumer.New(episodeconsumer.Deps{
+			UOW: uow, Idem: episodepostgres.NewIdempotencyRepo(), Episodes: svc, Clock: clock.System{},
+		})
+		kafkaConsumer, err := messaging.NewConsumer(messaging.ConsumerConfig{
+			Brokers: brokers, Topics: cfg.KafkaConsumeTopics,
+			GroupID: "episode.monitor-events.v1",
+		}, epConsumer.Handle)
+		if err != nil {
+			log.Printf("kafka consumer: %v", err)
+			os.Exit(1)
+		}
+		go func() {
+			if err := kafkaConsumer.Run(ctx); err != nil && ctx.Err() == nil {
+				log.Printf("kafka consumer stopped: %v", err)
+			}
+		}()
+		defer kafkaConsumer.Close()
+	}
+
 	engine := gin.New()
 	engine.Use(gin.Recovery())
 	episodehandler.NewEpisode(svc, clock.System{}).Register(engine)
@@ -145,4 +193,15 @@ func healthcheckAddr(addr string) string {
 		return addr + ":8082"
 	}
 	return addr
+}
+
+func splitBrokers(raw string) []string {
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if v := strings.TrimSpace(p); v != "" {
+			out = append(out, v)
+		}
+	}
+	return out
 }
