@@ -8,4 +8,5 @@ use (
 	./go/services/service-registry
 	./go/services/monitor-svc
 	./go/services/episode-svc
+	./go/services/task-orchestrator
 )

@@ -58,7 +58,11 @@ else
 fi
 
 mods=$(ls -d go/services/*/go.mod 2>/dev/null | wc -l)
-[ "$mods" = "5" ] && ok "module-count(5)" || ng "module-count(5)" "go/services 下 module=$mods"
+if [ -f go/contracts/go.mod ] && [ -f go/platform/go.mod ] && [ "$mods" -ge 5 ]; then
+  ok "module-count(>=5)"
+else
+  ng "module-count(>=5)" "contracts/platform 缺失或 go/services module=$mods"
+fi
 
 link_count=$(find . -type l -not -path './.git/*' \
   -not -path './apps/console/node_modules/*' -not -path './python/agent-runtime/.venv/*' | wc -l)
