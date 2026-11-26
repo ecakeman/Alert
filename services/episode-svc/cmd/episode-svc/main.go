@@ -13,12 +13,19 @@ import (
 	"syscall"
 
 	"github.com/ecakeman/alert/services/episode-svc/internal/config"
+	episodeapp "github.com/ecakeman/alert/services/episode-svc/internal/application/episode"
+	"github.com/ecakeman/alert/services/episode-svc/internal/infrastructure/clock"
+	"github.com/ecakeman/alert/services/episode-svc/internal/infrastructure/idgen"
+	"github.com/ecakeman/alert/services/episode-svc/internal/infrastructure/monitorclient"
+	"github.com/ecakeman/alert/services/episode-svc/internal/infrastructure/registryclient"
 	episodepostgres "github.com/ecakeman/alert/services/episode-svc/internal/infrastructure/persistence/postgres"
 	episodehttp "github.com/ecakeman/alert/services/episode-svc/internal/transport/http"
+	episodehandler "github.com/ecakeman/alert/services/episode-svc/internal/transport/http/handler"
 	"github.com/ecakeman/alert/services/episode-svc/migrations"
 	"github.com/ecakeman/alert/services/platform/db"
 	"github.com/ecakeman/alert/services/platform/httpx"
 	platformmigrate "github.com/ecakeman/alert/services/platform/migrate"
+	"github.com/gin-gonic/gin"
 )
 
 func main() {
@@ -78,8 +85,25 @@ func main() {
 	})
 	health.CheckTimeout = cfg.ReadyzTimeout
 
+	uow := episodepostgres.NewUnitOfWork(pool.Raw())
+	svc := episodeapp.New(episodeapp.Deps{
+		UOW:           uow,
+		Episodes:      episodepostgres.NewEpisodeRepo(),
+		InputVersions: episodepostgres.NewInputVersionRepo(),
+		AppEvents:     episodepostgres.NewAppEventRepo(),
+		Outbox:        episodepostgres.NewOutboxRepo(),
+		Registry:      registryclient.New(cfg.RegistryBaseURL, cfg.UpstreamTimeout),
+		Monitor:       monitorclient.New(cfg.MonitorBaseURL, cfg.UpstreamTimeout),
+		Clock:         clock.System{},
+		IDs:           idgen.Generator{},
+	})
+
+	engine := gin.New()
+	engine.Use(gin.Recovery())
+	episodehandler.NewEpisode(svc, clock.System{}).Register(engine)
+
 	handler := httpx.Chain(
-		episodehttp.New(episodehttp.Deps{Health: health}),
+		episodehttp.New(episodehttp.Deps{Health: health, API: engine}),
 		httpx.Recovery(nil),
 	)
 
