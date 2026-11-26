@@ -46,6 +46,23 @@ func (c *Client) GetActive(ctx context.Context, episodeID string) (*porttask.Act
 	}, nil
 }
 
+type readinessDTO struct {
+	Investigation   bool `json:"investigation"`
+	DiagnosisReport bool `json:"diagnosis_report"`
+	HashesMatch     bool `json:"hashes_match"`
+}
+
+// GetArtifactReadiness 拉取产物就绪度；失败即 DEPENDENCY_UNAVAILABLE（快照不得降级）。
+func (c *Client) GetArtifactReadiness(ctx context.Context, episodeID string) (porttask.ArtifactReadiness, error) {
+	var dto readinessDTO
+	if err := c.http.GetJSON(ctx, "/internal/episodes/"+episodeID+"/artifact-readiness", &dto); err != nil {
+		return porttask.ArtifactReadiness{}, mapErr(err)
+	}
+	return porttask.ArtifactReadiness{
+		Investigation: dto.Investigation, DiagnosisReport: dto.DiagnosisReport, HashesMatch: dto.HashesMatch,
+	}, nil
+}
+
 func mapErr(err error) error {
 	if err == nil {
 		return nil

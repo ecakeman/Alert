@@ -17,7 +17,8 @@ func NewOutboxRepo() portoutbox.OutboxRepo { return outboxRepo{} }
 func (outboxRepo) Append(ctx context.Context, tx portshared.Tx, e contracts.Event, dedupeKey *string) error {
 	_, err := txFrom(tx).Exec(ctx, `
 INSERT INTO episode.outbox_events(event_id,event_type,schema_version,aggregate_type,aggregate_id,payload,dedupe_key,created_at)
-VALUES($1,$2,$3,$4,$5,$6,$7,$8)`,
+VALUES($1,$2,$3,$4,$5,$6,$7,$8)
+ON CONFLICT (dedupe_key) WHERE dedupe_key IS NOT NULL DO NOTHING`,
 		e.EventID, e.EventType, e.SchemaVersion, e.AggregateType, e.AggregateID,
 		e.Payload, dedupeKey, utc(e.OccurredAt))
 	return Translate(err)

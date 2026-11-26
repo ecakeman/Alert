@@ -38,6 +38,12 @@ func (s *Service) TryResolve(ctx context.Context, episodeID string) (bool, []str
 			"episode_id", episodeID, "domain", "task", "reason", err.Error())
 		return false, nil, apperr.DependencyUnavailable("resolve precheck unavailable")
 	}
+	readiness, err := s.deps.Tasks.GetArtifactReadiness(ctx, episodeID)
+	if err != nil {
+		slog.Default().WarnContext(ctx, "resolve precheck failed",
+			"episode_id", episodeID, "domain", "task-readiness", "reason", err.Error())
+		return false, nil, apperr.DependencyUnavailable("resolve precheck unavailable")
+	}
 
 	monitorNormal, appNormal := false, false
 	for _, st := range sources {
@@ -75,8 +81,13 @@ func (s *Service) TryResolve(ctx context.Context, episodeID string) (bool, []str
 			return nil
 		}
 		resolved = true
-		return s.appendEvent(ctx, tx, contracts.EventEpisodeStatusChanged, "episode", episodeID,
-			map[string]string{"episode_id": episodeID, "status": "RESOLVED"})
+		if err := s.appendEvent(ctx, tx, contracts.EventEpisodeStatusChanged, "episode", episodeID,
+			map[string]string{"episode_id": episodeID, "status": "RESOLVED"}); err != nil {
+			return err
+		}
+		updated := ep
+		updated.Status = "RESOLVED"
+		return s.appendDispatchable(ctx, tx, updated, "EPISODE_RESOLVED", readiness)
 	})
 	if err != nil {
 		return false, missing, err

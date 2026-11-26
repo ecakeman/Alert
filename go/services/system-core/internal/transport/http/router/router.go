@@ -60,6 +60,7 @@ func New(deps Deps) *gin.Engine {
 	// P4 过渡：供 episode-svc 事务外取数的只读域间端点；P5 task 域接管后删除。
 	internal := r.Group("/internal")
 	internal.GET("/episodes/:episode_id/active-task", deps.Episode.ActiveTask)
+	internal.GET("/episodes/:episode_id/artifact-readiness", deps.Episode.ArtifactReadiness)
 
 	r.NoRoute(func(c *gin.Context) {
 		response.Error(c, http.StatusNotFound, apperr.CodeNotFound, "resource not found")

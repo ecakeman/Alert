@@ -88,8 +88,11 @@ func (s *Service) OpenOrReuse(ctx context.Context, serviceID string) (portepisod
 			return err
 		}
 		created = true
-		return s.appendEvent(ctx, tx, contracts.EventEpisodeStatusChanged, "episode", ep.EpisodeID,
-			map[string]string{"episode_id": ep.EpisodeID, "status": "ACTIVE"})
+		if err := s.appendEvent(ctx, tx, contracts.EventEpisodeStatusChanged, "episode", ep.EpisodeID,
+			map[string]string{"episode_id": ep.EpisodeID, "status": "ACTIVE"}); err != nil {
+			return err
+		}
+		return s.appendDispatchable(ctx, tx, ep, "INPUT_APPENDED", porttask.ArtifactReadiness{})
 	})
 	return ep, created, err
 }
@@ -102,9 +105,13 @@ func (s *Service) AppendAppEvent(ctx context.Context, serviceID string, in AppEv
 	if _, err := s.deps.Registry.Get(ctx, serviceID); err != nil {
 		return AppendEventResult{}, err
 	}
+	readiness, err := s.preDispatchReadiness(ctx, serviceID)
+	if err != nil {
+		return AppendEventResult{}, err
+	}
 
 	var res AppendEventResult
-	err := s.deps.UOW.WithinTx(ctx, func(ctx context.Context, tx portshared.Tx) error {
+	err = s.deps.UOW.WithinTx(ctx, func(ctx context.Context, tx portshared.Tx) error {
 		existing, err := s.deps.AppEvents.GetByIdentity(ctx, tx, serviceID, in.ProducerID, in.EventID)
 		var existingPtr *portepisode.AppEvent
 		if err == nil {
@@ -137,8 +144,18 @@ func (s *Service) AppendAppEvent(ctx context.Context, serviceID string, in AppEv
 			return err
 		}
 		res = AppendEventResult{Event: stored, Appended: true}
-		return s.appendEvent(ctx, tx, contracts.EventEpisodeInputAppended, "service", serviceID,
-			map[string]string{"service_id": serviceID, "event_id": in.EventID})
+		if err := s.appendEvent(ctx, tx, contracts.EventEpisodeInputAppended, "service", serviceID,
+			map[string]string{"service_id": serviceID, "event_id": in.EventID}); err != nil {
+			return err
+		}
+		active, aerr := s.deps.Episodes.GetActiveByService(ctx, tx, serviceID)
+		if aerr != nil {
+			if isAppCode(aerr, apperr.CodeNotFound) {
+				return nil
+			}
+			return aerr
+		}
+		return s.appendDispatchable(ctx, tx, active, "INPUT_APPENDED", readiness)
 	})
 	return res, err
 }
@@ -155,6 +172,11 @@ func (s *Service) AppendInputVersion(ctx context.Context, episodeID string) (boo
 		return false, err
 	}
 
+	readiness, err := s.deps.Tasks.GetArtifactReadiness(ctx, episodeID)
+	if err != nil {
+		slog.Default().WarnContext(ctx, "artifact readiness failed", "episode_id", episodeID, "reason", err.Error())
+		return false, apperr.DependencyUnavailable("task unavailable")
+	}
 	latest, err := s.deps.Monitor.LatestSeqByService(ctx, current.ServiceID)
 	if err != nil {
 		slog.Default().WarnContext(ctx, "monitor latest-seq failed", "service_id", current.ServiceID, "reason", err.Error())
@@ -202,8 +224,15 @@ func (s *Service) AppendInputVersion(ctx context.Context, episodeID string) (boo
 			return err
 		}
 		appended = true
-		return s.appendEvent(ctx, tx, contracts.EventEpisodeInputAppended, "episode", episodeID,
-			map[string]any{"episode_id": episodeID, "input_version": newVersion})
+		if err := s.appendEvent(ctx, tx, contracts.EventEpisodeInputAppended, "episode", episodeID,
+			map[string]any{"episode_id": episodeID, "input_version": newVersion}); err != nil {
+			return err
+		}
+		updated := ep
+		updated.InputVersion = newVersion
+		updated.InputHash = hash
+		updated.MonitorWatermark = latest
+		return s.appendDispatchable(ctx, tx, updated, "INPUT_APPENDED", readiness)
 	})
 	return appended, err
 }

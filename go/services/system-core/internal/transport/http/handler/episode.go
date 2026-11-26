@@ -35,6 +35,20 @@ func (h *Episode) ActiveTask(c *gin.Context) {
 	})
 }
 
+// ArtifactReadiness：GET /internal/episodes/:episode_id/artifact-readiness
+// P4 过渡：episode-svc 派发快照的只读产物就绪度端点（P5 后迁至 task-orchestrator）。
+func (h *Episode) ArtifactReadiness(c *gin.Context) {
+	r, err := h.uc.ArtifactReadinessFor(c.Request.Context(), c.Param("episode_id"))
+	if err != nil {
+		code := apperr.Code(err)
+		c.JSON(apperr.HTTPStatus(code), map[string]string{"code": code, "message": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"investigation": r.Investigation, "diagnosis_report": r.DiagnosisReport, "hashes_match": r.HashesMatch,
+	})
+}
+
 // Get：GET /episodes/:episode_id
 func (h *Episode) Get(c *gin.Context) {
 	view, err := h.uc.Get(c.Request.Context(), c.Param("episode_id"))

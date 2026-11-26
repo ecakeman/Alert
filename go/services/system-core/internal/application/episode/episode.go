@@ -134,6 +134,17 @@ func (s *Service) ActiveTask(ctx context.Context, episodeID string) (porttask.Ag
 	return out, err
 }
 
+// ArtifactReadinessFor 是 P4 过渡期的域间只读端点（P5 task 域接管后迁走）。
+func (s *Service) ArtifactReadinessFor(ctx context.Context, episodeID string) (contracts.ArtifactReadiness, error) {
+	var out contracts.ArtifactReadiness
+	err := s.deps.UOW.WithinTx(ctx, func(ctx context.Context, tx portshared.Tx) error {
+		var err error
+		out, err = s.artifactReadiness(ctx, tx, episodeID)
+		return err
+	})
+	return out, err
+}
+
 // AppendAppEvent：同键同内容幂等、同键不同内容 409、新键追加（INV-05）。
 func (s *Service) AppendAppEvent(ctx context.Context, serviceID string, in AppEventInput) (AppendEventResult, error) {
 	if in.ProducerID == "" || in.EventID == "" {
