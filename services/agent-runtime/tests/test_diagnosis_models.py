@@ -1,7 +1,7 @@
 """诊断领域模型测试（CR-DIAG-01~06，7.2.6）：判别联合、宽松预处理与预算终止。"""
 
 import pytest
-from pydantic import TypeAdapter, ValidationError
+from pydantic import ValidationError, TypeAdapter
 
 from alert_agent.application.diagnosis.routing import budget_exhausted
 from alert_agent.domain.diagnosis.actions import (

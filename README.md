@@ -91,11 +91,6 @@ cd services/agent-runtime && .venv/bin/ruff check src eval tests && .venv/bin/py
 
 离线检索评测（可选）：`services/agent-runtime/eval/run.py`，用法见该目录说明。
 
-## 已知限制
-
-1. 仅面向本地 / 可信内网演示：控制台与认知面未接入终端用户鉴权。
-2. 无 K8s 编排与微服务拆分：Go 为单 module 双进程，Python 为单进程一体栈。
-3. 诊断与向量检索依赖外部 LLM / Embedding 端点；未配置时相关能力显式不可用（配置校验 fail-fast），其余链路可独立运行。
 
 ## 相关文档
 
