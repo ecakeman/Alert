@@ -93,6 +93,35 @@ WHERE episode_id=$1 AND status='ACTIVE' AND updated_at=$2`,
 	return tag.RowsAffected() > 0, nil
 }
 
+func (episodeRepo) Count(ctx context.Context, tx portshared.Tx, f portepisode.EpisodeFilter) (int, error) {
+	var total int
+	err := txFrom(tx).QueryRow(ctx, `
+SELECT count(*) FROM episode.episodes
+WHERE ($1 = '' OR service_id::text = $1)
+  AND ($2 = '' OR status = $2)`, f.ServiceID, f.Status).Scan(&total)
+	return total, Translate(err)
+}
+
+func (episodeRepo) ListActiveByServices(ctx context.Context, tx portshared.Tx, serviceIDs []string) ([]portepisode.Episode, error) {
+	rows, err := txFrom(tx).Query(ctx, `
+SELECT `+model.EpisodeColumns+` FROM episode.episodes
+WHERE status='ACTIVE' AND service_id::text = ANY($1)
+ORDER BY started_at DESC`, serviceIDs)
+	if err != nil {
+		return nil, Translate(err)
+	}
+	defer rows.Close()
+	var out []portepisode.Episode
+	for rows.Next() {
+		row, err := model.EpisodeRow{}.Scan(rows)
+		if err != nil {
+			return nil, Translate(err)
+		}
+		out = append(out, row.ToApp())
+	}
+	return out, Translate(rows.Err())
+}
+
 func (episodeRepo) TouchInputVersion(ctx context.Context, tx portshared.Tx, episodeID string, inputVersion int64, hash string, monitorWatermark, appWatermark int64) error {
 	_, err := txFrom(tx).Exec(ctx, `
 UPDATE episode.episodes SET

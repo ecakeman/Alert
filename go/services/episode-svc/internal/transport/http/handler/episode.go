@@ -24,10 +24,17 @@ func NewEpisode(svc *episodeapp.Service, clock interface{ Now() time.Time }) *Ep
 // Register 注册 episode 域 API。
 func (h *Episode) Register(router *gin.Engine) {
 	g := router.Group("/internal")
+	// P4.6：11 条域端点（3 条写路径 + 8 条查询/入口）。
 	g.POST("/services/:service_id/episodes/open", h.openOrReuse)
 	g.POST("/services/:service_id/app-events", h.appendAppEvent)
+	g.GET("/services/:service_id/app-events", h.appEvents)
+	g.POST("/services/:service_id/events", h.appendAppEvent)
 	g.POST("/episodes/:episode_id/input-versions", h.appendInputVersion)
 	g.POST("/episodes/:episode_id/resolve", h.resolve)
+	g.GET("/episodes", h.listEpisodes)
+	g.GET("/episodes/:episode_id", h.getEpisode)
+	g.GET("/episodes/:episode_id/timeline-parts", h.timelineParts)
+	g.GET("/stats", h.stats)
 }
 
 func (h *Episode) openOrReuse(c *gin.Context) {
