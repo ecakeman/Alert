@@ -106,6 +106,119 @@ write_state() {
   mv "$tmp" "$STATE_FILE"
 }
 
+if [ "$STAGE" = "P5" ]; then
+  if [ -f "$STATE_FILE" ] && grep -q '"stage":"P5"' "$STATE_FILE" && grep -q '"phase":"complete"' "$STATE_FILE"; then
+    echo "P5 搬迁已完成（读状态文件，no-op）"
+    exit 0
+  fi
+  ensure_db
+
+  for t in agent_tasks service_execution_ownership episode_artifact_refs episode_fault_document_refs; do
+    if [ "$(query "SELECT to_regclass('task.${t}') IS NOT NULL")" != "t" ]; then
+      echo "task.${t} 不存在：请先执行 task-orchestrator -migrate（P5.1）"
+      exit 5
+    fi
+    rows="$(query "SELECT count(*) FROM task.${t}")"
+    if [ "$rows" != "0" ]; then
+      echo "task.${t} 已含 $rows 行，拒绝覆盖"
+      exit 5
+    fi
+  done
+
+  SNAPSHOT_FILE="$(snapshot P5)"
+  echo "S0 预检完成：$SNAPSHOT_FILE"
+
+  before_tasks="$(query "SELECT count(*) FROM system.agent_tasks")"
+  before_ownership="$(query "SELECT count(*) FROM system.service_execution_ownership")"
+  before_artifacts="$(query "SELECT count(*) FROM system.episode_artifact_refs")"
+  before_docs="$(query "SELECT count(*) FROM system.episode_fault_document_refs")"
+
+  MIGRATE_SQL="$(cat <<'SQL'
+-- 同域 FK 先删（SET SCHEMA 要求引用表同 schema）
+ALTER TABLE system.service_execution_ownership DROP CONSTRAINT IF EXISTS service_execution_ownership_task_id_fkey;
+ALTER TABLE system.episode_artifact_refs DROP CONSTRAINT IF EXISTS episode_artifact_refs_task_id_fkey;
+ALTER TABLE system.episode_fault_document_refs DROP CONSTRAINT IF EXISTS episode_fault_document_refs_task_id_fkey;
+
+-- 目标域为已迁移的空表；删除以让 SET SCHEMA 接管（索引随表迁移）
+DROP TABLE IF EXISTS task.episode_fault_document_refs CASCADE;
+DROP TABLE IF EXISTS task.episode_artifact_refs CASCADE;
+DROP TABLE IF EXISTS task.service_execution_ownership CASCADE;
+DROP TABLE IF EXISTS task.agent_tasks CASCADE;
+
+ALTER TABLE system.agent_tasks SET SCHEMA task;
+ALTER TABLE system.service_execution_ownership SET SCHEMA task;
+ALTER TABLE system.episode_artifact_refs SET SCHEMA task;
+ALTER TABLE system.episode_fault_document_refs SET SCHEMA task;
+
+ALTER TABLE task.service_execution_ownership
+  ADD CONSTRAINT service_execution_ownership_task_id_fkey
+  FOREIGN KEY (task_id) REFERENCES task.agent_tasks(task_id) ON DELETE RESTRICT;
+ALTER TABLE task.episode_artifact_refs
+  ADD CONSTRAINT episode_artifact_refs_task_id_fkey
+  FOREIGN KEY (task_id) REFERENCES task.agent_tasks(task_id) ON DELETE RESTRICT;
+ALTER TABLE task.episode_fault_document_refs
+  ADD CONSTRAINT episode_fault_document_refs_task_id_fkey
+  FOREIGN KEY (task_id) REFERENCES task.agent_tasks(task_id) ON DELETE RESTRICT;
+SQL
+)"
+
+  if [ "$DRY_RUN" = true ]; then
+    printf '%s\n' "$MIGRATE_SQL"
+    echo "[dry-run] P5 搬迁 SQL 打印完毕（未执行）"
+    exit 0
+  fi
+  if [ "$CONFIRM" != true ]; then
+    echo "拒绝执行危险动作（缺少 --confirm）"
+    exit 4
+  fi
+
+  printf '%s\n' "$MIGRATE_SQL" | psql_exec --single-transaction >/dev/null
+
+  psql_exec >/dev/null <<'SQL'
+GRANT ALL ON task.agent_tasks TO alert_task;
+GRANT ALL ON task.service_execution_ownership TO alert_task;
+GRANT ALL ON task.episode_artifact_refs TO alert_task;
+GRANT ALL ON task.episode_fault_document_refs TO alert_task;
+SQL
+
+  after_tasks="$(query "SELECT count(*) FROM task.agent_tasks")"
+  after_ownership="$(query "SELECT count(*) FROM task.service_execution_ownership")"
+  after_artifacts="$(query "SELECT count(*) FROM task.episode_artifact_refs")"
+  after_docs="$(query "SELECT count(*) FROM task.episode_fault_document_refs")"
+  if [ "$before_tasks" != "$after_tasks" ] || [ "$before_ownership" != "$after_ownership" ] \
+     || [ "$before_artifacts" != "$after_artifacts" ] || [ "$before_docs" != "$after_docs" ]; then
+    echo "行数对账失败: tasks $before_tasks->$after_tasks, ownership $before_ownership->$after_ownership, artifacts $before_artifacts->$after_artifacts, docs $before_docs->$after_docs"
+    exit 6
+  fi
+  for t in agent_tasks service_execution_ownership episode_artifact_refs episode_fault_document_refs; do
+    if [ "$(query "SELECT to_regclass('system.${t}') IS NOT NULL")" = "t" ]; then
+      echo "system.${t} 仍存在，搬迁未完成"
+      exit 7
+    fi
+  done
+
+  pk="$(query "SELECT string_agg(a.attname, ',' ORDER BY a.attnum) FROM pg_index i JOIN pg_attribute a ON a.attrelid=i.indrelid AND a.attnum=ANY(i.indkey) WHERE i.indrelid='task.service_execution_ownership'::regclass AND i.indisprimary")"
+  if [ "$pk" != "service_id" ]; then
+    echo "ownership 主键校验失败: $pk"
+    exit 8
+  fi
+  idx="$(query "SELECT count(*) FROM pg_indexes WHERE schemaname='task' AND indexname IN ('episode_artifact_refs_version','episode_fault_document_refs_version')")"
+  if [ "$idx" != "2" ]; then
+    echo "产物版本唯一索引校验失败: $idx/2"
+    exit 9
+  fi
+  fk_cross="$(query "SELECT count(*) FROM pg_constraint WHERE contype='f' AND connamespace='task'::regnamespace AND confrelid::regclass::text NOT LIKE 'task.%'")"
+  if [ "$fk_cross" != "0" ]; then
+    echo "跨 schema FK 残留: $fk_cross"
+    exit 10
+  fi
+
+  write_state P5 complete "$(basename "$SNAPSHOT_FILE")"
+  echo "P5 搬迁完成：tasks=$after_tasks ownership=$after_ownership artifacts=$after_artifacts docs=$after_docs"
+  echo "状态文件：$STATE_FILE（stage=P5 phase=complete）"
+  exit 0
+fi
+
 if [ "$STAGE" = "P4" ]; then
   if [ -f "$STATE_FILE" ] && grep -q '"stage":"P4"' "$STATE_FILE" && grep -q '"phase":"complete"' "$STATE_FILE"; then
     echo "P4 搬迁已完成（读状态文件，no-op）"
