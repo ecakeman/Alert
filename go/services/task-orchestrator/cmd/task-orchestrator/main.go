@@ -6,21 +6,29 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/gin-gonic/gin"
+	googlegrpc "google.golang.org/grpc"
 
 	"github.com/ecakeman/alert/services/platform/db"
 	"github.com/ecakeman/alert/services/platform/httpx"
 	platformmigrate "github.com/ecakeman/alert/services/platform/migrate"
 
 	"github.com/ecakeman/alert/services/task-orchestrator/internal/config"
+	taskapp "github.com/ecakeman/alert/services/task-orchestrator/internal/application/task"
+	"github.com/ecakeman/alert/services/task-orchestrator/internal/infrastructure/clock"
+	"github.com/ecakeman/alert/services/task-orchestrator/internal/infrastructure/episodeclient"
+	"github.com/ecakeman/alert/services/task-orchestrator/internal/infrastructure/idgen"
 	taskpostgres "github.com/ecakeman/alert/services/task-orchestrator/internal/infrastructure/persistence/postgres"
 	taskhttp "github.com/ecakeman/alert/services/task-orchestrator/internal/transport/http"
+	transportgrpc "github.com/ecakeman/alert/services/task-orchestrator/internal/transport/grpc"
 	"github.com/ecakeman/alert/services/task-orchestrator/migrations"
 )
 
@@ -81,6 +89,28 @@ func main() {
 	})
 	health.CheckTimeout = cfg.ReadyzTimeout
 
+	uow := taskpostgres.NewUnitOfWork(pool.Raw())
+	svc := taskapp.New(taskapp.Deps{
+		UOW: uow, Tasks: taskpostgres.NewTaskRepo(), Ownership: taskpostgres.NewOwnershipRepo(),
+		Artifacts: taskpostgres.NewArtifactRepo(), Outbox: taskpostgres.NewOutboxRepo(),
+		Idem: taskpostgres.NewIdempotencyRepo(), Clock: clock.System{}, IDs: idgen.Generator{},
+		Lease: 30 * time.Second, MaxAttempts: 3, RetryDelay: 5 * time.Second, Deadline: 5 * time.Minute,
+		Dispatch: episodeclient.New(cfg.EpisodeBaseURL, cfg.UpstreamTimeout),
+	})
+
+	lis, err := net.Listen("tcp", cfg.GRPCAddr)
+	if err != nil {
+		log.Printf("grpc listen: %v", err)
+		os.Exit(1)
+	}
+	grpcServer := googlegrpc.NewServer(googlegrpc.UnaryInterceptor(transportgrpc.UnaryInterceptor()))
+	transportgrpc.Register(grpcServer, transportgrpc.NewServer(svc))
+	go func() {
+		if err := grpcServer.Serve(lis); err != nil && ctx.Err() == nil {
+			log.Printf("grpc serve: %v", err)
+		}
+	}()
+
 	engine := gin.New()
 	engine.Use(gin.Recovery())
 
@@ -112,6 +142,7 @@ func main() {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.HTTPShutdownTimeout)
 		defer cancel()
 		_ = server.Shutdown(shutdownCtx)
+		grpcServer.GracefulStop()
 	}
 }
 
