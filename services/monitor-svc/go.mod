@@ -47,4 +47,4 @@ require (
 	google.golang.org/protobuf v1.36.10 // indirect
 )
 
-replace github.com/ecakeman/alert/services/platform => ../platform
+replace github.com/ecakeman/alert/services/platform => ../../go/platform

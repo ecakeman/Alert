@@ -47,5 +47,5 @@ require (
 
 replace (
 	github.com/ecakeman/alert/services/contracts => ../../go/contracts
-	github.com/ecakeman/alert/services/platform => ../platform
+	github.com/ecakeman/alert/services/platform => ../../go/platform
 )
