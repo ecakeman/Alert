@@ -1,7 +1,7 @@
 go 1.27.4
 
 use (
-	./services/contracts
+	./go/contracts
 	./services/platform
 	./services/system-core
 	./services/console-bff
