@@ -98,7 +98,7 @@ func (s *Service) dispatch(ctx context.Context, taskID string, generation int64,
 		status := string(domain.TaskDispatched)
 		updated, err := s.deps.Tasks.UpdateCAS(ctx, tx, taskID, generation,
 			[]string{string(domain.TaskPending), string(domain.TaskRetryWait), string(domain.TaskDispatched)},
-			porttask.TaskPatch{Status: &status, LeaseUntil: &leaseUntil})
+			porttask.TaskPatch{Status: &status, LeaseUntil: &leaseUntil, AllowExpiredLease: true})
 		if err != nil {
 			return err
 		}
@@ -141,7 +141,7 @@ func (s *Service) scheduleDispatchRetry(ctx context.Context, task porttask.Agent
 			status = string(domain.TaskFailed)
 		}
 		nextRetry := s.deps.Clock.Now().Add(s.deps.RetryDelay)
-		patch := porttask.TaskPatch{Status: &status, Attempt: &attempt, NextRetryAt: &nextRetry}
+		patch := porttask.TaskPatch{Status: &status, Attempt: &attempt, NextRetryAt: &nextRetry, AllowExpiredLease: true}
 		updated, err := s.deps.Tasks.UpdateCAS(ctx, tx, task.TaskID, task.Generation,
 			[]string{string(domain.TaskDispatched)}, patch)
 		if err != nil {

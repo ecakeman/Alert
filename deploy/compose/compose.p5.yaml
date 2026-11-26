@@ -131,6 +131,8 @@ services:
       context: ../../go
       dockerfile: services/task-orchestrator/Dockerfile
     container_name: alert-task-orchestrator
+    ports:
+      - "9090:9090"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     environment:

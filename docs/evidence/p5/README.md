@@ -66,3 +66,20 @@
 3. 镜像构建：容器网络无法访问 PyPI/镜像源（`No matching distribution found for uv`），容器化交付物就绪但未产出镜像；当前用宿主 venv 做真实运行验证。
 
 在 2 修复前，P5.9 的“回调成功”与 P5.10/P5.11 全链路不能标记通过。
+
+## 9. P5.9 复验记录（2026-11-26）
+
+已完成的修复：
+1. 认知侧 `TaskRunner` 属性名（`self._store/_clock/_executor`）。
+2. task 侧派发/重试 CAS 增加 `AllowExpiredLease`，允许过期租约重新派发。
+3. 认知栈以宿主 venv 真实运行（50052/18080），task-orchestrator 临时映射 `9090` 供宿主回调。
+
+已经验证：
+- dispatchable 事件 → task-orchestrator 建任务（PENDING）→ reconcile 派发（DISPATCHED）→ Submit 被认知栈受理（agent 收到任务）。
+- 宿主 `:9090` 可达（映射生效）；认知栈 `:50052` 监听正常。
+
+仍未闭环：
+- DISPATCHED 任务在 `Ownership.Acquire` 处被 skip（`CanAcquire` 规则本身允许同任务/过期租约），回调 `ReportTaskStarted` 未成功；需检查 `ownership_repo.Acquire` 的 SQL 条件（generation/lease 判定）。
+- 因此 P5.9 的“回调成功 + 产物”与 P5.10/P5.11 仍未标记通过。
+
+注：临时 `9090` 宿主映射仅用于认知栈未容器化期间的回调验证，认知栈容器化后应移除（P5.8 的“无宿主端口”目标不变）。
