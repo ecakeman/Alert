@@ -65,7 +65,7 @@ func Load(getenv func(string) string) (Config, error) {
 		EpisodeBaseURL:      value(getenv, "EPISODE_BASE_URL", "http://127.0.0.1:8082"),
 		RegistryBaseURL:     value(getenv, "REGISTRY_BASE_URL", "http://127.0.0.1:8081"),
 		MonitorBaseURL:      value(getenv, "MONITOR_BASE_URL", "http://127.0.0.1:8083"),
-		AgentGRPCTarget:     value(getenv, "AGENT_GRPC_TARGET", "127.0.0.1:9090"),
+		AgentGRPCTarget:     value(getenv, "AGENT_GRPC_TARGET", "127.0.0.1:50052"),
 		ArtifactStorageRoot: value(getenv, "ARTIFACT_STORAGE_ROOT", "/data/artifacts"),
 	}
 	if cfg.DatabaseURL == "" {

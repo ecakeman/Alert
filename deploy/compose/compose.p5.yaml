@@ -168,6 +168,31 @@ services:
           memory: 256M
     restart: unless-stopped
 
+  agent-runtime:
+    build:
+      context: ../../python/agent-runtime
+      dockerfile: Dockerfile
+    container_name: alert-agent-runtime
+    env_file:
+      - ../../python/agent-runtime/.env
+    environment:
+      DATABASE_URL_COGNITIVE: "postgres://alert:alert@postgres:5432/alert?sslmode=disable"
+      AGENT_GRPC_TARGET: "task-orchestrator:9090"
+      MCP_ENDPOINT: "http://host.docker.internal:9900"
+      KNOWLEDGE_A2A_ENDPOINT: "http://host.docker.internal:9901/a2a"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      task-orchestrator:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket;socket.create_connection(('127.0.0.1',50052),3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+    restart: unless-stopped
+
   console-bff:
     # P5：episode/task 路由直连域服务；dashboard/timeline 暂留 legacy 单体。
     build:
