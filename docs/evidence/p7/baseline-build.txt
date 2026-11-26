@@ -1,0 +1,35 @@
+# P7 搬迁前构建基线（MS-P4.4A / S0）
+generated_at=2026-11-26T02:28:23Z
+baseline_commit=74cbd6eff08d104db709e807ece10240b4b9bcec
+worktree_entries=7
+
+## A 类构建（workspace，GOWORK 默认指向根 go.work）
+A PASS services/contracts
+A PASS services/platform
+A PASS services/system-core
+A PASS services/console-bff
+A PASS services/service-registry
+A PASS services/monitor-svc
+A PASS services/episode-svc
+
+## B 类构建（GOWORK=off）
+B PASS services/contracts
+B PASS services/platform
+B PASS services/system-core
+B PASS services/console-bff
+B PASS services/service-registry
+B PASS services/monitor-svc
+B PASS services/episode-svc
+
+## compose config（4 份）
+compose PASS compose.yaml bytes=5327
+compose PASS compose.p1.yaml bytes=5327
+compose PASS compose.p2.yaml bytes=5327
+compose PASS compose.p3.yaml bytes=5327
+
+## 计数
+git_ls_files_total=767
+go_files=369
+py_files=160
+import_alert_services=642
+import_alias_lines=645
