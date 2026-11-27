@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# P6 阶段门禁（MS-P6.1 起）：直通路由逐字节 diff、D-24 结构断言、入口唯一。
-# 用法：bash scripts/verify-p6.sh [--only=direct|all]  （目前两者等价，均只跑 direct 段）
-# 退出码：0 全 PASS / 1 有 FAIL / 2 环境不满足（无 curl 或 BFF 不健康）
+# P6 阶段门禁：直通/错误路由整字节 diff、D-24 结构断言、入口唯一、bridge、docs、冷启动。
+# 用法：bash scripts/verify-p6.sh --only=direct|bridge|docs|all|coldstart
+#   all = docs + bridge + direct（不含破坏性的 coldstart；coldstart 需显式 --only=coldstart）
+# 退出码：0 全 PASS / 1 有 FAIL / 2 环境不满足（无 curl/jq 或 BFF 不健康）
 set -uo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 cd "$ROOT"
@@ -15,8 +16,24 @@ for arg in "$@"; do
     --only=all) MODE="all" ;;
     --only=bridge) MODE="bridge" ;;
     --only=docs) MODE="docs" ;;
+    --only=coldstart) MODE="coldstart" ;;
   esac
 done
+
+# all 串行分发（子进程各跑具体段，避免递归）
+if [ "$MODE" = "all" ]; then
+  rc=0
+  for m in docs bridge direct; do
+    echo "########## verify-p6 --only=$m ##########"
+    bash "$0" --only="$m" || rc=1
+  done
+  exit $rc
+fi
+
+# 冷启动（破坏性：down -v 重来）单独入口
+if [ "$MODE" = "coldstart" ]; then
+  exec bash scripts/p6/_coldstart_run.sh
+fi
 
 PASS=0; FAIL=0
 ok() { PASS=$((PASS+1)); echo "PASS $1"; }
@@ -62,10 +79,7 @@ if [ "$MODE" = "bridge" ]; then
   else
     ng "compose_p5_parse" "p5 不可解析"
   fi
-  echo
-  echo "===== SUMMARY ====="
-  echo "PASS=$PASS FAIL=$FAIL"
-  [ "$FAIL" = 0 ] && exit 0 || exit 1
+  echo; echo "===== SUMMARY ====="; echo "PASS=$PASS FAIL=$FAIL"; [ "$FAIL" = 0 ] && exit 0 || exit 1
 fi
 
 hdr "1 直通路由快照"
@@ -82,6 +96,20 @@ for f in 03_service_create 05_service_patch 06_service_delete 07_targets_list 08
   else
     ng "diff $f" "与 P0 基线不一致"
   fi
+done
+
+hdr "2b 错误契约整文件 diff（19/20/21）"
+for f in 19_err_not_found 20_err_conflict 21_err_validation; do
+  if diff -q "docs/evidence/p0/routes/$f.json" "$OUT_DIR/$f.json" >/dev/null 2>&1; then
+    ok "err_contract $f"
+  else
+    ng "err_contract $f" "错误信封/状态与 P0 不一致"
+  fi
+done
+
+hdr "2c known-diff（状态相关值层，D-23 登记，不计 PASS/FAIL）"
+for f in 13_app_event 17_retry_diagnosis 18_retry_archive; do
+  if [ -f "$OUT_DIR/$f.json" ]; then echo "KNOWN-DIFF $f（写流状态相关，按 D-23 值层接受）"; else ng "known $f" "缺失快照"; fi
 done
 
 hdr "3 D-24 结构断言"
@@ -113,7 +141,4 @@ DEFAULT_PORTS=$(docker compose -f deploy/compose/compose.yaml config --format js
   | jq '[.services|to_entries[]|select(.key|test("service-registry|monitor-svc"))|(.value.ports//[])]|flatten|length' 2>/dev/null)
 if [ "${DEFAULT_PORTS:-x}" = "0" ]; then ok "entry_unique_default"; else ng "entry_unique_default" "默认端口=$DEFAULT_PORTS"; fi
 
-echo
-echo "===== SUMMARY ====="
-echo "PASS=$PASS FAIL=$FAIL"
-[ "$FAIL" = 0 ] && exit 0 || exit 1
+echo; echo "===== SUMMARY ====="; echo "PASS=$PASS FAIL=$FAIL"; [ "$FAIL" = 0 ] && exit 0 || exit 1

@@ -1,21 +1,25 @@
-# MS-P6.1 已知差异登记（D-18 / D-23）
+# MS-P6.1/P6.7 已知差异与错误契约台账（D-18 / D-23 / D-24）
 
-> 本文件登记 P6.1 未逐字节验收的路由及其归属，**不是“差异豁免”**（D-18/D-23）。
-> P6.1 只承诺 7 条直通（03/05/06/07/08/09/10）与 P0 整文件一致；其余路由登记归属如下。
+> P6.1 承诺 7 条直通（03/05/06/07/08/09/10）与 P0 整文件一致；P0 单体基线的列表/聚合数值不可复现，
+> 按 D-23「形状层 + 固定条目层 + 当前库数值层」判定；写流因状态不同归 known-diff。
 
-| 路由 | 快照文件 | 归属 | 说明 |
-|---|---|---|---|
-| 01 dashboard/summary | 01_dashboard_summary | MS-P6.2 | 5 路并行聚合 + 24 桶补零 |
-| 02 services 列表 | 02_services_list | MS-P6.3 | 列表聚合 + active 批量 + target_count/last_check_at 非 omitempty |
-| 04 service 详情 | 04_service_get | MS-P6.3 | 与 05 同投影；本段不验字段完整性 |
-| 11 episodes 列表 | 11_episodes_list | MS-P6.3 | 列表聚合 |
-| 12 episode 详情 | 12_episode_get | MS-P6.3 | 详情聚合 + service_name |
-| 13 app event | 13_app_event | P5.10 已验 | 写路径，本 task 不重复 |
-| 14 service timeline | 14_service_timeline | MS-P6.4 | 时间轴合并 |
-| 15 episode timeline | 15_episode_timeline | MS-P6.4 | 时间轴合并 + episode 头补齐 |
-| 16 artifacts | 16_artifacts_get | P5.10 已验 | 任务域直通 |
-| 17 retry-diagnosis | 17_retry_diagnosis | P5.10 已验 | 任务域写 |
-| 18 retry-archive | 18_retry_archive | P5.10 已验 | 任务域写 |
-| 19 err_not_found | 19_err_not_found | 错误分支 | 404 逐字节由 proxy ErrorHandler/上游透传保证 |
-| 20 err_conflict | 20_err_conflict | 错误分支 | 409 透传（不投影，非 2xx） |
-| 21 err_validation | 21_err_validation | 错误分支 | 422 透传（不投影） |
+## 已对齐（整文件一致）
+- 03/05/06/07/08/09/10（直通）、04/12/14/15/16（单资源）
+- **19_err_not_found / 20_err_conflict / 21_err_validation**：错误信封已统一为嵌套 `{error:{code,message,request_id}}` 且 404 透传，与 P0 一致。
+
+## known-diff（状态相关值层，D-23 接受，不计 FAIL）
+| 路由 | 说明 |
+|---|---|
+| 13_app_event | P0 为 409 ALREADY_EXISTS（历史库已存在该事件）；新库首次追加 `appended:true`。 |
+| 17_retry_diagnosis / 18_retry_archive | 写流成功响应随任务状态不同。 |
+
+## 形状层（不整文件对齐）
+| 路由 | 归属 |
+|---|---|
+| 01_dashboard | P6.2（P0 monitor_trend=[] 与 24 桶补零互斥；按形状+分布+当前数值判定） |
+| 02_services_list / 11_episodes_list | P6.3（列表项键集与 P0 一致，数值/顺序按当前库） |
+| 14/15 | P6.4（分区形状一致；非空时序稳定排序未实测，GAP） |
+
+## 机械判定
+- `bash scripts/verify-p6.sh --only=direct`：7 直通 + 19/20/21 + D-24 结构断言 + 入口唯一。
+- known-diff 路由由脚本逐条打印、不计 PASS/FAIL。
