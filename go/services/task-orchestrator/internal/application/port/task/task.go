@@ -44,14 +44,14 @@ type Ownership struct {
 type TaskPatch struct {
 	// AllowExpiredLease 供租约回收使用：过期租约必须能被更新，否则任务永久 RUNNING。
 	AllowExpiredLease bool
-	Status       *string
-	LeaseUntil   *time.Time
-	NextRetryAt  *time.Time
-	Attempt      *int
-	ErrorCode    *string
-	ErrorMessage *string
-	StartedAt    *time.Time
-	FinishedAt   *time.Time
+	Status            *string
+	LeaseUntil        *time.Time
+	NextRetryAt       *time.Time
+	Attempt           *int
+	ErrorCode         *string
+	ErrorMessage      *string
+	StartedAt         *time.Time
+	FinishedAt        *time.Time
 }
 
 type ArtifactRef struct {
@@ -81,6 +81,8 @@ type TaskRepo interface {
 	ListRunningLeaseExpired(ctx context.Context, tx portshared.Tx, now time.Time, limit int) ([]AgentTask, error)
 	ListByEpisode(ctx context.Context, tx portshared.Tx, episodeID string) ([]AgentTask, error)
 	PromoteRetry(ctx context.Context, tx portshared.Tx, taskID string, generation int64) (int64, error)
+	CountByStatus(ctx context.Context, tx portshared.Tx) (map[string]int, error)
+	ListActiveByEpisodes(ctx context.Context, tx portshared.Tx, episodeIDs []string) ([]AgentTask, error)
 }
 
 // AcquireOutcome 是三态执行权获取结果：禁止静默 skip（P5.9 GAP-2）。
@@ -105,6 +107,7 @@ type ArtifactRepo interface {
 	ListByEpisode(ctx context.Context, tx portshared.Tx, episodeID string) ([]ArtifactRef, error)
 	Insert(ctx context.Context, tx portshared.Tx, a ArtifactRef) error
 	GetByTypeVersion(ctx context.Context, tx portshared.Tx, episodeID, artifactType string, version int) (ArtifactRef, error)
+	ListLatestByEpisodes(ctx context.Context, tx portshared.Tx, episodeIDs []string) ([]ArtifactRef, error)
 }
 
 // TaskDispatcher：任务提交端口，事务外调用（B7 实现）。

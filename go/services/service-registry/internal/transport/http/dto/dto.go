@@ -114,7 +114,16 @@ type ProbeResultPayload struct {
 	LastCheckAt          *string `json:"last_check_at"`
 }
 
+type ServiceCounts struct {
+	Total    int `json:"total"`
+	Enabled  int `json:"enabled"`
+	Disabled int `json:"disabled"`
+	Normal   int `json:"normal"`
+	Abnormal int `json:"abnormal"`
+	Unknown  int `json:"unknown"`
+}
+
 type Stats struct {
-	Services int            `json:"services"`
+	Services ServiceCounts  `json:"services"`
 	Targets  map[string]int `json:"targets"`
 }

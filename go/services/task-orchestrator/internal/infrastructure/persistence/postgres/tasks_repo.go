@@ -217,3 +217,46 @@ WHERE task_id=$1 AND generation=$2 AND status='RETRY_WAIT'`, taskID, generation)
 	}
 	return tag.RowsAffected(), nil
 }
+// CountByStatus 返回任务按状态计数（dashboard 用，一条 GROUP BY）。
+func (taskRepo) CountByStatus(ctx context.Context, tx portshared.Tx) (map[string]int, error) {
+	rows, err := txFrom(tx).Query(ctx, `SELECT status, count(*) FROM task.agent_tasks GROUP BY status`)
+	if err != nil {
+		return nil, Translate(err)
+	}
+	defer rows.Close()
+	out := map[string]int{}
+	for rows.Next() {
+		var status string
+		var count int
+		if err := rows.Scan(&status, &count); err != nil {
+			return nil, Translate(err)
+		}
+		out[status] = count
+	}
+	return out, Translate(rows.Err())
+}
+
+// ListActiveByEpisodes 批量返回每 episode 最近的活动任务（DISTINCT ON，1..200）。
+func (taskRepo) ListActiveByEpisodes(ctx context.Context, tx portshared.Tx, episodeIDs []string) ([]porttask.AgentTask, error) {
+	if len(episodeIDs) == 0 {
+		return nil, nil
+	}
+	rows, err := txFrom(tx).Query(ctx, `
+SELECT DISTINCT ON (episode_id) `+model.TaskColumns+` FROM task.agent_tasks
+WHERE episode_id::text = ANY($1::text[])
+  AND status IN ('PENDING','DISPATCHED','RUNNING','RETRY_WAIT')
+ORDER BY episode_id, created_at DESC`, episodeIDs)
+	if err != nil {
+		return nil, Translate(err)
+	}
+	defer rows.Close()
+	var out []porttask.AgentTask
+	for rows.Next() {
+		row, err := model.TaskRow{}.Scan(rows)
+		if err != nil {
+			return nil, Translate(err)
+		}
+		out = append(out, row.ToApp())
+	}
+	return out, Translate(rows.Err())
+}

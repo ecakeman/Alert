@@ -25,8 +25,9 @@ type Config struct {
 	EpisodeBaseURL   string
 	TaskBaseURL      string
 
-	UpstreamTimeout  time.Duration
-	AggregateTimeout time.Duration
+	UpstreamTimeout          time.Duration
+	AggregateTimeout         time.Duration
+	AggregateUpstreamTimeout time.Duration
 }
 
 // LoadError 描述配置错误；只携带变量名与原因，不回显原值。
@@ -78,6 +79,9 @@ func Load(getenv func(string) string) (Config, error) {
 		return Config{}, err
 	}
 	if cfg.AggregateTimeout, err = duration(getenv, "AGGREGATE_TIMEOUT", 800*time.Millisecond); err != nil {
+		return Config{}, err
+	}
+	if cfg.AggregateUpstreamTimeout, err = duration(getenv, "AGGREGATE_UPSTREAM_TIMEOUT", 500*time.Millisecond); err != nil {
 		return Config{}, err
 	}
 

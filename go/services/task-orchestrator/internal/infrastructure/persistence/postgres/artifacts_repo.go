@@ -67,3 +67,26 @@ VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
 		sourceRefsJSON, utc(row.RegisteredAt), utc(row.UpdatedAt))
 	return Translate(err)
 }
+// ListLatestByEpisodes 批量返回每 episode 最新诊断报告引用（DISTINCT ON，1..200）。
+func (artifactRepo) ListLatestByEpisodes(ctx context.Context, tx portshared.Tx, episodeIDs []string) ([]porttask.ArtifactRef, error) {
+	if len(episodeIDs) == 0 {
+		return nil, nil
+	}
+	rows, err := txFrom(tx).Query(ctx, `
+SELECT DISTINCT ON (episode_id) `+model.ArtifactColumns+` FROM task.episode_artifact_refs
+WHERE episode_id::text = ANY($1::text[]) AND artifact_type='DIAGNOSIS_REPORT'
+ORDER BY episode_id, artifact_version DESC`, episodeIDs)
+	if err != nil {
+		return nil, Translate(err)
+	}
+	defer rows.Close()
+	var out []porttask.ArtifactRef
+	for rows.Next() {
+		row, err := model.ArtifactRow{}.Scan(rows)
+		if err != nil {
+			return nil, Translate(err)
+		}
+		out = append(out, row.ToApp())
+	}
+	return out, Translate(rows.Err())
+}

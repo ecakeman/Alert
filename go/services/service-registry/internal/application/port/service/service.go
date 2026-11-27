@@ -44,6 +44,16 @@ type SourceState struct {
 	Reason     string
 }
 
+// ServiceStatusCounts 是 dashboard 服务维度的分布计数（D-17：MONITOR 来源状态口径）。
+type ServiceStatusCounts struct {
+	Total    int
+	Enabled  int
+	Disabled int
+	Normal   int
+	Abnormal int
+	Unknown  int
+}
+
 type ServiceFilter struct {
 	Query  string
 	Status string
@@ -77,6 +87,7 @@ type ServiceRepo interface {
 	List(ctx context.Context, tx portshared.Tx, f ServiceFilter) ([]Service, error)
 	ListByIDs(ctx context.Context, tx portshared.Tx, ids []string) ([]Service, error)
 	Count(ctx context.Context, tx portshared.Tx, f ServiceFilter) (int, error)
+	StatusCounts(ctx context.Context, tx portshared.Tx) (ServiceStatusCounts, error)
 
 	Patch(ctx context.Context, tx portshared.Tx, serviceID string, p ServicePatch) error
 	SoftDelete(ctx context.Context, tx portshared.Tx, serviceID string, at time.Time) error

@@ -4,7 +4,7 @@ package aggregate
 type Dashboard struct {
 	Episodes       EpisodeCounts   `json:"episodes"`
 	GeneratedAt    string          `json:"generated_at"`
-	MonitorTrend   []TrendPoint    `json:"monitor_trend"`
+	MonitorTrend   []MonitorTrendPoint `json:"monitor_trend"`
 	RecentEpisodes []RecentEpisode `json:"recent_episodes"`
 	Services       ServiceCounts   `json:"services"`
 	Targets        TargetCounts    `json:"targets"`
@@ -32,9 +32,10 @@ type TargetCounts struct {
 	Unknown  int `json:"unknown"`
 }
 
-type TrendPoint struct {
-	At     string `json:"at"`
-	Status string `json:"status"`
+type MonitorTrendPoint struct {
+	BucketStart string `json:"bucket_start"`
+	Success     int    `json:"success"`
+	Failure     int    `json:"failure"`
 }
 
 // RecentEpisode 对齐基线列表项；P5.10 先填本地可得字段，P6.3 补齐跨域。

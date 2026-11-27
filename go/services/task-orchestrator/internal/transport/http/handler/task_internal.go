@@ -3,6 +3,7 @@ package handler
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -27,6 +28,9 @@ func (h *Internal) Register(router *gin.Engine) {
 	g.GET("/episodes/:episode_id/artifacts", h.artifacts)
 	g.POST("/episodes/:episode_id/retry-diagnosis", h.retryDiagnosis)
 	g.POST("/episodes/:episode_id/retry-archive", h.retryArchive)
+	g.GET("/stats", h.stats)
+	g.GET("/batch/active-tasks", h.activeTasks)
+	g.GET("/batch/report-flags", h.reportFlags)
 }
 
 func (h *Internal) activeTask(c *gin.Context) {
@@ -135,6 +139,50 @@ func toAccepted(view taskapp.TaskView) gin.H {
 		"status": view.Status, "generation": view.Generation, "attempt": view.Attempt,
 		"created_at": view.CreatedAt.UTC().Format(time.RFC3339Nano), "reused": false,
 	}
+}
+
+func (h *Internal) stats(c *gin.Context) {
+	counts, err := h.svc.Stats(c.Request.Context())
+	if err != nil {
+		writeErr(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"statuses": counts})
+}
+
+func (h *Internal) activeTasks(c *gin.Context) {
+	views, err := h.svc.ActiveTasksByEpisodes(c.Request.Context(), splitCSV(c.Query("episode_ids")))
+	if err != nil {
+		writeErr(c, err)
+		return
+	}
+	out := make(map[string]gin.H, len(views))
+	for episodeID, view := range views {
+		out[episodeID] = gin.H{
+			"task_id": view.TaskID, "task_type": view.TaskType, "status": view.Status, "generation": view.Generation,
+		}
+	}
+	c.JSON(http.StatusOK, out)
+}
+
+func (h *Internal) reportFlags(c *gin.Context) {
+	flags, err := h.svc.ReportFlagsByEpisodes(c.Request.Context(), splitCSV(c.Query("episode_ids")))
+	if err != nil {
+		writeErr(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, flags)
+}
+
+func splitCSV(raw string) []string {
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if value := strings.TrimSpace(part); value != "" {
+			out = append(out, value)
+		}
+	}
+	return out
 }
 
 func writeErr(c *gin.Context, err error) {

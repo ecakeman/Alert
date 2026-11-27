@@ -9,20 +9,22 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/ecakeman/alert/services/platform/apierr"
 )
 
-// Service 是 P5.10 的 BFF 聚合入口：dashboard（路由 1）与两条 timeline（14/15）。
+// Service 是 BFF 聚合入口：dashboard（路由 1）与两条 timeline（14/15），外加 L1 投影。
 type Service struct {
-	clients Clients
-	timeout time.Duration
-	logger  *slog.Logger
+	clients        Clients
+	timeout        time.Duration
+	upstreamBudget time.Duration
+	logger         *slog.Logger
 }
 
 func New(clients Clients, timeout time.Duration, logger *slog.Logger) *Service {
-	return &Service{clients: clients, timeout: DefaultTimeout(timeout), logger: logger}
+	return &Service{clients: clients, timeout: DefaultTimeout(timeout), upstreamBudget: 500 * time.Millisecond, logger: logger}
 }
 
 // L1Route 标识路由在 L1 出口需要的投影类型（D-24）。
@@ -77,13 +79,11 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	segments := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
-	// /api/v1/dashboard/summary
 	if len(segments) == 4 && segments[0] == "api" && segments[1] == "v1" &&
 		segments[2] == "dashboard" && segments[3] == "summary" {
 		s.dashboard(w, r)
 		return
 	}
-	// /api/v1/services/{id}/timeline 或 /api/v1/episodes/{id}/timeline
 	if len(segments) == 5 && segments[0] == "api" && segments[1] == "v1" && segments[4] == "timeline" {
 		switch segments[2] {
 		case "services":
@@ -100,49 +100,102 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (s *Service) dashboard(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), s.timeout)
 	defer cancel()
+	upCtx, upCancel := context.WithTimeout(ctx, s.upstreamBudget)
+	defer upCancel()
 
-	stats, err := s.clients.registryStats(ctx)
+	var (
+		mu       sync.Mutex
+		firstErr error
+	)
+	fail := func(err error) {
+		mu.Lock()
+		if firstErr == nil {
+			firstErr = err
+			upCancel()
+		}
+		mu.Unlock()
+	}
+
+	var (
+		regStats  RegistryStats
+		monStats  MonitorStats
+		epStats   EpisodeStats
+		page      EpisodePage
+		monTrend  []MonitorTrendPoint
+	)
+	var wg sync.WaitGroup
+	wg.Add(5)
+	go func() { defer wg.Done(); v, err := s.clients.registryStats(upCtx); if err != nil { fail(err); return }; mu.Lock(); regStats = v; mu.Unlock() }()
+	go func() { defer wg.Done(); v, err := s.clients.monitorStats(upCtx); if err != nil { fail(err); return }; mu.Lock(); monStats = v; mu.Unlock() }()
+	go func() { defer wg.Done(); v, err := s.clients.episodeStats(upCtx); if err != nil { fail(err); return }; mu.Lock(); epStats = v; mu.Unlock() }()
+	go func() { defer wg.Done(); v, err := s.clients.listEpisodes(upCtx, queryLimit(5)); if err != nil { fail(err); return }; mu.Lock(); page = v; mu.Unlock() }()
+	go func() { defer wg.Done(); v, err := s.clients.monitorTrend(upCtx, 24*time.Hour, 24); if err != nil { fail(err); return }; mu.Lock(); monTrend = v; mu.Unlock() }()
+	wg.Wait()
+	if firstErr != nil {
+		s.unavailable(w, "dashboard", firstErr)
+		return
+	}
+	_ = monStats
+
+	episodeIDs := make([]string, 0, len(page.Episodes))
+	serviceIDs := make([]string, 0, len(page.Episodes))
+	for _, e := range page.Episodes {
+		episodeIDs = append(episodeIDs, e.EpisodeID)
+		serviceIDs = append(serviceIDs, e.ServiceID)
+	}
+	activeMap, err := s.clients.activeTasks(ctx, episodeIDs)
+	if err != nil {
+		s.unavailable(w, "task", err)
+		return
+	}
+	reportMap, err := s.clients.reportFlags(ctx, episodeIDs)
+	if err != nil {
+		s.unavailable(w, "task", err)
+		return
+	}
+	names, err := s.clients.servicesByIDs(ctx, serviceIDs)
 	if err != nil {
 		s.unavailable(w, "registry", err)
-		return
-	}
-	episodeCounts, err := s.clients.episodeStats(ctx)
-	if err != nil {
-		s.unavailable(w, "episode", err)
-		return
-	}
-	page, err := s.clients.listEpisodes(ctx, queryLimit(5))
-	if err != nil {
-		s.unavailable(w, "episode", err)
 		return
 	}
 
 	recent := make([]RecentEpisode, 0, len(page.Episodes))
 	for _, e := range page.Episodes {
-		recent = append(recent, RecentEpisode{
+		item := RecentEpisode{
 			EpisodeID:             e.EpisodeID,
 			ServiceID:             e.ServiceID,
+			ServiceName:           names[e.ServiceID],
 			Status:                e.Status,
 			StartedBy:             e.StartedBy,
+			ResolutionPending:     e.ResolutionPending,
 			InputVersion:          e.InputVersion,
 			ProcessedInputVersion: e.ProcessedInputVersion,
 			StartedAt:             e.StartedAt,
 			UpdatedAt:             e.UpdatedAt,
-		})
+			ResolvedAt:            e.ResolvedAt,
+			ArchivedAt:            e.ArchivedAt,
+			HasDiagnosisReport:    reportMap[e.EpisodeID],
+		}
+		if task, ok := activeMap[e.EpisodeID]; ok {
+			item.ActiveTaskStatus = task.Status
+			item.ActiveTaskType = task.TaskType
+		}
+		recent = append(recent, item)
 	}
 
+	if monTrend == nil {
+		monTrend = []MonitorTrendPoint{}
+	}
 	out := Dashboard{
-		Episodes: EpisodeCounts{
-			Active: episodeCounts.Active, Archived: episodeCounts.Archived, Resolved: episodeCounts.Resolved,
-		},
+		Episodes:       EpisodeCounts{Active: epStats.Active, Archived: epStats.Archived, Resolved: epStats.Resolved},
 		GeneratedAt:    time.Now().UTC().Format(time.RFC3339Nano),
-		MonitorTrend:   []TrendPoint{},
+		MonitorTrend:   monTrend,
 		RecentEpisodes: recent,
 		Services: ServiceCounts{
-			Total: stats.Services,
-			// P6.2 由 registry stats 的分布补齐；P5.10 保持零值，形状不变。
+			Total: regStats.Services.Total, Enabled: regStats.Services.Enabled, Disabled: regStats.Services.Disabled,
+			Normal: regStats.Services.Normal, Abnormal: regStats.Services.Abnormal, Unknown: regStats.Services.Unknown,
 		},
-		Targets: targetCounts(stats.Targets),
+		Targets: targetCounts(regStats.Targets),
 	}
 	writeJSON(w, http.StatusOK, out)
 }

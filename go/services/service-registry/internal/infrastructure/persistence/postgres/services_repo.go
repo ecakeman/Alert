@@ -114,6 +114,24 @@ WHERE service_id=$1 AND deleted_at IS NULL`, serviceID, utc(at))
 	return Translate(err)
 }
 
+// StatusCounts 返回服务维度分布（一条 SQL，D-17）：总数/启用/停用 + MONITOR 来源状态三态。
+func (serviceRepo) StatusCounts(ctx context.Context, tx portshared.Tx) (portService.ServiceStatusCounts, error) {
+	var out portService.ServiceStatusCounts
+	err := txFrom(tx).QueryRow(ctx, `
+SELECT
+  count(*) FILTER (WHERE s.deleted_at IS NULL),
+  count(*) FILTER (WHERE s.deleted_at IS NULL AND s.enabled),
+  count(*) FILTER (WHERE s.deleted_at IS NULL AND NOT s.enabled),
+  count(*) FILTER (WHERE s.deleted_at IS NULL AND EXISTS (SELECT 1 FROM registry.service_source_states st WHERE st.service_id=s.service_id AND st.source_type='MONITOR' AND st.status='NORMAL')),
+  count(*) FILTER (WHERE s.deleted_at IS NULL AND EXISTS (SELECT 1 FROM registry.service_source_states st WHERE st.service_id=s.service_id AND st.source_type='MONITOR' AND st.status='ABNORMAL')),
+  count(*) FILTER (WHERE s.deleted_at IS NULL AND NOT EXISTS (SELECT 1 FROM registry.service_source_states st WHERE st.service_id=s.service_id AND st.source_type='MONITOR'))
+FROM registry.services s`).Scan(&out.Total, &out.Enabled, &out.Disabled, &out.Normal, &out.Abnormal, &out.Unknown)
+	if err != nil {
+		return portService.ServiceStatusCounts{}, Translate(err)
+	}
+	return out, nil
+}
+
 // ListByIDs 批量取服务（ids 为空时返回空列表），用于 BFF/域内批量补齐。
 func (serviceRepo) ListByIDs(ctx context.Context, tx portshared.Tx, ids []string) ([]portService.Service, error) {
 	if len(ids) == 0 {

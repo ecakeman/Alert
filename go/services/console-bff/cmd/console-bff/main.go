@@ -48,6 +48,7 @@ func main() {
 		Registry: httpx.NewClient(cfg.RegistryBaseURL, cfg.UpstreamTimeout),
 		Episode:  httpx.NewClient(cfg.EpisodeBaseURL, cfg.UpstreamTimeout),
 		Monitor:  httpx.NewClient(cfg.MonitorBaseURL, cfg.UpstreamTimeout),
+		Task:     httpx.NewClient(cfg.TaskBaseURL, cfg.UpstreamTimeout),
 	}, cfg.AggregateTimeout, logger)
 
 	proxy, err := bffhttp.NewProxy(bffhttp.ProxyConfig{

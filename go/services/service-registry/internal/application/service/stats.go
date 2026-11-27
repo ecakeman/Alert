@@ -7,26 +7,26 @@ import (
 	portshared "github.com/ecakeman/alert/services/service-registry/internal/application/port/shared"
 )
 
-// RegistryStats 是本域统计：服务总数与目标状态计数。
+// RegistryStats 是本域统计：服务分布与目标状态计数。
 type RegistryStats struct {
-	Services int            `json:"services"`
-	Targets  map[string]int `json:"targets"`
+	Services portService.ServiceStatusCounts `json:"services"`
+	Targets  map[string]int                   `json:"targets"`
 }
 
 // Stats 返回本域计数（不含跨域字段）。
 func (s *Service) Stats(ctx context.Context) (RegistryStats, error) {
 	out := RegistryStats{Targets: map[string]int{"NORMAL": 0, "ABNORMAL": 0, "UNKNOWN": 0}}
 	err := s.deps.UOW.WithinTx(ctx, func(ctx context.Context, tx portshared.Tx) error {
-		count, err := s.deps.Services.Count(ctx, tx, portService.ServiceFilter{})
+		counts, err := s.deps.Services.StatusCounts(ctx, tx)
 		if err != nil {
 			return err
 		}
-		out.Services = count
-		counts, err := s.deps.Targets.StatusCounts(ctx, tx)
+		out.Services = counts
+		targets, err := s.deps.Targets.StatusCounts(ctx, tx)
 		if err != nil {
 			return err
 		}
-		out.Targets = counts
+		out.Targets = targets
 		return nil
 	})
 	return out, err

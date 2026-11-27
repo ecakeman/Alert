@@ -243,7 +243,14 @@ func (h *Registry) stats(c *gin.Context) {
 		writeErr(c, err)
 		return
 	}
-	c.JSON(200, dto.Stats{Services: stats.Services, Targets: stats.Targets})
+	counts := stats.Services
+	c.JSON(200, dto.Stats{
+		Services: dto.ServiceCounts{
+			Total: counts.Total, Enabled: counts.Enabled, Disabled: counts.Disabled,
+			Normal: counts.Normal, Abnormal: counts.Abnormal, Unknown: counts.Unknown,
+		},
+		Targets: stats.Targets,
+	})
 }
 
 func (h *Registry) summaries(ctx context.Context, services []portService.Service) ([]dto.ServiceSummary, error) {
