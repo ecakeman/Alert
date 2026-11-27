@@ -104,7 +104,7 @@ func TestRouteL1Mapping(t *testing.T) {
 	}{
 		{http.MethodGet, "/api/v1/dashboard/summary", aggregate.L1None},
 		{http.MethodPost, "/api/v1/services", aggregate.L1ServiceViewNoActive},
-		{http.MethodGet, "/api/v1/services/svc-1", aggregate.L1ServiceViewActive},
+		{http.MethodGet, "/api/v1/services/svc-1", aggregate.L1None},
 		{http.MethodPatch, "/api/v1/services/svc-1", aggregate.L1ServiceViewActive},
 		{http.MethodDelete, "/api/v1/services/svc-1", aggregate.L1None},
 		{http.MethodGet, "/api/v1/services/svc-1/targets", aggregate.L1TargetsList},
@@ -231,7 +231,7 @@ func TestProxyUpstreamTimeoutMapsTo503(t *testing.T) {
 		t.Fatalf("NewProxy 失败: %v", err)
 	}
 	rec := httptest.NewRecorder()
-	proxy.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/services", nil))
+	proxy.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/services/svc-1/targets", nil))
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("超时 = %d，期望 503", rec.Code)
 	}

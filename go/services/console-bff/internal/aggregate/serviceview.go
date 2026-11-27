@@ -58,7 +58,7 @@ type ServiceSummaryL1 struct {
 	AppStatus       string  `json:"app_status"`
 	TargetCount     int     `json:"target_count"`
 	LastCheckAt     *string `json:"last_check_at"`
-	ActiveEpisodeID *string `json:"active_episode_id,omitempty"`
+	ActiveEpisodeID *string `json:"active_episode_id"`
 }
 
 func projectTargetL1(raw []byte) ([]byte, error) {

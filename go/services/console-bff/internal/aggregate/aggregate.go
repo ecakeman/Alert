@@ -84,6 +84,26 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.dashboard(w, r)
 		return
 	}
+	if len(segments) == 3 && segments[0] == "api" && segments[1] == "v1" {
+		switch segments[2] {
+		case "services":
+			s.servicesList(w, r)
+			return
+		case "episodes":
+			s.episodesList(w, r)
+			return
+		}
+	}
+	if len(segments) == 4 && segments[0] == "api" && segments[1] == "v1" {
+		switch segments[2] {
+		case "services":
+			s.serviceDetail(w, r, segments[3])
+			return
+		case "episodes":
+			s.episodeDetail(w, r, segments[3])
+			return
+		}
+	}
 	if len(segments) == 5 && segments[0] == "api" && segments[1] == "v1" && segments[4] == "timeline" {
 		switch segments[2] {
 		case "services":
