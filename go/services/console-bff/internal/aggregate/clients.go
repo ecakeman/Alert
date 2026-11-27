@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/ecakeman/alert/services/platform/httpx"
@@ -96,6 +97,26 @@ func (c Clients) latestEpisodeForService(ctx context.Context, serviceID string) 
 }
 
 var errNoEpisode = fmt.Errorf("no episode for service")
+
+// activeByServices 一次批量补齐 service_id → active episode_id（1..200，空 ids 不发请求）。
+func (c Clients) activeByServices(ctx context.Context, ids []string) (map[string]string, error) {
+	if len(ids) == 0 {
+		return map[string]string{}, nil
+	}
+	if len(ids) > 200 {
+		return nil, fmt.Errorf("active-by-services: ids must contain 1..200 values")
+	}
+	query := url.Values{}
+	query.Set("service_ids", strings.Join(ids, ","))
+	var out map[string]string
+	if err := c.Episode.GetJSON(ctx, "/internal/episodes/active-by-services?"+query.Encode(), &out); err != nil {
+		return nil, err
+	}
+	if out == nil {
+		out = map[string]string{}
+	}
+	return out, nil
+}
 
 // DefaultTimeout 是聚合总预算（design D：800ms）。
 func DefaultTimeout(d time.Duration) time.Duration {

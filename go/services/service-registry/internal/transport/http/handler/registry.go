@@ -292,6 +292,8 @@ func (h *Registry) toView(ctx context.Context, view appservice.ServiceView, with
 	for _, target := range view.Targets {
 		out.Targets = append(out.Targets, toTarget(target))
 	}
+	out.TargetCount = len(view.Targets)
+	out.LastCheckAt = latestCheckAt(view.Targets)
 	return out, nil
 }
 

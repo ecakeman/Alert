@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# 固定 UUID/时间的演示数据：2 服务 / 3 目标 / 1 ACTIVE episode / 1 SUCCEEDED 任务 / 2 产物引用。
-# --reset 先清理同一批固定 ID 再写入；--dry-run 只打印 SQL。
+# 固定 UUID/时间的演示数据（P6 域 schema 版）：2 服务 / 3 目标 / 1 ACTIVE episode / 1 SUCCEEDED 任务 / 2 产物引用。
+# P5 后业务表已从 system 迁到 registry/monitor/episode/task 四域 schema；本脚本写入域 schema。
+# --reset 先清理同一批固定 ID 与快照/冒烟产生的服务；--dry-run 只打印 SQL。
 set -euo pipefail
 
 PG_CONTAINER="${PG_CONTAINER:-alert-pg}"
@@ -26,59 +27,52 @@ ART_1="55555555-5555-5555-5555-555555555555"
 ART_2="55555555-5555-5555-5555-555555555556"
 TS="2026-11-01T00:00:00Z"
 
+SVC_KEYS="'checkout-api','payment-api','snapshot-created','smoke-created','demo-svc'"
+
 SQL="$(cat <<SQL
 BEGIN;
 
 $(if [ "$RESET" = true ]; then cat <<RESET_SQL
-DELETE FROM system.episode_artifact_refs WHERE episode_id = '${EP_1}';
-DELETE FROM system.episode_fault_document_refs WHERE episode_id = '${EP_1}';
-DELETE FROM system.service_execution_ownership WHERE service_id IN ('${SVC_1}','${SVC_2}');
-DELETE FROM system.agent_tasks WHERE episode_id = '${EP_1}';
-DELETE FROM system.episode_input_versions WHERE episode_id = '${EP_1}';
-DELETE FROM system.episode_app_events WHERE episode_id = '${EP_1}';
-DELETE FROM system.episode_input_versions
-  WHERE episode_id IN (SELECT episode_id FROM system.episodes WHERE service_id IN ('${SVC_1}','${SVC_2}'));
-DELETE FROM system.episode_app_events WHERE service_id IN ('${SVC_1}','${SVC_2}');
-DELETE FROM system.service_monitor_points WHERE service_id IN ('${SVC_1}','${SVC_2}');
-DELETE FROM system.episode_input_versions
-  WHERE episode_id IN (SELECT episode_id FROM system.episodes WHERE service_id IN ('${SVC_1}','${SVC_2}'));
-DELETE FROM system.episode_app_events WHERE service_id IN ('${SVC_1}','${SVC_2}');
-DELETE FROM system.service_monitor_points WHERE service_id IN ('${SVC_1}','${SVC_2}');
-DELETE FROM system.episodes WHERE episode_id = '${EP_1}';
-DELETE FROM system.service_monitor_targets WHERE service_id IN ('${SVC_1}','${SVC_2}');
-DELETE FROM system.service_source_states WHERE service_id IN ('${SVC_1}','${SVC_2}');
-DELETE FROM system.services WHERE service_id IN ('${SVC_1}','${SVC_2}');
-DELETE FROM system.episode_input_versions
-  WHERE episode_id IN (SELECT episode_id FROM system.episodes
-    WHERE service_id IN (SELECT service_id FROM system.services WHERE service_key IN ('snapshot-created','smoke-created')));
-DELETE FROM system.episode_app_events
-  WHERE service_id IN (SELECT service_id FROM system.services WHERE service_key IN ('snapshot-created','smoke-created'));
-DELETE FROM system.service_monitor_points
-  WHERE service_id IN (SELECT service_id FROM system.services WHERE service_key IN ('snapshot-created','smoke-created'));
-DELETE FROM system.episode_input_versions
-  WHERE episode_id IN (SELECT episode_id FROM system.episodes
-    WHERE service_id IN (SELECT service_id FROM system.services WHERE service_key IN ('snapshot-created','smoke-created')));
-DELETE FROM system.episode_app_events
-  WHERE service_id IN (SELECT service_id FROM system.services WHERE service_key IN ('snapshot-created','smoke-created'));
-DELETE FROM system.service_monitor_points
-  WHERE service_id IN (SELECT service_id FROM system.services WHERE service_key IN ('snapshot-created','smoke-created'));
-DELETE FROM system.service_monitor_targets
-  WHERE service_id IN (SELECT service_id FROM system.services WHERE service_key IN ('snapshot-created','smoke-created'));
-DELETE FROM system.service_source_states
-  WHERE service_id IN (SELECT service_id FROM system.services WHERE service_key IN ('snapshot-created','smoke-created'));
-DELETE FROM system.episodes
-  WHERE service_id IN (SELECT service_id FROM system.services WHERE service_key IN ('snapshot-created','smoke-created'));
-DELETE FROM system.services WHERE service_key IN ('snapshot-created','smoke-created');
+DELETE FROM task.episode_artifact_refs
+ WHERE episode_id IN (SELECT episode_id FROM episode.episodes WHERE service_id IN (
+        SELECT service_id FROM registry.services WHERE service_id IN ('${SVC_1}','${SVC_2}') OR service_key IN (${SVC_KEYS})));
+DELETE FROM task.episode_fault_document_refs
+ WHERE episode_id IN (SELECT episode_id FROM episode.episodes WHERE service_id IN (
+        SELECT service_id FROM registry.services WHERE service_id IN ('${SVC_1}','${SVC_2}') OR service_key IN (${SVC_KEYS})));
+DELETE FROM task.service_execution_ownership
+ WHERE service_id IN (SELECT service_id FROM registry.services WHERE service_id IN ('${SVC_1}','${SVC_2}') OR service_key IN (${SVC_KEYS}));
+DELETE FROM task.agent_tasks
+ WHERE service_id IN (SELECT service_id FROM registry.services WHERE service_id IN ('${SVC_1}','${SVC_2}') OR service_key IN (${SVC_KEYS}));
+DELETE FROM episode.episode_input_versions
+ WHERE episode_id IN (SELECT episode_id FROM episode.episodes WHERE service_id IN (
+        SELECT service_id FROM registry.services WHERE service_id IN ('${SVC_1}','${SVC_2}') OR service_key IN (${SVC_KEYS})));
+DELETE FROM episode.episode_app_events
+ WHERE service_id IN (SELECT service_id FROM registry.services WHERE service_id IN ('${SVC_1}','${SVC_2}') OR service_key IN (${SVC_KEYS}));
+DELETE FROM episode.episodes
+ WHERE service_id IN (SELECT service_id FROM registry.services WHERE service_id IN ('${SVC_1}','${SVC_2}') OR service_key IN (${SVC_KEYS}));
+DELETE FROM monitor.service_monitor_points
+ WHERE service_id IN (SELECT service_id FROM registry.services WHERE service_id IN ('${SVC_1}','${SVC_2}') OR service_key IN (${SVC_KEYS}));
+DELETE FROM monitor.monitor_target_state
+ WHERE service_id IN (SELECT service_id FROM registry.services WHERE service_id IN ('${SVC_1}','${SVC_2}') OR service_key IN (${SVC_KEYS}));
+DELETE FROM monitor.monitor_source_state
+ WHERE service_id IN (SELECT service_id FROM registry.services WHERE service_id IN ('${SVC_1}','${SVC_2}') OR service_key IN (${SVC_KEYS}));
+DELETE FROM monitor.monitor_target_projection
+ WHERE service_id IN (SELECT service_id FROM registry.services WHERE service_id IN ('${SVC_1}','${SVC_2}') OR service_key IN (${SVC_KEYS}));
+DELETE FROM registry.service_monitor_targets
+ WHERE service_id IN (SELECT service_id FROM registry.services WHERE service_id IN ('${SVC_1}','${SVC_2}') OR service_key IN (${SVC_KEYS}));
+DELETE FROM registry.service_source_states
+ WHERE service_id IN (SELECT service_id FROM registry.services WHERE service_id IN ('${SVC_1}','${SVC_2}') OR service_key IN (${SVC_KEYS}));
+DELETE FROM registry.services WHERE service_id IN ('${SVC_1}','${SVC_2}') OR service_key IN (${SVC_KEYS});
 RESET_SQL
 fi)
 
-INSERT INTO system.services
+INSERT INTO registry.services
   (service_id, service_key, name, description, enabled, monitor_aggregation_mode, authority_producer_id, created_at, updated_at)
 VALUES
   ('${SVC_1}', 'checkout-api', 'Checkout API', 'baseline checkout service', true, 'ALL_REQUIRED', 'producer-checkout', '${TS}', '${TS}'),
   ('${SVC_2}', 'payment-api', 'Payment API', 'baseline payment service', true, 'ALL_REQUIRED', 'producer-payment', '${TS}', '${TS}');
 
-INSERT INTO system.service_monitor_targets
+INSERT INTO registry.service_monitor_targets
   (target_id, service_id, target_key, target_name, address, target_type, config, interval_ms, timeout_ms,
    failure_threshold, recovery_threshold, is_required, enabled, status, consecutive_failures,
    consecutive_successes, last_check_at, config_generation, created_at, updated_at)
@@ -90,7 +84,7 @@ VALUES
   ('${TGT_3}', '${SVC_2}', 'tcp-primary', 'Payment TCP', '127.0.0.1:18083', 'TCP', '{}'::jsonb,
    15000, 3000, 2, 2, true, true, 'NORMAL', 0, 5, '${TS}', 1, '${TS}', '${TS}');
 
-INSERT INTO system.service_source_states
+INSERT INTO registry.service_source_states
   (service_id, source_type, status, reason, updated_at, last_change_at)
 VALUES
   ('${SVC_1}', 'MONITOR', 'ABNORMAL', 'baseline abnormal target', '${TS}', '${TS}'),
@@ -98,7 +92,7 @@ VALUES
   ('${SVC_2}', 'MONITOR', 'NORMAL', 'baseline monitor healthy', '${TS}', '${TS}'),
   ('${SVC_2}', 'APP', 'NORMAL', 'baseline app healthy', '${TS}', '${TS}');
 
-INSERT INTO system.episodes
+INSERT INTO episode.episodes
   (episode_id, service_id, status, started_by, resolution_pending, input_hash, input_version,
    processed_input_version, final_input_version, monitor_watermark, app_event_watermark,
    started_at, created_at, updated_at)
@@ -106,7 +100,7 @@ VALUES
   ('${EP_1}', '${SVC_1}', 'ACTIVE', 'MONITOR', false, 'baseline-input-hash', 2,
    1, 2, 1, 0, '${TS}', '${TS}', '${TS}');
 
-INSERT INTO system.agent_tasks
+INSERT INTO task.agent_tasks
   (task_id, episode_id, service_id, task_type, status, generation, attempt, max_attempts,
    input_version_from, input_version_to, monitor_watermark, app_event_watermark, deadline_at,
    created_at, updated_at, started_at, finished_at)
@@ -114,7 +108,7 @@ VALUES
   ('${TASK_1}', '${EP_1}', '${SVC_1}', 'DIAGNOSIS', 'SUCCEEDED', 1, 1, 3,
    1, 2, 1, 0, '${TS}', '${TS}', '${TS}', '${TS}', '${TS}');
 
-INSERT INTO system.episode_artifact_refs
+INSERT INTO task.episode_artifact_refs
   (artifact_ref_id, episode_id, task_id, generation, artifact_type, artifact_version,
    content_hash, content_type, storage_key, source_refs, registered_at, updated_at)
 VALUES

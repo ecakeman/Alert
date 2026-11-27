@@ -45,7 +45,7 @@ func Load(getenv func(string) string) (Config, error) {
 		AppEnv:          value(getenv, "APP_ENV", "local"),
 		HTTPAddr:        value(getenv, "HTTP_ADDR", ":8080"),
 		RegistryBaseURL: value(getenv, "REGISTRY_BASE_URL", "http://127.0.0.1:8081"),
-		MonitorBaseURL:  value(getenv, "MONITOR_BASE_URL", "http://127.0.0.1:8081"),
+		MonitorBaseURL:  value(getenv, "MONITOR_BASE_URL", "http://127.0.0.1:8083"),
 		EpisodeBaseURL:  value(getenv, "EPISODE_BASE_URL", "http://127.0.0.1:8081"),
 		TaskBaseURL:     value(getenv, "TASK_BASE_URL", "http://127.0.0.1:8081"),
 
@@ -53,6 +53,9 @@ func Load(getenv func(string) string) (Config, error) {
 
 	if strings.TrimSpace(getenv("DATABASE_URL")) != "" {
 		return Config{}, &LoadError{Var: "DATABASE_URL", Reason: "must not be set for console-bff"}
+	}
+	if strings.TrimSpace(getenv("LEGACY_BASE_URL")) != "" {
+		return Config{}, &LoadError{Var: "LEGACY_BASE_URL", Reason: "is not supported"}
 	}
 
 	var err error

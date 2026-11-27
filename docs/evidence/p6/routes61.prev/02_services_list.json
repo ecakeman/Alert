@@ -1,0 +1,117 @@
+{
+  "limit": 10,
+  "offset": 0,
+  "services": [
+    {
+      "app_status": "UNKNOWN",
+      "description": "",
+      "enabled": true,
+      "last_check_at": null,
+      "monitor_status": "UNKNOWN",
+      "name": "p59",
+      "service_id": "<uuid-1>",
+      "service_key": "p59-1795691872",
+      "target_count": 0
+    },
+    {
+      "app_status": "UNKNOWN",
+      "description": "",
+      "enabled": true,
+      "last_check_at": null,
+      "monitor_status": "UNKNOWN",
+      "name": "p59",
+      "service_id": "<uuid-2>",
+      "service_key": "p59-1795691729",
+      "target_count": 0
+    },
+    {
+      "app_status": "UNKNOWN",
+      "description": "",
+      "enabled": true,
+      "last_check_at": null,
+      "monitor_status": "UNKNOWN",
+      "name": "p55",
+      "service_id": "<uuid-3>",
+      "service_key": "p55-1795688400",
+      "target_count": 0
+    },
+    {
+      "app_status": "UNKNOWN",
+      "description": "",
+      "enabled": true,
+      "last_check_at": null,
+      "monitor_status": "UNKNOWN",
+      "name": "p55",
+      "service_id": "<uuid-4>",
+      "service_key": "p55-1795688337",
+      "target_count": 0
+    },
+    {
+      "app_status": "UNKNOWN",
+      "description": "",
+      "enabled": true,
+      "last_check_at": null,
+      "monitor_status": "UNKNOWN",
+      "name": "p55",
+      "service_id": "<uuid-5>",
+      "service_key": "p55-1795688194",
+      "target_count": 0
+    },
+    {
+      "app_status": "UNKNOWN",
+      "description": "",
+      "enabled": true,
+      "last_check_at": null,
+      "monitor_status": "UNKNOWN",
+      "name": "p53",
+      "service_id": "<uuid-6>",
+      "service_key": "p53-1795687422",
+      "target_count": 0
+    },
+    {
+      "app_status": "UNKNOWN",
+      "description": "",
+      "enabled": true,
+      "last_check_at": null,
+      "monitor_status": "UNKNOWN",
+      "name": "p53",
+      "service_id": "<uuid-7>",
+      "service_key": "p53-1795687375",
+      "target_count": 0
+    },
+    {
+      "app_status": "UNKNOWN",
+      "description": "",
+      "enabled": true,
+      "last_check_at": null,
+      "monitor_status": "UNKNOWN",
+      "name": "p53",
+      "service_id": "<uuid-8>",
+      "service_key": "p53-1795687306",
+      "target_count": 0
+    },
+    {
+      "app_status": "NORMAL",
+      "description": "",
+      "enabled": true,
+      "last_check_at": null,
+      "monitor_status": "NORMAL",
+      "name": "p4-gate",
+      "service_id": "<uuid-9>",
+      "service_key": "p4-gate-1795686237",
+      "target_count": 0
+    },
+    {
+      "app_status": "NORMAL",
+      "description": "",
+      "enabled": true,
+      "last_check_at": null,
+      "monitor_status": "NORMAL",
+      "name": "p4-gate",
+      "service_id": "<uuid-10>",
+      "service_key": "p4-gate-1795686161",
+      "target_count": 0
+    }
+  ],
+  "total": 33
+}

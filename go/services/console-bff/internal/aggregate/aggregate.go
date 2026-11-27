@@ -3,6 +3,7 @@ package aggregate
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -22,6 +23,52 @@ type Service struct {
 
 func New(clients Clients, timeout time.Duration, logger *slog.Logger) *Service {
 	return &Service{clients: clients, timeout: DefaultTimeout(timeout), logger: logger}
+}
+
+// L1Route 标识路由在 L1 出口需要的投影类型（D-24）。
+type L1Route int
+
+const (
+	L1None L1Route = iota
+	L1ServiceViewNoActive
+	L1ServiceViewActive
+	L1TargetsList
+	L1Target
+)
+
+// L1Projector 由 aggregate.Service 实现，供 proxy 的 ModifyResponse 调用。
+type L1Projector interface {
+	ProjectL1(ctx context.Context, route L1Route, upstream []byte) ([]byte, error)
+}
+
+// ProjectL1 是 L1 投影的唯一分派点：先解析视图，再按需一次批量补 active，最后编码。
+func (s *Service) ProjectL1(ctx context.Context, route L1Route, upstream []byte) ([]byte, error) {
+	switch route {
+	case L1None:
+		return upstream, nil
+	case L1Target:
+		return projectTargetL1(upstream)
+	case L1TargetsList:
+		return projectTargetsListL1(upstream)
+	case L1ServiceViewNoActive:
+		return projectServiceViewL1(upstream, nil)
+	case L1ServiceViewActive:
+		var view ServiceViewL1
+		if err := json.Unmarshal(upstream, &view); err != nil {
+			return nil, fmt.Errorf("decode service view for active: %w", err)
+		}
+		active := map[string]string{}
+		if view.ServiceID != "" {
+			got, err := s.clients.activeByServices(ctx, []string{view.ServiceID})
+			if err != nil {
+				return nil, fmt.Errorf("active episode lookup: %w", err)
+			}
+			active = got
+		}
+		return projectServiceViewL1(upstream, active)
+	default:
+		return upstream, nil
+	}
 }
 
 func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {

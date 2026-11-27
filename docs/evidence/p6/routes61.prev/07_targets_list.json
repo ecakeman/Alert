@@ -1,0 +1,40 @@
+{
+  "targets": [
+    {
+      "address": "http://127.0.0.1:18081/healthz",
+      "config": {},
+      "consecutive_failures": 0,
+      "consecutive_successes": 3,
+      "enabled": true,
+      "failure_threshold": 2,
+      "interval_ms": 15000,
+      "is_required": true,
+      "last_check_at": "<timestamp>",
+      "recovery_threshold": 2,
+      "status": "NORMAL",
+      "target_id": "<uuid-1>",
+      "target_key": "http-primary",
+      "target_name": "Checkout primary",
+      "target_type": "HTTP",
+      "timeout_ms": 3000
+    },
+    {
+      "address": "http://127.0.0.1:18082/healthz",
+      "config": {},
+      "consecutive_failures": 2,
+      "consecutive_successes": 0,
+      "enabled": true,
+      "failure_threshold": 2,
+      "interval_ms": 15000,
+      "is_required": false,
+      "last_check_at": "<timestamp>",
+      "recovery_threshold": 2,
+      "status": "ABNORMAL",
+      "target_id": "<uuid-2>",
+      "target_key": "http-secondary",
+      "target_name": "Checkout secondary",
+      "target_type": "HTTP",
+      "timeout_ms": 3000
+    }
+  ]
+}

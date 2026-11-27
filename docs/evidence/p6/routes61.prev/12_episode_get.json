@@ -1,0 +1,20 @@
+{
+  "active_task_id": "",
+  "active_task_status": "",
+  "active_task_type": "",
+  "app_status": "",
+  "archived_at": null,
+  "episode_id": "<uuid-1>",
+  "final_input_version": 2,
+  "input_hash": "baseline-input-hash",
+  "input_version": 2,
+  "monitor_status": "",
+  "processed_input_version": 1,
+  "resolution_pending": false,
+  "resolved_at": null,
+  "service_id": "<uuid-2>",
+  "started_at": "<timestamp>",
+  "started_by": "MONITOR",
+  "status": "ACTIVE",
+  "updated_at": "<timestamp>"
+}

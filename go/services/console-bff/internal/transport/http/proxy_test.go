@@ -6,130 +6,193 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"strings"
+	"sync"
 	"testing"
 	"time"
 
-	"github.com/ecakeman/alert/services/platform/httpx"
+	"github.com/ecakeman/alert/services/console-bff/internal/aggregate"
 )
 
-func upstream(t *testing.T, name string) *httptest.Server {
+type fakeProjector struct {
+	mu    sync.Mutex
+	calls int
+	last  aggregate.L1Route
+}
+
+func (f *fakeProjector) ServeHTTP(w http.ResponseWriter, _ *http.Request) {
+	w.WriteHeader(http.StatusTeapot)
+}
+
+func (f *fakeProjector) ProjectL1(_ context.Context, route aggregate.L1Route, upstream []byte) ([]byte, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.calls++
+	f.last = route
+	return upstream, nil
+}
+
+func (f *fakeProjector) count() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.calls
+}
+
+func upstreamServer(t *testing.T, name string) *httptest.Server {
 	t.Helper()
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodDelete {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
 		body, _ := io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("X-Upstream", name)
 		_ = json.NewEncoder(w).Encode(map[string]string{
 			"upstream": name,
 			"method":   r.Method,
 			"path":     r.URL.Path,
-			"query":    r.URL.RawQuery,
-			"trace":    r.Header.Get(httpx.HeaderTraceID),
 			"body":     string(body),
 		})
 	}))
 }
 
-func newProxyForTest(t *testing.T) (*Proxy, map[string]*httptest.Server) {
+func newProxyForTest(t *testing.T) (*Proxy, *fakeProjector) {
 	t.Helper()
 	servers := map[string]*httptest.Server{
-		"registry": upstream(t, "registry"),
-		"monitor":  upstream(t, "monitor"),
-		"episode":  upstream(t, "episode"),
-		"task":     upstream(t, "task"),
+		"registry": upstreamServer(t, "registry"),
+		"monitor":  upstreamServer(t, "monitor"),
+		"episode":  upstreamServer(t, "episode"),
+		"task":     upstreamServer(t, "task"),
 	}
 	t.Cleanup(func() {
 		for _, server := range servers {
 			server.Close()
 		}
 	})
+	projector := &fakeProjector{}
 	proxy, err := NewProxy(ProxyConfig{
-		Registry: servers["registry"].URL,
-		Monitor:  servers["monitor"].URL,
-		Episode:  servers["episode"].URL,
-		Task:     servers["task"].URL,
-		Timeout:  time.Second,
+		Registry:  servers["registry"].URL,
+		Monitor:   servers["monitor"].URL,
+		Episode:   servers["episode"].URL,
+		Task:      servers["task"].URL,
+		Aggregate: projector,
+		Timeout:   time.Second,
 	})
 	if err != nil {
 		t.Fatalf("NewProxy 失败: %v", err)
 	}
-	return proxy, servers
+	return proxy, projector
 }
 
-func TestProxyRoutesAll18ToExpectedUpstream(t *testing.T) {
+func findRoute(t *testing.T, method, path string) aggregate.L1Route {
+	t.Helper()
+	segments := pathSegments(path)
+	for _, route := range routes {
+		if route.method == method && matchPath(route.segments, segments) {
+			return route.l1
+		}
+	}
+	t.Fatalf("未找到路由 %s %s", method, path)
+	return aggregate.L1None
+}
+
+func TestRouteL1Mapping(t *testing.T) {
+	cases := []struct {
+		method string
+		path   string
+		want   aggregate.L1Route
+	}{
+		{http.MethodGet, "/api/v1/dashboard/summary", aggregate.L1None},
+		{http.MethodPost, "/api/v1/services", aggregate.L1ServiceViewNoActive},
+		{http.MethodGet, "/api/v1/services/svc-1", aggregate.L1ServiceViewActive},
+		{http.MethodPatch, "/api/v1/services/svc-1", aggregate.L1ServiceViewActive},
+		{http.MethodDelete, "/api/v1/services/svc-1", aggregate.L1None},
+		{http.MethodGet, "/api/v1/services/svc-1/targets", aggregate.L1TargetsList},
+		{http.MethodPost, "/api/v1/services/svc-1/targets", aggregate.L1Target},
+		{http.MethodPatch, "/api/v1/targets/tgt-1", aggregate.L1Target},
+		{http.MethodDelete, "/api/v1/targets/tgt-1", aggregate.L1None},
+	}
+	for _, tc := range cases {
+		if got := findRoute(t, tc.method, tc.path); got != tc.want {
+			t.Fatalf("%s %s l1 = %v，期望 %v", tc.method, tc.path, got, tc.want)
+		}
+	}
+}
+
+func TestRegistryDirectRoutes(t *testing.T) {
 	proxy, _ := newProxyForTest(t)
 	cases := []struct {
 		method string
 		path   string
-		want   string
+		status int
 	}{
-		{http.MethodGet, "/api/v1/dashboard/summary", "episode"},
-		{http.MethodGet, "/api/v1/services", "registry"},
-		{http.MethodPost, "/api/v1/services", "registry"},
-		{http.MethodGet, "/api/v1/services/svc-1", "registry"},
-		{http.MethodPatch, "/api/v1/services/svc-1", "registry"},
-		{http.MethodDelete, "/api/v1/services/svc-1", "registry"},
-		{http.MethodGet, "/api/v1/services/svc-1/targets", "registry"},
-		{http.MethodPost, "/api/v1/services/svc-1/targets", "registry"},
-		{http.MethodPatch, "/api/v1/targets/tgt-1", "registry"},
-		{http.MethodDelete, "/api/v1/targets/tgt-1", "registry"},
-		{http.MethodGet, "/api/v1/episodes", "episode"},
-		{http.MethodGet, "/api/v1/episodes/ep-1", "episode"},
-		{http.MethodPost, "/api/v1/services/svc-1/events", "episode"},
-		{http.MethodGet, "/api/v1/services/svc-1/timeline", "episode"},
-		{http.MethodGet, "/api/v1/episodes/ep-1/timeline", "episode"},
-		{http.MethodGet, "/api/v1/episodes/ep-1/artifacts", "task"},
-		{http.MethodPost, "/api/v1/episodes/ep-1/retry-diagnosis", "task"},
-		{http.MethodPost, "/api/v1/episodes/ep-1/retry-archive", "task"},
-	}
-	if len(cases) != 18 {
-		t.Fatalf("路由数 = %d，期望 18", len(cases))
+		{http.MethodPost, "/api/v1/services", 200},
+		{http.MethodPatch, "/api/v1/services/svc-1", 200},
+		{http.MethodDelete, "/api/v1/services/svc-1", 204},
+		{http.MethodGet, "/api/v1/services/svc-1/targets", 200},
+		{http.MethodPost, "/api/v1/services/svc-1/targets", 200},
+		{http.MethodPatch, "/api/v1/targets/tgt-1", 200},
+		{http.MethodDelete, "/api/v1/targets/tgt-1", 204},
 	}
 	for _, tc := range cases {
 		t.Run(tc.method+" "+tc.path, func(t *testing.T) {
 			rec := httptest.NewRecorder()
-			req := httptest.NewRequest(tc.method, tc.path+"?limit=10&offset=0", nil)
-			proxy.ServeHTTP(rec, req)
-
-			if rec.Code != http.StatusOK {
-				t.Fatalf("status = %d", rec.Code)
+			proxy.ServeHTTP(rec, httptest.NewRequest(tc.method, tc.path, nil))
+			if rec.Code != tc.status {
+				t.Fatalf("status = %d，期望 %d", rec.Code, tc.status)
+			}
+			if tc.status == http.StatusNoContent {
+				return
 			}
 			var body map[string]string
 			if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
 				t.Fatalf("解析响应失败: %v", err)
 			}
-			if body["upstream"] != tc.want {
-				t.Fatalf("upstream = %s，期望 %s", body["upstream"], tc.want)
-			}
-			if body["path"] != tc.path {
-				t.Fatalf("path 未原样透传: %s", body["path"])
-			}
-			if body["query"] != "limit=10&offset=0" {
-				t.Fatalf("query 未原样透传: %s", body["query"])
+			if body["upstream"] != "registry" {
+				t.Fatalf("upstream = %s，期望 registry", body["upstream"])
 			}
 		})
 	}
 }
 
-func TestProxyForwardsBodyAndTrace(t *testing.T) {
-	proxy, _ := newProxyForTest(t)
+func TestPatchServiceProjectedOnce(t *testing.T) {
+	proxy, projector := newProxyForTest(t)
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/services", stringsReader(`{"service_key":"x"}`))
-	req = req.WithContext(httpx.WithTraceID(context.Background(), "0123456789abcdef0123456789abcdef"))
-	proxy.ServeHTTP(rec, req)
-
+	proxy.ServeHTTP(rec, httptest.NewRequest(http.MethodPatch, "/api/v1/services/svc-1", nil))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d", rec.Code)
 	}
-	if rec.Header().Get("X-Upstream") != "registry" {
-		t.Fatalf("响应头未透传: %v", rec.Header())
+	if projector.count() != 1 {
+		t.Fatalf("投影次数 = %d，期望 1", projector.count())
 	}
-	var body map[string]string
-	_ = json.NewDecoder(rec.Body).Decode(&body)
-	if body["trace"] != "0123456789abcdef0123456789abcdef" {
-		t.Fatalf("trace 未透传: %s", body["trace"])
+	if projector.last != aggregate.L1ServiceViewActive {
+		t.Fatalf("last route = %v，期望 L1ServiceViewActive", projector.last)
 	}
-	if body["body"] != `{"service_key":"x"}` {
-		t.Fatalf("请求体未透传: %s", body["body"])
+}
+
+func TestDeleteNotProjected(t *testing.T) {
+	proxy, projector := newProxyForTest(t)
+	rec := httptest.NewRecorder()
+	proxy.ServeHTTP(rec, httptest.NewRequest(http.MethodDelete, "/api/v1/services/svc-1", nil))
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d，期望 204", rec.Code)
+	}
+	if projector.count() != 0 {
+		t.Fatalf("204 不应触发投影，实际 %d 次", projector.count())
+	}
+}
+
+func TestNewProxyFailsWithoutProjector(t *testing.T) {
+	_, err := NewProxy(ProxyConfig{
+		Registry:  "http://127.0.0.1:1",
+		Monitor:   "http://127.0.0.1:1",
+		Episode:   "http://127.0.0.1:1",
+		Task:      "http://127.0.0.1:1",
+		Aggregate: http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}),
+		Timeout:   time.Second,
+	})
+	if err == nil {
+		t.Fatal("缺少 L1Projector 时应构造失败")
 	}
 }
 
@@ -159,9 +222,10 @@ func TestProxyUpstreamTimeoutMapsTo503(t *testing.T) {
 	}))
 	defer slow.Close()
 
+	projector := &fakeProjector{}
 	proxy, err := NewProxy(ProxyConfig{
 		Registry: slow.URL, Monitor: slow.URL, Episode: slow.URL, Task: slow.URL,
-		Timeout: 30 * time.Millisecond,
+		Aggregate: projector, Timeout: 30 * time.Millisecond,
 	})
 	if err != nil {
 		t.Fatalf("NewProxy 失败: %v", err)
@@ -171,6 +235,9 @@ func TestProxyUpstreamTimeoutMapsTo503(t *testing.T) {
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("超时 = %d，期望 503", rec.Code)
 	}
+	var body map[string]string
+	_ = json.NewDecoder(rec.Body).Decode(&body)
+	if body["code"] != "DEPENDENCY_UNAVAILABLE" {
+		t.Fatalf("503 code = %s，期望 DEPENDENCY_UNAVAILABLE", body["code"])
+	}
 }
-
-func stringsReader(s string) io.Reader { return strings.NewReader(s) }

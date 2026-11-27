@@ -1,0 +1,20 @@
+{
+  "artifacts": [
+    {
+      "artifact_type": "DIAGNOSIS_REPORT",
+      "artifact_version": 1,
+      "content_hash": "sha256:diagnosis-baseline",
+      "content_type": "text/markdown",
+      "storage_key": "episodes/33333333-3333-3333-3333-333333333333/diagnosis/1.md",
+      "updated_at": "<timestamp>"
+    },
+    {
+      "artifact_type": "INVESTIGATION",
+      "artifact_version": 1,
+      "content_hash": "sha256:investigation-baseline",
+      "content_type": "text/markdown",
+      "storage_key": "episodes/33333333-3333-3333-3333-333333333333/investigation/1.md",
+      "updated_at": "<timestamp>"
+    }
+  ]
+}

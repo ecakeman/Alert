@@ -53,3 +53,23 @@ func TestLoadRejectsBadDuration(t *testing.T) {
 		t.Fatalf("期望 UPSTREAM_TIMEOUT LoadError，实际 %v", err)
 	}
 }
+func TestLoadRejectsLegacyBaseURL(t *testing.T) {
+	_, err := Load(env(map[string]string{"LEGACY_BASE_URL": "http://127.0.0.1:8084"}))
+	var le *LoadError
+	if !errors.As(err, &le) || le.Var != "LEGACY_BASE_URL" {
+		t.Fatalf("期望 LEGACY_BASE_URL LoadError，实际 %v", err)
+	}
+	if strings.Contains(err.Error(), "8084") {
+		t.Fatal("错误文本泄露了 LEGACY_BASE_URL 值")
+	}
+}
+
+func TestLoadMonitorDefaultPort(t *testing.T) {
+	cfg, err := Load(env(nil))
+	if err != nil {
+		t.Fatalf("Load 失败: %v", err)
+	}
+	if cfg.MonitorBaseURL != "http://127.0.0.1:8083" {
+		t.Fatalf("MonitorBaseURL 默认 = %s，期望 8083", cfg.MonitorBaseURL)
+	}
+}

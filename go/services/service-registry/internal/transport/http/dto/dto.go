@@ -28,6 +28,8 @@ type ServiceView struct {
 	MonitorStatus          string   `json:"monitor_status"`
 	AppStatus              string   `json:"app_status"`
 	Targets                []Target `json:"targets"`
+	TargetCount            int      `json:"target_count,omitempty"`
+	LastCheckAt            *string  `json:"last_check_at,omitempty"`
 }
 
 type ServicesPage struct {

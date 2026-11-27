@@ -1,0 +1,21 @@
+# MS-P6.1 已知差异登记（D-18 / D-23）
+
+> 本文件登记 P6.1 未逐字节验收的路由及其归属，**不是“差异豁免”**（D-18/D-23）。
+> P6.1 只承诺 7 条直通（03/05/06/07/08/09/10）与 P0 整文件一致；其余路由登记归属如下。
+
+| 路由 | 快照文件 | 归属 | 说明 |
+|---|---|---|---|
+| 01 dashboard/summary | 01_dashboard_summary | MS-P6.2 | 5 路并行聚合 + 24 桶补零 |
+| 02 services 列表 | 02_services_list | MS-P6.3 | 列表聚合 + active 批量 + target_count/last_check_at 非 omitempty |
+| 04 service 详情 | 04_service_get | MS-P6.3 | 与 05 同投影；本段不验字段完整性 |
+| 11 episodes 列表 | 11_episodes_list | MS-P6.3 | 列表聚合 |
+| 12 episode 详情 | 12_episode_get | MS-P6.3 | 详情聚合 + service_name |
+| 13 app event | 13_app_event | P5.10 已验 | 写路径，本 task 不重复 |
+| 14 service timeline | 14_service_timeline | MS-P6.4 | 时间轴合并 |
+| 15 episode timeline | 15_episode_timeline | MS-P6.4 | 时间轴合并 + episode 头补齐 |
+| 16 artifacts | 16_artifacts_get | P5.10 已验 | 任务域直通 |
+| 17 retry-diagnosis | 17_retry_diagnosis | P5.10 已验 | 任务域写 |
+| 18 retry-archive | 18_retry_archive | P5.10 已验 | 任务域写 |
+| 19 err_not_found | 19_err_not_found | 错误分支 | 404 逐字节由 proxy ErrorHandler/上游透传保证 |
+| 20 err_conflict | 20_err_conflict | 错误分支 | 409 透传（不投影，非 2xx） |
+| 21 err_validation | 21_err_validation | 错误分支 | 422 透传（不投影） |

@@ -1,0 +1,10 @@
+{
+  "attempt": 0,
+  "created_at": "<timestamp>",
+  "episode_id": "<uuid-1>",
+  "generation": 2,
+  "reused": false,
+  "status": "PENDING",
+  "task_id": "<uuid-2>",
+  "task_type": "DIAGNOSIS"
+}
