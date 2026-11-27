@@ -223,27 +223,13 @@ func (s *Service) dashboard(w http.ResponseWriter, r *http.Request) {
 func (s *Service) serviceTimeline(w http.ResponseWriter, r *http.Request, serviceID string) {
 	ctx, cancel := context.WithTimeout(r.Context(), s.timeout)
 	defer cancel()
-	episode, err := s.clients.latestEpisodeForService(ctx, serviceID)
-	if err != nil {
-		s.unavailable(w, "episode", err)
-		return
-	}
-	s.writeTimeline(w, ctx, episode.EpisodeID)
+	s.buildServiceTimeline(w, ctx, serviceID)
 }
 
 func (s *Service) episodeTimeline(w http.ResponseWriter, r *http.Request, episodeID string) {
 	ctx, cancel := context.WithTimeout(r.Context(), s.timeout)
 	defer cancel()
-	s.writeTimeline(w, ctx, episodeID)
-}
-
-func (s *Service) writeTimeline(w http.ResponseWriter, ctx context.Context, episodeID string) {
-	parts, err := s.clients.timelineParts(ctx, episodeID, 200)
-	if err != nil {
-		s.unavailable(w, "episode", err)
-		return
-	}
-	writeJSON(w, http.StatusOK, parts)
+	s.buildEpisodeTimeline(w, ctx, episodeID)
 }
 
 func (s *Service) unavailable(w http.ResponseWriter, upstream string, err error) {
