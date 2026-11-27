@@ -1,0 +1,3 @@
+PASS 正向: episode 读写自有表（default privileges + sequence）
+PASS 正向: task 读写自有表（default privileges + sequence）
+isolation: PASS 8/8

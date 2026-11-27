@@ -1,0 +1,12 @@
+[demo] services list:
+{"total":3,"first":{"service_id":"8ad82ea9-38bd-4982-8547-893c1552cb28","service_key":"snapshot-created","name":"Snapshot Created","description":"created by snapshot","enabled":true,"monitor_status":"UNKNOWN","app_status":"UNKNOWN","target_count":0,"last_check_at":null,"active_episode_id":null}}
+[demo] episodes list:
+{"total":1,"first":{"active_task_status":"RETRY_WAIT","active_task_type":"DIAGNOSIS","archived_at":null,"episode_id":"33333333-3333-3333-3333-333333333333","input_version":2,"processed_input_version":1,"resolution_pending":false,"resolved_at":null,"service_id":"11111111-1111-1111-1111-111111111111","service_name":"Checkout API","started_at":"2026-11-01T00:00:00Z","started_by":"MONITOR","status":"ACTIVE","updated_at":"2026-11-01T00:00:00Z"}}
+[demo] episode detail 33333333-3333-3333-3333-333333333333:
+{"episode_id":"33333333-3333-3333-3333-333333333333","status":"ACTIVE","service_name":"Checkout API","active_task_status":"RETRY_WAIT"}
+[demo] episode timeline 33333333-3333-3333-3333-333333333333 keys:
+episode,monitor_points,monitor_start_point_seq,region1_projection,region2_events,region3_refs
+[demo] artifacts 33333333-3333-3333-3333-333333333333:
+{"count":2}
+[demo] 入口: http://127.0.0.1:8080  （trace 见 BFF access log）
+[demo] OK

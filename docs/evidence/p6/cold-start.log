@@ -1,0 +1,145 @@
+===== P6.7 cold start 2026-11-27T03:21:14Z HEAD=95c3aa6 =====
+== S1 down -v ==
+ Volume compose_alert-kafka-data Removed 
+ Network compose_default Removed 
+ Volume compose_alert-pg-data Removed 
+== S2 postgres+kafka ==
+ Container alert-kafka Started 
+ Container alert-pg Started 
+  alert-pg healthy (6s)
+  alert-kafka healthy (6s)
+== S3 kafka-init ==
+__consumer_offsets
+alertflow.episode.events.v1
+alertflow.monitor.events.v1
+alertflow.registry.events.v1
+alertflow.task.events.v1
+== S4 provision ==
+ alert_registry
+ alert_task
+(4 rows)
+
+provision: 4 schema / 4 role 就绪
+== S5 migrate 4 domains ==
+-- service-registry -migrate --
+ Container compose-service-registry-run-faae7fa6171f Creating 
+ Container compose-service-registry-run-faae7fa6171f Created 
+applied=1 skipped=0 conflicts=0
+-- monitor-svc -migrate --
+ Container compose-monitor-svc-run-03e2c0691322 Creating 
+ Container compose-monitor-svc-run-03e2c0691322 Created 
+applied=2 skipped=0 conflicts=0
+-- episode-svc -migrate --
+ Container compose-episode-svc-run-cd4773641289 Creating 
+ Container compose-episode-svc-run-cd4773641289 Created 
+applied=1 skipped=0 conflicts=0
+-- task-orchestrator -migrate --
+ Container compose-task-orchestrator-run-cb15835f8cfe Creating 
+ Container compose-task-orchestrator-run-cb15835f8cfe Created 
+applied=1 skipped=0 conflicts=0
+== S6 agent cognitive migrate ==
+ Container alert-task-orchestrator Healthy 
+ Container compose-agent-runtime-run-78857a7d46c8 Creating 
+ Container compose-agent-runtime-run-78857a7d46c8 Created 
+cognitive migration failed: migrations directory not found: /app/migrations
+
+== S7 up core ==
+ Container alert-console-bff Started 
+ Container alert-monitor-svc Started 
+ Container alert-kafka-init Started 
+ Container alert-service-registry Started 
+ Container alert-agent-runtime Started 
+-- wait registry/bff, then bootstrap catalog event for monitor readyz --
+  alert-service-registry healthy (4s)
+  alert-console-bff healthy (0s)
+bootstrap service emitted
+  alert-service-registry healthy (0s)
+  alert-monitor-svc healthy (4s)
+  alert-episode-svc healthy (0s)
+  alert-task-orchestrator healthy (0s)
+  alert-console-bff healthy (0s)
+  alert-agent-runtime healthy (0s)
+== ps ==
+alert-pg=healthy
+alert-kafka=healthy
+alert-service-registry=healthy
+alert-monitor-svc=healthy
+alert-episode-svc=healthy
+alert-task-orchestrator=healthy
+alert-console-bff=healthy
+alert-agent-runtime=healthy
+kafka-init=exited exit=0
+readyz=200
+== S8 snapshot 18 ==
+seed: 完成（reset=true）
+snapshot: 完成，输出到 docs/evidence/p6/routes（21 个响应）
+-- single-resource diffs (D-23) --
+OK 03_service_create
+OK 04_service_get
+OK 05_service_patch
+OK 06_service_delete
+OK 07_targets_list
+OK 08_target_create
+OK 09_target_patch
+OK 10_target_delete
+OK 12_episode_get
+DIFF 13_app_event
+OK 14_service_timeline
+OK 15_episode_timeline
+OK 16_artifacts_get
+DIFF 17_retry_diagnosis
+DIFF 18_retry_archive
+DIFF 19_err_not_found
+DIFF 20_err_conflict
+DIFF 21_err_validation
+-- list/agg shape --
+01 shape OK
+02 shape OK
+11 shape OK
+== S10 isolation ==
+PASS 正向: episode 读写自有表（default privileges + sequence）
+PASS 正向: task 读写自有表（default privileges + sequence）
+isolation: PASS 8/8
+== S11 structure ==
+PASS A6
+PASS A7
+SKIP A8 :: 文档迁移在 S8（--structure-only 跳过）
+PASS A13
+
+---- structure-only 结束：PASS=9 FAIL=0 SKIP=1 ----
+== S12 mem ==
+alert-agent-runtime	90MiB / 6.617GiB
+alert-service-registry	9.598MiB / 256MiB
+alert-console-bff	7.359MiB / 256MiB
+alert-monitor-svc	8.234MiB / 256MiB
+alert-task-orchestrator	9.883MiB / 256MiB
+alert-episode-svc	8.5MiB / 256MiB
+alert-kafka	318.3MiB / 6.617GiB
+alert-pg	80.52MiB / 6.617GiB
+og-redis	16.43MiB / 6.617GiB
+og-mysql	236.3MiB / 6.617GiB
+== S13 minimal topology demo ==
+ Network compose_default Removing 
+ Network compose_default Removed 
+ Container alert-agent-runtime Starting 
+ Container alert-agent-runtime Started 
+  alert-service-registry healthy (0s)
+  alert-monitor-svc healthy (0s)
+  alert-episode-svc healthy (0s)
+  alert-task-orchestrator healthy (0s)
+  alert-console-bff healthy (0s)
+  alert-agent-runtime healthy (4s)
+[demo] services list:
+{"total":3,"first":{"service_id":"8ad82ea9-38bd-4982-8547-893c1552cb28","service_key":"snapshot-created","name":"Snapshot Created","description":"created by snapshot","enabled":true,"monitor_status":"UNKNOWN","app_status":"UNKNOWN","target_count":0,"last_check_at":null,"active_episode_id":null}}
+[demo] episodes list:
+{"total":1,"first":{"active_task_status":"RETRY_WAIT","active_task_type":"DIAGNOSIS","archived_at":null,"episode_id":"33333333-3333-3333-3333-333333333333","input_version":2,"processed_input_version":1,"resolution_pending":false,"resolved_at":null,"service_id":"11111111-1111-1111-1111-111111111111","service_name":"Checkout API","started_at":"2026-11-01T00:00:00Z","started_by":"MONITOR","status":"ACTIVE","updated_at":"2026-11-01T00:00:00Z"}}
+[demo] episode detail 33333333-3333-3333-3333-333333333333:
+{"episode_id":"33333333-3333-3333-3333-333333333333","status":"ACTIVE","service_name":"Checkout API","active_task_status":"RETRY_WAIT"}
+[demo] episode timeline 33333333-3333-3333-3333-333333333333 keys:
+episode,monitor_points,monitor_start_point_seq,region1_projection,region2_events,region3_refs
+[demo] artifacts 33333333-3333-3333-3333-333333333333:
+{"count":2}
+[demo] 入口: http://127.0.0.1:8080  （trace 见 BFF access log）
+[demo] OK
+minimal_exit=0
+===== DONE 2026-11-27T03:24:16Z =====

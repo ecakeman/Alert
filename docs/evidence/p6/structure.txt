@@ -1,0 +1,6 @@
+PASS A6
+PASS A7
+SKIP A8 :: 文档迁移在 S8（--structure-only 跳过）
+PASS A13
+
+---- structure-only 结束：PASS=9 FAIL=0 SKIP=1 ----

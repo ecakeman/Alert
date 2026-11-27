@@ -1,0 +1,4 @@
+{
+  "code": "STATE_CONFLICT",
+  "message": "STATE_CONFLICT: an active task exists for this episode"
+}

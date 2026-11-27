@@ -1,0 +1,44 @@
+{
+  "episode": {
+    "active_task_id": "",
+    "active_task_status": "",
+    "active_task_type": "",
+    "app_status": "NORMAL",
+    "archived_at": null,
+    "episode_id": "<uuid-1>",
+    "final_input_version": 2,
+    "input_hash": "baseline-input-hash",
+    "input_version": 2,
+    "monitor_status": "UNKNOWN",
+    "processed_input_version": 1,
+    "resolution_pending": false,
+    "resolved_at": null,
+    "service_id": "<uuid-2>",
+    "service_name": "Checkout API",
+    "started_at": "<timestamp>",
+    "started_by": "MONITOR",
+    "status": "ACTIVE"
+  },
+  "monitor_points": [],
+  "monitor_start_point_seq": 0,
+  "region1_projection": [],
+  "region2_events": [],
+  "region3_refs": [
+    {
+      "artifact_type": "DIAGNOSIS_REPORT",
+      "artifact_version": 1,
+      "content_hash": "sha256:diagnosis-baseline",
+      "content_type": "text/markdown",
+      "storage_key": "episodes/33333333-3333-3333-3333-333333333333/diagnosis/1.md",
+      "updated_at": "<timestamp>"
+    },
+    {
+      "artifact_type": "INVESTIGATION",
+      "artifact_version": 1,
+      "content_hash": "sha256:investigation-baseline",
+      "content_type": "text/markdown",
+      "storage_key": "episodes/33333333-3333-3333-3333-333333333333/investigation/1.md",
+      "updated_at": "<timestamp>"
+    }
+  ]
+}

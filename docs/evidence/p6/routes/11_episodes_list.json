@@ -1,0 +1,23 @@
+{
+  "episodes": [
+    {
+      "active_task_status": "",
+      "active_task_type": "",
+      "archived_at": null,
+      "episode_id": "<uuid-1>",
+      "input_version": 2,
+      "processed_input_version": 1,
+      "resolution_pending": false,
+      "resolved_at": null,
+      "service_id": "<uuid-2>",
+      "service_name": "Checkout API",
+      "started_at": "<timestamp>",
+      "started_by": "MONITOR",
+      "status": "ACTIVE",
+      "updated_at": "<timestamp>"
+    }
+  ],
+  "limit": 10,
+  "offset": 0,
+  "total": 1
+}

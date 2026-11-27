@@ -1,0 +1,9 @@
+alert-pg=healthy
+alert-kafka=healthy
+alert-service-registry=healthy
+alert-monitor-svc=healthy
+alert-episode-svc=healthy
+alert-task-orchestrator=healthy
+alert-console-bff=healthy
+alert-agent-runtime=healthy
+kafka-init=exited exit=0

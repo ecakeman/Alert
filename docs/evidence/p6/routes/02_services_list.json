@@ -1,0 +1,43 @@
+{
+  "limit": 10,
+  "offset": 0,
+  "services": [
+    {
+      "active_episode_id": null,
+      "app_status": "UNKNOWN",
+      "description": "bootstrap",
+      "enabled": true,
+      "last_check_at": null,
+      "monitor_status": "UNKNOWN",
+      "name": "Bootstrap",
+      "service_id": "<uuid-1>",
+      "service_key": "bootstrap-svc",
+      "target_count": 0
+    },
+    {
+      "active_episode_id": "<uuid-3>",
+      "app_status": "NORMAL",
+      "description": "baseline checkout service",
+      "enabled": true,
+      "last_check_at": "<timestamp>",
+      "monitor_status": "ABNORMAL",
+      "name": "Checkout API",
+      "service_id": "<uuid-2>",
+      "service_key": "checkout-api",
+      "target_count": 2
+    },
+    {
+      "active_episode_id": null,
+      "app_status": "NORMAL",
+      "description": "baseline payment service",
+      "enabled": true,
+      "last_check_at": "<timestamp>",
+      "monitor_status": "NORMAL",
+      "name": "Payment API",
+      "service_id": "<uuid-4>",
+      "service_key": "payment-api",
+      "target_count": 1
+    }
+  ],
+  "total": 3
+}

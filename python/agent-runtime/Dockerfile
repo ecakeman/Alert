@@ -29,6 +29,7 @@ WORKDIR /app
 COPY --from=builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
 COPY src ./src
+COPY migrations ./migrations
 
 EXPOSE 8080 50052
 CMD ["python", "-m", "alert_agent.bootstrap.app"]
