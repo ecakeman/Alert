@@ -25,7 +25,8 @@ docker exec alert-pg psql -U alert -c 'CREATE DATABASE alert_migrate_check'
   - `alertflow.monitor.events.v1`
   - `alertflow.episode.events.v1`
   - `alertflow.task.events.v1`
-- **过渡 topic**：旧 `alertflow.system.events.v1` 在 P1~P5 保留为桥接 topic，P6 收口后停用。
+- **过渡 topic（P6 起已停用）**：旧 `alertflow.system.events.v1` 数据仅作历史，消费者组为空、无新增生产；`alertflow.system.events` 在 `go/`、`python/`、`deploy/compose/` 配置中零命中。
+- **编排快照**：`compose.p1~p5.yaml` 为历史快照，**不用于运行**；最终态由 `compose.yaml` 的 core profile 提供 **9 个运行容器**（postgres、kafka、console-bff、service-registry、monitor-svc、episode-svc、task-orchestrator、agent-runtime 共 8 个常驻 healthy + `kafka-init` 一次性 exited 0）。
 
 手工重建 topic：
 

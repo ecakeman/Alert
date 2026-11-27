@@ -13,6 +13,7 @@ for arg in "$@"; do
   case "$arg" in
     --only=direct) MODE="direct" ;;
     --only=all) MODE="all" ;;
+    --only=bridge) MODE="bridge" ;;
   esac
 done
 
@@ -28,6 +29,31 @@ fi
 code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "$BASE_URL/healthz" 2>/dev/null || echo 000)
 if [ "$code" != "200" ]; then
   echo "verify-p6 未执行（BFF healthz=$code）"; exit 2
+fi
+
+if [ "$MODE" = "bridge" ]; then
+  hdr "bridge 旧通道已停用"
+  K="docker exec alert-kafka /opt/kafka/bin"
+  if $K/kafka-topics.sh --bootstrap-server localhost:9092 --list 2>/dev/null | grep -q '^alertflow.system.events.v1$'; then
+    echo "topic present（可接受，仅历史）"
+  else
+    echo "topic absent（可接受）"
+  fi
+  lag=$($K/kafka-consumer-groups.sh --bootstrap-server localhost:9092 --describe --all-groups 2>/dev/null | awk '$2=="alertflow.system.events.v1" && $6>0' | wc -l)
+  [ "$lag" = "0" ] && ok "bridge_lag_zero" || ng "bridge_lag_zero" "LAG>0 组数=$lag"
+  hits=$(grep -rn "alertflow.system.events" go/ python/ deploy/compose/ contracts/ --exclude-dir=system-core --include='*.go' --include='*.yaml' --include='*.py' --include='*.json' 2>/dev/null | wc -l)
+  [ "$hits" = "0" ] && ok "bridge_config_zero" || ng "bridge_config_zero" "命中=$hits"
+  sc=$(docker compose -f deploy/compose/compose.yaml config --format json 2>/dev/null | jq '[.services[]|select(.image//""|test("system-core"))]|length')
+  [ "$sc" = "0" ] && ok "compose_no_system_core" || ng "compose_no_system_core" "system-core=$sc"
+  if test -s deploy/compose/compose.p5.yaml && docker compose -f deploy/compose/compose.p5.yaml config >/dev/null 2>&1; then
+    ok "compose_p5_parse"
+  else
+    ng "compose_p5_parse" "p5 不可解析"
+  fi
+  echo
+  echo "===== SUMMARY ====="
+  echo "PASS=$PASS FAIL=$FAIL"
+  [ "$FAIL" = 0 ] && exit 0 || exit 1
 fi
 
 hdr "1 直通路由快照"
