@@ -109,7 +109,7 @@ fi
 hdr "2 构建"
 if [ -n "$GO_BIN" ]; then
   for m in go/contracts go/platform go/services/console-bff go/services/service-registry \
-           go/services/monitor-svc go/services/episode-svc go/services/system-core; do
+           go/services/monitor-svc go/services/episode-svc; do
     if (cd "$m" && "$GO_BIN" build ./... >/dev/null 2>&1); then ok "A-build $m"; else ng "A-build $m" "workspace build failed"; fi
     if (cd "$m" && GOWORK=off "$GO_BIN" build ./... >/dev/null 2>&1); then ok "B-build $m"; else ng "B-build $m" "GOWORK=off build failed"; fi
   done

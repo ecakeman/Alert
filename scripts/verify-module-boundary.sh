@@ -13,7 +13,7 @@ if ! "$GO_BIN" version >/dev/null 2>&1; then
   exit 1
 fi
 
-BUSINESS_SERVICES=(system-core)
+BUSINESS_SERVICES=(console-bff service-registry monitor-svc episode-svc task-orchestrator)
 ALL_SERVICES=(contracts platform "${BUSINESS_SERVICES[@]}")
 
 fail=0
