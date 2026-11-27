@@ -14,6 +14,7 @@ for arg in "$@"; do
     --only=direct) MODE="direct" ;;
     --only=all) MODE="all" ;;
     --only=bridge) MODE="bridge" ;;
+    --only=docs) MODE="docs" ;;
   esac
 done
 
@@ -29,6 +30,17 @@ fi
 code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "$BASE_URL/healthz" 2>/dev/null || echo 000)
 if [ "$code" != "200" ]; then
   echo "verify-p6 未执行（BFF healthz=$code）"; exit 2
+fi
+
+if [ "$MODE" = "docs" ]; then
+  hdr "docs 一致性"
+  a8=$(grep -rnE 'services/[a-z_-]+/' README.md docs/architecture docs/runbooks contracts --include='*.md' 2>/dev/null | grep -v 'go/services' | grep -v 'api/v1/services' | grep -v 'path-migration' | wc -l)
+  [ "$a8" = "0" ] && ok "A8_zero" || ng "A8_zero" "命中=$a8"
+  mono=$(grep -rn 'system-core\|cmd/api\|cmd/worker' README.md docs/ deploy/README.md 2>/dev/null | grep -v 'docs/evidence/' | wc -l)
+  [ "$mono" = "0" ] && ok "no_monolith" || ng "no_monolith" "命中=$mono"
+  idx=$(grep -cE 'p6\.[1-8]' docs/evidence/p6/README.md)
+  [ "${idx:-0}" -ge 8 ] && ok "index_ge_8" || ng "index_ge_8" "count=$idx"
+  echo; echo "===== SUMMARY ====="; echo "PASS=$PASS FAIL=$FAIL"; [ "$FAIL" = 0 ] && exit 0 || exit 1
 fi
 
 if [ "$MODE" = "bridge" ]; then

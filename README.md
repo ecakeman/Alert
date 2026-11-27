@@ -1,99 +1,44 @@
-<div align="center">
+# Alert（微服务版）
 
-# Alert
+告警事件处理平台。Go 多 module 域服务 + console-bff 聚合 + Python agent-runtime（认知侧），
+按 Strangler 从单体演进为 4 域微服务，最终 9 容器拓扑。
 
-**面向服务故障的监控、调查与可追溯诊断系统**
+## 最终拓扑（9 容器 = 8 常驻 + kafka-init 一次性）
 
-探测发现异常 → 自动立案 → AI Agent 调查诊断 → 产物沉淀 → 知识复用
+| 服务 | 职责 | 端口(容器) |
+|---|---|---|
+| console-bff | L1 18 路由反代 + 聚合（dashboard/列表/详情/时间轴） | 8080 |
+| service-registry | 目录域（服务/目标/来源状态） | 8081 |
+| monitor-svc | 监控域（探测/时间点/趋势） | 8083 |
+| episode-svc | 事件域（episode/输入版本/时间轴分片） | 8082 |
+| task-orchestrator | 任务域（诊断/归档/产物引用，gRPC 9090） | 8084 |
+| agent-runtime | 认知侧（诊断 agent + RAG，gRPC 50052） | 50052 |
+| postgres / kafka | 基础设施（pgvector / KRaft） | 5432 / 9092 |
 
-`Go` · `Python` · `Vue` · `gRPC` · `PostgreSQL` · `Kafka`
-
-</div>
-
----
-
-## 为什么是 Alert
-
-传统告警系统止步于"发现问题"：值班人员收到告警后，还要人工翻日志、查监控、回忆历史故障。**Alert 把这条调查链路自动化了**——
-
-- 系统对服务目标持续执行 HTTP/TCP 探测，阈值聚合后自动立案；
-- 立案即派发任务：AI 诊断 Agent 在**冻结的输入边界**内独立调查，产出带版本号的调查记录与诊断报告，绝不编造结论；
-- 每一次诊断都会沉淀为可检索的故障知识，下一次同类故障，Agent 检索历史即可给出更快、更有依据的判断。
-
-## 工作原理
-
-1. **探测与立案** —— worker 对目标执行探测，阈值聚合触发故障事件（episode）。
-2. **任务派发** —— 控制面经 gRPC 下发诊断/归档任务，携带冻结输入范围与截止时间；心跳与租约保证不双执行。
-3. **诊断调查** —— 诊断 Agent 循环执行：拉时间轴 → 检索历史故障 → 咨询知识库 → 调用 MCP 工具 → 提交报告；预算耗尽时显式给出"未完成"结论。
-4. **产物沉淀** —— 调查记录（Markdown）与诊断报告（JSON）版本化落盘，登记回控制面，正文随时可读。
-5. **知识复用** —— 归档任务提取故障索引入库；RAG 检索让历史经验直接服务下一次诊断。
-
-## 界面预览
-
-Vue 控制台覆盖从服务管理到故障调查的完整操作面：
-
-| ![运行总览](docs/screenshots/01-dashboard.png) | ![服务目录](docs/screenshots/02-services.png) |
-|:---:|:---:|
-| **运行总览** | **服务目录** |
-| ![服务详情](docs/screenshots/03-service-detail.png) | ![探测目标](docs/screenshots/05-target-drawer.png) |
-| **服务详情** | **探测目标配置** |
-| ![告警事件](docs/screenshots/06-episodes.png) | ![故障详情](docs/screenshots/07-episode-detail.png) |
-| **告警事件列表** | **故障详情** |
-| ![调查记录](docs/screenshots/08-episode-investigation.png) | ![服务创建](docs/screenshots/09-service-create.png) |
-| **AI 调查记录** | **服务创建** |
-
-## 快速开始
+## 快速开始（5 步）
 
 ```bash
-# 1. 依赖拓扑（PG 需 pgvector 扩展，compose 已配置）
-docker compose -f deploy/compose/compose.yaml up -d
-
-# 2. 控制面（Go）
-cd go/services/system-core
-go run ./cmd/api -migrate          # 首次迁移（system schema）
-go run ./cmd/api                   # REST 进程
-go run ./cmd/worker                # 后台进程（探测 / 派发 / 消费）
-
-# 3. 认知执行栈（Python）
-cd ../../../python/agent-runtime
-cp .env.example .env               # 按需修改数据库与 LLM 端点
-.venv/bin/python -m alert_agent.bootstrap.migrate   # 首次迁移（cognitive schema）
-.venv/bin/python -m alert_agent.bootstrap.app       # 网关 + 双 Agent + worker 一体进程
+cp .env.example .env                                  # 含 COMPOSE_PROFILES=core
+docker compose -f deploy/compose/compose.yaml up -d   # core profile：8 常驻 + kafka-init
+docker compose -f deploy/compose/compose.yaml --profile setup run --rm provision   # 4 schema/4 role
+for s in service-registry monitor-svc episode-svc task-orchestrator; do
+  docker compose -f deploy/compose/compose.yaml run --rm "$s" -migrate
+done
+docker compose -f deploy/compose/compose.yaml run --rm agent-runtime python -m alert_agent.bootstrap.migrate
+# 访问 http://localhost:8080 ；一键演示 scripts/demo.sh
 ```
 
-构建验证：在 `go/services/system-core` 下执行 `go build ./... && go vet ./...`（Go）；`.venv/bin/ruff check src eval tests`（Python）。
+> 未设置 `COMPOSE_PROFILES=core` 时 `up -d` 不会启动域服务；`--profile debug` + `compose.debug.yaml`
+> 才暴露宿主端口 8081/8082/8083/8084/9090（仅排障）。
 
-## 核心特性
+## 构建与验证
 
-- 🤖 **受约束的诊断 Agent** —— langgraph 循环 + 动作判别联合，每一步可追溯；预算（轮次/调用/时长）统一熔断，耗尽即显式"未完成"，模型幻觉无处藏身。
-- 🔍 **双腿检索问答** —— pgvector 向量 + BM25 双腿、RRF 融合、可降级重排；`POST /chat` 真流式 SSE，引用编号可溯、答案与引用强校验。
-- 📦 **产物与知识双沉淀** —— 调查过程版本化落盘（`storage_key` 地址制），诊断结论提炼为故障索引，跨事件复用。
-- 🔒 **边界与安全内建** —— 任务围栏（fence）防旧代次写入、路径穿越与 SSRF 拒绝、内部 token 常量时间比较、日志脱敏。
-- 🔌 **协议面开放** —— gRPC 任务通道（SubmitTask + 7 类回调）、MCP Streamable-HTTP 长会话、A2A AgentCard 与 message/send。
+- 构建（多 module，禁用根 `go build ./...`）：逐 module `GOWORK=off go build ./...`。
+- 门禁：`bash scripts/verify-p6.sh --only=direct|bridge|docs`；`bash scripts/verify-p7.sh --structure-only`；`bash deploy/split/verify-isolation.sh`。
+- 一键演示：`bash scripts/demo.sh`（或 `--minimal`）。
 
-## 目录导航
+## 文档
 
-| 目录 | 内容 |
-|---|---|
-| `go/services/system-core/` | Go 控制面（api + worker 双入口、六层结构） |
-| `python/agent-runtime/` | Python 认知执行栈（五层骨架 + 迁移 + eval） |
-| `apps/console/` | Vue 控制台 |
-| `contracts/` | proto 与事件 Schema（语言无关契约源） |
-| `docs/` | 架构说明、操作手册、验收记录、界面截图 |
-| `deploy/compose/` | 本地依赖拓扑（pgvector 版 PG + Kafka KRaft） |
-
-## 测试与验收
-
-```bash
-cd go/services/system-core && go build ./... && go vet ./... && go test ./internal/domain/... ./internal/contracts/...
-cd python/agent-runtime && .venv/bin/ruff check src eval tests && .venv/bin/pytest tests -q
-```
-
-离线检索评测（可选）：`python/agent-runtime/eval/run.py`，用法见该目录说明。
-
-
-## 相关文档
-
-- [架构说明](docs/architecture/overview.md) · [数据所有权](docs/architecture/data-ownership.md)
-- [构建](docs/runbooks/build.md) · [本地运行](docs/runbooks/run-local.md) · [迁移](docs/runbooks/migrate.md) · [冒烟](docs/runbooks/smoke.md)
-- [认知执行栈说明](python/agent-runtime/README.md)
+- 运行手册：`docs/runbooks/{run-local,smoke,troubleshoot,build,migrate}.md`
+- 架构：`docs/architecture/{overview,data-ownership,contracts}.md`
+- 部署与 topic：`deploy/README.md`；证据：`docs/evidence/p6/README.md`（p6.1~p6.8）。

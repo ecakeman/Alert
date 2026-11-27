@@ -1,13 +1,13 @@
 # Runbook：迁移回放与验证
 
-工作目录：`go/services/system-core`。
+工作目录：`go/services`。
 
 ## 1. 常规回放
 
 ```bash
 DATABASE_URL=postgres://alert:<密码>@127.0.0.1:5432/alert?sslmode=disable \
 KAFKA_BROKERS=127.0.0.1:9092 \
-go run ./cmd/api -migrate
+各域服务 -migrate（见 deploy/compose）
 ```
 
 - 首轮：`applied=3 skipped=0`（对空库）。

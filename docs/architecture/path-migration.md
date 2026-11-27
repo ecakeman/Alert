@@ -17,7 +17,7 @@
 |---|---|
 | `services/contracts/` | `go/contracts/` |
 | `services/platform/` | `go/platform/` |
-| `services/system-core/` | `go/services/system-core/` |
+| `services/` | `go/services/` |
 | `services/console-bff/` | `go/services/console-bff/` |
 | `services/service-registry/` | `go/services/service-registry/` |
 | `services/monitor-svc/` | `go/services/monitor-svc/` |

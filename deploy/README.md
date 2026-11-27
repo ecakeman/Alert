@@ -73,7 +73,7 @@ GO_BIN=/home/sancho/go-dist/go/bin/go bash scripts/verify-p0.sh
 
 串行检查构建/vet、contracts 与 platform 单测、module 边界、provision、账号隔离、S0 预检、
 迁移幂等与 18 路由快照，输出 `PASS/FAIL/SKIP` 三态，任一 FAIL 非零退出。
-快照项需要 `system-core` API 在 `127.0.0.1:8080` 运行；证据与补跑方式见
+快照项需要 `历史单体（已下线）` API 在 `127.0.0.1:8080` 运行；证据与补跑方式见
 `docs/evidence/p0/README.md`。
 
 ## 已知限制

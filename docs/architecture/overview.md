@@ -8,8 +8,8 @@
 
 ```text
 Alert/
-├─ go/services/system-core/     # 唯一 Go module（api + worker 双入口）
-│  ├─ cmd/api|worker/        # 进程入口与 flag
+├─ go/services/     # 唯一 Go module（api + worker 双入口）
+│  ├─ 域服务入口/        # 进程入口与 flag
 │  ├─ internal/{domain,contracts,application,infrastructure,transport,bootstrap,config}/
 │  └─ migrations/            # system schema SQL（仅 .sql）
 ├─ python/agent-runtime/   # Python 组件占位（B8 未实现）
@@ -36,8 +36,8 @@ Alert/
 
 | 进程 | 启动内容 | 禁止内容 |
 |---|---|---|
-| `cmd/api` | HTTP 路由、探针、`-migrate` 入口 | probe/outbox/consumer 等后台循环 |
-| `cmd/worker` | DueTargets 调度、probe 引擎、outbox publisher、consumer | HTTP Server、迁移 |
+| 域服务 REST 入口 | HTTP 路由、探针、`-migrate` 入口 | probe/outbox/consumer 等后台循环 |
+| 域服务后台循环 | DueTargets 调度、probe 引擎、outbox publisher、consumer | HTTP Server、迁移 |
 
 装配对应 `internal/bootstrap/{api,worker,lifecycle,migrate}.go`；无万能 `New`。
 
