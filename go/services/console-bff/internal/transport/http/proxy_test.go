@@ -235,9 +235,13 @@ func TestProxyUpstreamTimeoutMapsTo503(t *testing.T) {
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("超时 = %d，期望 503", rec.Code)
 	}
-	var body map[string]string
+	var body struct {
+		Error struct {
+			Code string `json:"code"`
+		} `json:"error"`
+	}
 	_ = json.NewDecoder(rec.Body).Decode(&body)
-	if body["code"] != "DEPENDENCY_UNAVAILABLE" {
-		t.Fatalf("503 code = %s，期望 DEPENDENCY_UNAVAILABLE", body["code"])
+	if body.Error.Code != "DEPENDENCY_UNAVAILABLE" {
+		t.Fatalf("503 code = %s，期望 DEPENDENCY_UNAVAILABLE", body.Error.Code)
 	}
 }

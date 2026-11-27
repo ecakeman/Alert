@@ -233,10 +233,14 @@ func (s *Service) episodeTimeline(w http.ResponseWriter, r *http.Request, episod
 }
 
 func (s *Service) unavailable(w http.ResponseWriter, upstream string, err error) {
+	if isUpstream404(err) {
+		writeNestedError(w, http.StatusNotFound, "NOT_FOUND", "resource not found")
+		return
+	}
 	if s.logger != nil {
 		s.logger.Warn("aggregate upstream failed", "upstream", upstream, "reason", err.Error())
 	}
-	apierr.Write(w, apierr.DependencyUnavailable("upstream unavailable"))
+	writeNestedError(w, http.StatusServiceUnavailable, "DEPENDENCY_UNAVAILABLE", "upstream unavailable")
 }
 
 func targetCounts(targets map[string]int) TargetCounts {

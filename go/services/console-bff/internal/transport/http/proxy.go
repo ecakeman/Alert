@@ -3,7 +3,7 @@ package bffhttp
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+
 	"fmt"
 	"io"
 	"log/slog"
@@ -17,7 +17,7 @@ import (
 	"time"
 
 	"github.com/ecakeman/alert/services/console-bff/internal/aggregate"
-	"github.com/ecakeman/alert/services/platform/apierr"
+
 	"github.com/ecakeman/alert/services/platform/httpx"
 )
 
@@ -126,9 +126,12 @@ func newReverseProxy(base string, timeout time.Duration, projector aggregate.L1P
 		IdleConnTimeout:       30 * time.Second,
 	}
 	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
-		apierr.Write(w, apierr.DependencyUnavailable("upstream unavailable"))
+		apiError(w, http.StatusServiceUnavailable, "DEPENDENCY_UNAVAILABLE", "upstream unavailable")
 	}
 	proxy.ModifyResponse = func(resp *http.Response) error {
+		if resp.StatusCode >= http.StatusBadRequest {
+			return normalizeUpstreamError(resp)
+		}
 		route, ok := resp.Request.Context().Value(l1ContextKey{}).(aggregate.L1Route)
 		if !ok || route == aggregate.L1None {
 			return nil
@@ -184,7 +187,7 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		upstream := p.proxies[route.upstream]
 		if upstream == nil {
-			apierr.Write(w, apierr.DependencyUnavailable("upstream not configured"))
+			apiError(w, http.StatusServiceUnavailable, "DEPENDENCY_UNAVAILABLE", "upstream not configured")
 			return
 		}
 		if traceID := httpx.TraceIDFrom(r.Context()); traceID != "" {
@@ -254,7 +257,5 @@ func joinUnique(values []string) string {
 }
 
 func writeError(w http.ResponseWriter, status int, code, message string) {
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(map[string]string{"code": code, "message": message})
+	apiError(w, status, code, message)
 }

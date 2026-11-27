@@ -1,7 +1,7 @@
 package bffhttp
 
 import (
-	"encoding/json"
+
 	"log/slog"
 	"net/http"
 	"time"
@@ -31,10 +31,5 @@ func New(deps Deps) http.Handler {
 }
 
 func notFound(w http.ResponseWriter, _ *http.Request) {
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.WriteHeader(http.StatusNotFound)
-	_ = json.NewEncoder(w).Encode(map[string]string{
-		"code":    "NOT_FOUND",
-		"message": "resource not found",
-	})
+	apiError(w, http.StatusNotFound, "NOT_FOUND", "resource not found")
 }
