@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -155,6 +156,7 @@ func main() {
 	handler := httpx.Chain(
 		episodehttp.New(episodehttp.Deps{Health: health, API: engine}),
 		httpx.Recovery(nil),
+		httpx.AccessLog(slog.Default()),
 	)
 
 	server := &http.Server{

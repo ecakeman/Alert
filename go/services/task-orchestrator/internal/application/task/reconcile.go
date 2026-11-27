@@ -175,21 +175,12 @@ func (s *Service) dueRetry(ctx context.Context, now time.Time) ([]porttask.Agent
 
 func (s *Service) releaseExpiredLease(ctx context.Context, task porttask.AgentTask) error {
 	return s.deps.UOW.WithinTx(ctx, func(ctx context.Context, tx portshared.Tx) error {
-		if _, err := s.deps.Ownership.Release(ctx, tx, task.ServiceID, task.TaskID, task.Generation); err != nil {
-			return err
-		}
-		status := string(domain.TaskRetryWait)
+		// 所有权释放尽力而为（幂等）；回收以任务行实时状态为准，不因陈旧 generation 失败。
+		_, _ = s.deps.Ownership.Release(ctx, tx, task.ServiceID, task.TaskID, task.Generation)
 		nextRetry := s.deps.Clock.Now().Add(s.deps.RetryDelay)
-		updated, err := s.deps.Tasks.UpdateCAS(ctx, tx, task.TaskID, task.Generation,
-			[]string{string(domain.TaskRunning)},
-			porttask.TaskPatch{Status: &status, NextRetryAt: &nextRetry, AllowExpiredLease: true})
-		if err != nil {
-			return err
-		}
-		if updated == 0 {
-			return apperr.New(domain.CodeStateConflict, "task is no longer running")
-		}
-		return nil
+		// 原子回收：generation+1 + 清租约 + RETRY_WAIT；0 行表示已被其它 reconciler 回收（幂等，不报错）。
+		_, err := s.deps.Tasks.ReclaimExpired(ctx, tx, task.TaskID, nextRetry)
+		return err
 	})
 }
 

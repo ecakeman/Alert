@@ -83,6 +83,7 @@ type TaskRepo interface {
 	PromoteRetry(ctx context.Context, tx portshared.Tx, taskID string, generation int64) (int64, error)
 	CountByStatus(ctx context.Context, tx portshared.Tx) (map[string]int, error)
 	ListActiveByEpisodes(ctx context.Context, tx portshared.Tx, episodeIDs []string) ([]AgentTask, error)
+	ReclaimExpired(ctx context.Context, tx portshared.Tx, taskID string, nextRetry time.Time) (int64, error)
 }
 
 // AcquireOutcome 是三态执行权获取结果：禁止静默 skip（P5.9 GAP-2）。

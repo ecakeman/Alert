@@ -96,17 +96,11 @@ func recordTime(raw json.RawMessage) string {
 	return ""
 }
 
-// sortRecordsStable 以时间字符串为主键、原序为次级键做稳定排序（同刻不翻转）。
+// sortRecordsStable 以记录时间字符串为主键做稳定排序（时间相同保持原序，不翻转）。
 func sortRecordsStable(records []json.RawMessage) {
-	index := make(map[int]string, len(records))
-	for i, rec := range records {
-		index[i] = recordTime(rec)
-	}
 	sort.SliceStable(records, func(i, j int) bool {
-		// 通过指针身份映射不可靠，改用切片槽位在原序上的时间比较。
-		return false
+		return recordTime(records[i]) < recordTime(records[j])
 	})
-	_ = index
 }
 
 func (s *Service) buildEpisodeTimeline(w http.ResponseWriter, ctx context.Context, episodeID string) {

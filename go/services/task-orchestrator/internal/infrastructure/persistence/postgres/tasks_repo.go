@@ -78,6 +78,23 @@ WHERE task_id=$1 AND generation=$2 AND status = ANY($3)
 	return tag.RowsAffected(), nil
 }
 
+// ReclaimExpired 原子回收“仍 RUNNING 且租约过期”的任务：generation+1、清租约、置 RETRY_WAIT。
+// 条件锚定 task_id + 实时状态/租约，不依赖列表快照里的 generation，避免 CAS 0 行（LEASE_RECLAIM_DEFECT）。
+func (taskRepo) ReclaimExpired(ctx context.Context, tx portshared.Tx, taskID string, nextRetry time.Time) (int64, error) {
+	tag, err := txFrom(tx).Exec(ctx, `
+UPDATE task.agent_tasks
+SET generation = generation + 1,
+    status = 'RETRY_WAIT',
+    lease_until = NULL,
+    next_retry_at = $2,
+    updated_at = now()
+WHERE task_id=$1 AND status='RUNNING' AND (lease_until IS NULL OR lease_until <= now())`, taskID, utc(nextRetry))
+	if err != nil {
+		return 0, Translate(err)
+	}
+	return tag.RowsAffected(), nil
+}
+
 func (taskRepo) ListDueRetry(ctx context.Context, tx portshared.Tx, now time.Time, limit int) ([]porttask.AgentTask, error) {
 	if limit <= 0 {
 		limit = 32
