@@ -230,9 +230,12 @@ func main() {
 }
 
 func catalogSyncedBefore(ctx context.Context, pool *pgxpool.Pool) bool {
+	// 已消费过任一 catalog 事件（幂等表有记录）即视为已同步；
+	// 或投影为空（无 target 可同步，空库/空目录是合法已同步态），避免空库冷启动 readyz 永久 503。
 	var ok bool
-	err := pool.QueryRow(ctx,
-		`SELECT EXISTS(SELECT 1 FROM monitor.consumer_idempotency WHERE consumer='monitor.catalog-events.v1')`).Scan(&ok)
+	err := pool.QueryRow(ctx, `
+SELECT EXISTS(SELECT 1 FROM monitor.consumer_idempotency WHERE consumer='monitor.catalog-events.v1')
+    OR NOT EXISTS(SELECT 1 FROM monitor.monitor_target_projection WHERE deleted_at IS NULL)`).Scan(&ok)
 	return err == nil && ok
 }
 

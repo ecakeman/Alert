@@ -1,44 +1,22 @@
-# Runbook：冒烟路径（S5 执行，此处为命令清单）
+# 冒烟
 
-前置：`deploy/compose` 拓扑已起、迁移已回放、api + worker 双进程已启动。工作目录不限命令者；全部为 HTTP 调用。
-
-## 1. 探针
+按“是否已 up 且迁移完成”选择执行；全部真实依赖 PG/Kafka/域服务，不使用 mock。
 
 ```bash
-curl -s http://127.0.0.1:8080/healthz
-curl -s http://127.0.0.1:8080/readyz
+# 1) 聚合入口存活
+curl -fsS http://localhost:8080/readyz && echo OK
+
+# 2) 18 路由分段门禁
+bash scripts/verify-p6.sh --only=direct    # 7 条直通逐字节 + D-24 结构断言 + 入口唯一
+bash scripts/verify-p6.sh --only=bridge    # 旧话题停用 4 断言
+bash scripts/verify-p6.sh --only=docs      # 文档最终态 A8/单体/索引
+
+# 3) 结构/搬迁与隔离
+bash scripts/verify-p7.sh --structure-only
+bash deploy/split/verify-isolation.sh      # 期望 8/8 PASS
+
+# 4) 一键演示（读链）
+bash scripts/demo.sh --minimal             # 期望 exit 0
 ```
 
-## 2. 业务路由 1~15（前缀 `http://127.0.0.1:8080/api/v1`）
-
-| # | 方法与路径 |
-|---|---|
-| 1 | `GET /dashboard/summary` |
-| 2 | `GET /services` |
-| 3 | `POST /services` |
-| 4 | `GET /services/:service_id` |
-| 5 | `PATCH /services/:service_id` |
-| 6 | `DELETE /services/:service_id` |
-| 7 | `GET /services/:service_id/targets` |
-| 8 | `POST /services/:service_id/targets` |
-| 9 | `PATCH /targets/:target_id` |
-| 10 | `DELETE /targets/:target_id` |
-| 11 | `GET /episodes` |
-| 12 | `GET /episodes/:episode_id` |
-| 13 | `POST /services/:service_id/events` |
-| 14 | `GET /services/:service_id/timeline` |
-| 15 | `GET /episodes/:episode_id/timeline` |
-
-## 3. 保留 501 路由（16~18，B7 待接线）
-
-```bash
-curl -i http://127.0.0.1:8080/api/v1/episodes/<episode_id>/artifacts
-curl -i -X POST http://127.0.0.1:8080/api/v1/episodes/<episode_id>/retry-diagnosis
-curl -i -X POST http://127.0.0.1:8080/api/v1/episodes/<episode_id>/retry-archive
-```
-
-## 4. 探测路径
-
-1. 建服务 + 建启用 target（HTTP 型，`interval_ms` 调小）。
-2. 等 worker 调度：`GET /services/:service_id/timeline` 观察监控点与状态聚合。
-3. Kafka 侧确认 `alertflow.system.events.v1` 有事件产出。
+> 全链路（monitor→episode→task→agent→artifact）冷启动编排见 `scripts/p6/_coldstart_run.sh`（P6.7 证据）。

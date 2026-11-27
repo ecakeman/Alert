@@ -1,24 +1,16 @@
-# 数据所有权（data-ownership）
+# 数据归属
 
-> system（Go）与 cognitive（Python）的 Schema、迁移与账号边界。禁止共享写权限。
+每个域独占 schema 与数据库角色，禁止跨域直连对方表；跨域只经 L2 API 或事件。
 
-## 1. 所有者对照
-
-| 所有者 | 迁移目录 | 连接变量 | 回放入口 | 当前状态 |
+| 域 | schema | role | 迁移位置 | 校验 |
 |---|---|---|---|---|
-| system（Go） | `go/services/*/migrations/` | `DATABASE_URL` | `各域服务 -migrate（见 deploy/compose）`（工作目录 `go/services`） | 已落地（3 个版本，forward-only） |
-| cognitive（Python） | `python/agent-runtime/migrations/` | `DATABASE_URL_COGNITIVE`（B8 引入） | B8 的 Python 迁移入口 | 未实现；不建目录、不建 SQL、不引入变量 |
+| 目录 | `registry` | `alert_registry` | `go/services/service-registry/migrations/` | `service-registry -migrate` |
+| 监控 | `monitor` | `alert_monitor` | `go/services/monitor-svc/migrations/` | `monitor-svc -migrate` |
+| 事件 | `episode` | `alert_episode` | `go/services/episode-svc/migrations/` | `episode-svc -migrate` |
+| 任务 | `task` | `alert_task` | `go/services/task-orchestrator/migrations/` | `task-orchestrator -migrate` |
+| 认知 | `cognitive` | `alert` | `python/agent-runtime/migrations/` | `python -m alert_agent.bootstrap.migrate` |
 
-## 2. 边界规则
-
-1. 禁止根级公共迁移池；各组件迁移只在自己的 `migrations/` 目录内发现。
-2. 禁止 Go runner 发现或回放 Python 迁移；反之亦然。
-3. 两侧禁止共用写账号：system 用 `DATABASE_URL` 指向的账号只授权 system schema；cognitive 未来账号只授权 cognitive schema。
-4. 共享 `contracts/`（事件信封）不改变 Schema 所有权。
-5. system schema 表结构变更只能走新增迁移文件；不改既有 SQL 正文、文件名与版本号。
-
-## 3. 迁移文件事实
-
-- 文件：`0001_system_core_entities.sql`、`0002_input_events_points.sql`、`0003_tasks_outbox_artifacts.sql`。
-- 版本 1/2/3；名称取文件名段；checksum 为文件内容 SHA-256；重复回放 no-op。
-- `embed.go` 仅嵌入 `*.sql`。
+## 规则
+- schema/role 由 `deploy/split/provision.sh` 创建（`--profile setup run --rm provision`），并设 `ALTER DEFAULT PRIVILEGES` 覆盖后续新表。
+- 迁移 forward-only；每个域只读写自有 schema。隔离由 `deploy/split/verify-isolation.sh` 校验（期望 8/8）。
+- 共享契约（事件、DTO）放 `go/contracts`，不放任何域内部。

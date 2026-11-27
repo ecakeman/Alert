@@ -1,15 +1,30 @@
-# Runbook：构建与静态检查
+# 构建
 
-工作目录：`go/services`（唯一 Go module）。
+仓库为 Go 多 module workspace（`go.work` 在根），**禁止**在仓库根执行 `go build ./...`（根不是 module，会报 `directory prefix . does not contain modules`）。
+
+## Go（逐 module，GOWORK=off）
 
 ```bash
-go build ./...
-go vet ./...
-go test ./internal/domain/... ./internal/config/ ./internal/transport/http/router/
+for m in go/contracts go/platform \
+         go/services/console-bff go/services/service-registry go/services/monitor-svc \
+         go/services/episode-svc go/services/task-orchestrator; do
+  ( cd "$m" && GOWORK=off go build ./... )
+done
 ```
 
-说明：
+- 每个 module 自带 `go.sum`；`GOWORK=off` 保证逐 module 独立可构建。
+- 镜像：`docker compose -f deploy/compose/compose.yaml build`（build context 为 `../../go`，Dockerfile 复制 `platform`）。
 
-- `go.mod`/`go.sum` 位于 `go/services/`；仓库根没有 `go.mod`，根目录执行 `go build` 无意义。
-- 全量 `go test ./...` 中依赖真实 PG 的仓储测试需要 `TEST_DATABASE_URL`，未设置时跳过或记未执行，不视为失败。
-- 前端构建（仅验收需要时）：工作目录 `apps/console`，`npm run build`。
+## Python（agent-runtime）
+
+```bash
+docker compose -f deploy/compose/compose.yaml build agent-runtime   # 离线 wheel 优先，PIP_INDEX_URL 可覆盖
+```
+
+## 门禁脚本
+
+```bash
+bash scripts/verify-p7.sh --structure-only        # 结构/路径闸门
+bash scripts/verify-p6.sh --only=direct|bridge|docs
+bash deploy/split/verify-isolation.sh             # 域账号隔离
+```

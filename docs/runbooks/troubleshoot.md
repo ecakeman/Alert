@@ -1,30 +1,22 @@
-# Runbook：排障
+# 故障排查
 
-## 1. 迁移发现异常
+## 域服务未随 `up -d` 启动
+- 现象：只有 pg/kafka/kafka-init 起来。
+- 原因：未启用 core profile。
+- 处理：`.env` 设 `COMPOSE_PROFILES=core`，或 `docker compose -f deploy/compose/compose.yaml --profile core up -d`。
 
-- 现象：`-migrate` 报版本缺口/重复/checksum conflict。
-- 排查：`ls go/services/*/migrations/*.sql`（工作目录 `go/services`）确认只有 3 个 SQL 且文件名未改；对照 `git log -- migrations/`。
-- 纪律：不手改 schema_migrations 记录；恢复文件原文后重放。
+## monitor-svc `/readyz` 非 200（catalog）
+- 空库/空目录：投影为空即视为已同步（`catalogSyncedBefore` 空投影分支），应 200。
+- 有存量服务：需等待 registry catalog 事件被消费（`monitor.consumer_idempotency` 记录出现）后转 healthy。
 
-## 2. 旧 import 前缀（S3 搬迁后）
+## Kafka 连不上
+- 容器内代码用 `kafka:29092`（INTERNAL）；宿主机进程用 `127.0.0.1:9092`（EXTERNAL）。混用会失败。
 
-```bash
-rg -n 'github.com/ecakeman/alert/internal|github.com/ecakeman/alert/migrations' go/services
-```
+## 根目录 `go build ./...` 报错
+- 正常：根不是 module。逐 module `GOWORK=off go build ./...`（见 build.md）。
 
-期望无输出；有输出说明存在未适配的旧前缀引用。
+## 端口冲突
+- 默认 core 无 8081/8083 宿主映射；需要排障时叠加 `-f deploy/compose/compose.debug.yaml`，用完撤下。
 
-## 3. 双进程误配
-
-- api 进程出现 probe/outbox/consumer 日志、或 worker 进程占用 8080 → 装配越界。
-- 核对 `internal/bootstrap/api.go` 与 `worker.go` 的白名单注释与装配项；api 不启后台循环，worker 不启 HTTP。
-
-## 4. 看板空态与失败区分
-
-- `GET /api/v1/dashboard/summary` 返回空 `recent`/`trend`（200）＝无数据；返回 5xx ＝查询链路失败。
-- 失败时不重试到空数组：查 api 日志中 `apperr` 映射（依赖不可用类）与 PG 连接池健康。
-
-## 5. 事件链路无产出
-
-- 依次确认：业务写事务产生 `outbox_events` 行 → worker 的 publisher 启用（`OUTBOX_PUBLISHER_ENABLED`）→ Kafka broker 可达 → topic `alertflow.system.events.v1`。
-- consumer 幂等键为 `event_id`；重复消费不产生双写。
+## 迁移冲突
+- 输出 `conflicts>0` 表示历史迁移校验和不一致；forward-only，需人工核对 `migrations/` 与 `schema_migrations`，禁止手改已应用文件。

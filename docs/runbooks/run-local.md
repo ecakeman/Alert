@@ -1,31 +1,32 @@
-# Runbook：本地启动（双终端）
+# 本地运行
 
-## 1. 依赖拓扑（工作目录：仓库根）
+最终态为 **9 容器**（8 常驻 healthy + `kafka-init` 一次性 exited 0）。
 
-```bash
-docker compose -f deploy/compose/compose.yaml up -d
-```
-
-提供 PG16（127.0.0.1:5432，alert/alert）与 Kafka KRaft（127.0.0.1:9092）。配置基线见 `.env.example`（33 项，均有默认值）。
-
-## 2. 迁移（工作目录：`go/services`，首次或 schema 变更后）
+## 启动
 
 ```bash
-各域服务 -migrate（见 deploy/compose）
+cp .env.example .env                                   # 含 COMPOSE_PROFILES=core
+docker compose -f deploy/compose/compose.yaml up -d    # core profile：基础设施 + 6 域服务
+docker compose -f deploy/compose/compose.yaml --profile setup run --rm provision
+for s in service-registry monitor-svc episode-svc task-orchestrator; do
+  docker compose -f deploy/compose/compose.yaml run --rm "$s" -migrate
+done
+docker compose -f deploy/compose/compose.yaml run --rm agent-runtime python -m alert_agent.bootstrap.migrate
 ```
 
-## 3. 双进程（`go/services` 内，两个终端分别执行）
+- 访问控制台聚合：`http://localhost:8080`（`/readyz` 应为 200）。
+- 一键演示：`bash scripts/demo.sh`（或 `--minimal`）。
 
-```bash
-console-bff / 域服务      # REST + 探针，默认 :8080
-域服务后台循环   # 探测调度 / outbox 发布 / consumer
-```
+## 服务与端口（容器内）
 
-## 4. 就绪确认
+| 服务 | 端口 |
+|---|---|
+| console-bff | 8080 |
+| service-registry | 8081 |
+| episode-svc | 8082 |
+| monitor-svc | 8083 |
+| task-orchestrator | 8084（gRPC 9090） |
+| agent-runtime | 50052 |
+| postgres / kafka | 5432 / 9092（容器内 29092） |
 
-```bash
-curl -s http://127.0.0.1:8080/healthz
-curl -s http://127.0.0.1:8080/readyz
-```
-
-`readyz` 通过即 DB 连接池与 Kafka 客户端就绪。退出方式：api 用 `HTTP_SHUTDOWN_TIMEOUT` 内的优雅停机；worker 停止接收新样本后等待在途完成。
+> 默认 core 不暴露 8081/8083 等宿主端口；排障用 `-f compose.debug.yaml` 叠加（暴露 8081/8082/8083/8084/9090）。

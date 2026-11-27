@@ -1,29 +1,23 @@
-# 契约边界（contracts）
+# 契约
 
-> 语言无关契约源在根 `contracts/`；生成物与内部模型各归其主。
+## 事件（Kafka，信封 v1）
+4 个按域 topic，3 分区 / 1 副本，由 `kafka-init` 幂等创建：
 
-## 1. 事件信封（唯一线上契约）
+- `alertflow.registry.events.v1`
+- `alertflow.monitor.events.v1`
+- `alertflow.episode.events.v1`
+- `alertflow.task.events.v1`
 
-- 源：`contracts/events/event-envelope.v1.schema.json` + 同目录 README（8 个公开字段、3 个事件类型、兼容规则）。
-- Go 侧类型：`go/contracts/`，负责构造/编码/发布/解码；与 Schema 同源，不反向回写。
-- Python 侧（B8 未实现）：基于 Schema 生成/校验消费模型。
-- 投递控制字段（claim/ack/重试）只存在于 Outbox 存储行，**不进入线上信封**。
+信封与强类型载荷定义在 `go/contracts`（事件类型、schema 版本、payload DTO、trace 键）。消费端以
+`consumer_idempotency`（键含 event_id）去重，未支持的类型显式失败、不标记完成。
 
-## 2. proto/gRPC（预留）
+## HTTP 两层
+- **L1 对外（18 路由）**：`console-bff` 反代 + 聚合，路径 `/api/v1/*`；输出为 P0 冻结契约（列表/详情/时间轴/dashboard）。
+- **L2 域内**：各域 `/internal/*`，仅 BFF/域间调用；`registry`/`episode`/`task` 的批量端点上限 200。
 
-- 包路径约定：`alertflow/agent/v1/`、`alertflow/system/v1/`；接线前不建空子目录。
-- 生成物归属：Go → `go/services`（接线后在 transport/grpc）；Python → `python/agent-runtime/gen/`。
-- 当前状态：未生成任何 proto 源与生成物。详见 `contracts/proto/README.md`。
-
-## 3. 公开 REST（openapi 说明）
-
-- 18 路由 + 探针，注册唯一入口 `go/services/console-bff/internal/transport/http/`。
-- 1~15 真实实现；16~18（artifacts / retry-diagnosis / retry-archive）保持 501（B7 待接线）。
-- DTO JSON 字段以 `internal/transport/http/dto/` 的 `json` 标签为事实来源；本目录文档不另起版本。
-- 详见 `contracts/openapi/README.md`。
-
-## 4. 通用纪律
-
-1. 契约只增可选字段；破坏性变更递增 `schema_version` 并保留旧版本。
-2. 消费者对未知 `event_type` / `schema_version` 显式失败，不得静默标记完成。
-3. 契约文档不得引用任一侧内部类型；冲突时以代码/Schema 为准并回改文档。
+## 错误信封（统一）
+```json
+{ "error": { "code": "NOT_FOUND", "message": "resource not found", "request_id": "<hex32>" } }
+```
+- 稳定码：VALIDATION(422)/NOT_FOUND(404)/ALREADY_EXISTS(409)/STATE_CONFLICT(409)/DEPENDENCY_UNAVAILABLE(503)/NOT_IMPLEMENTED(501)/INTERNAL(500)。
+- 上游域返回的扁平错误由 BFF 归一为上述嵌套信封；上游 404 透传为 404（不误报 503）。
