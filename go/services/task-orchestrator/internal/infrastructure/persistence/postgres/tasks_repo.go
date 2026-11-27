@@ -84,9 +84,12 @@ func (taskRepo) ReclaimExpired(ctx context.Context, tx portshared.Tx, taskID str
 	tag, err := txFrom(tx).Exec(ctx, `
 UPDATE task.agent_tasks
 SET generation = generation + 1,
-    status = 'RETRY_WAIT',
+    status = CASE WHEN attempt >= max_attempts THEN 'FAILED' ELSE 'RETRY_WAIT' END,
+    error_code = CASE WHEN attempt >= max_attempts THEN 'LEASE_RECLAIM_EXHAUSTED' ELSE error_code END,
+    error_message = CASE WHEN attempt >= max_attempts THEN 'lease expired and attempts exhausted' ELSE error_message END,
     lease_until = NULL,
-    next_retry_at = $2,
+    next_retry_at = CASE WHEN attempt >= max_attempts THEN NULL ELSE $2::timestamptz END,
+    finished_at = CASE WHEN attempt >= max_attempts THEN now() ELSE finished_at END,
     updated_at = now()
 WHERE task_id=$1 AND status='RUNNING' AND (lease_until IS NULL OR lease_until <= now())`, taskID, utc(nextRetry))
 	if err != nil {
