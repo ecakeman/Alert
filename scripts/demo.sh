@@ -20,7 +20,7 @@ say "readyz=200"
 SVC_ID=""
 if [ "$MINIMAL" = false ]; then
   body=$(curl -s -o /tmp/demo-create.json -w '%{http_code}' -X POST -H 'Content-Type: application/json' \
-    -d "{\"service_key\":\"$SVC_KEY\",\"name\":\"Demo Service\",\"description\":\"demo\"}" "$BASE_URL/api/v1/services")
+    -d "{\"service_key\":\"$SVC_KEY\",\"name\":\"Demo Service\",\"description\":\"demo\",\"authority_producer_id\":\"demo-producer\"}" "$BASE_URL/api/v1/services")
   say "create service http=$body"
   [ "$body" = "201" ] || [ "$body" = "409" ] || fail "建服务失败 http=$body"
   SVC_ID=$(jq -r '.service_id // empty' /tmp/demo-create.json 2>/dev/null)
